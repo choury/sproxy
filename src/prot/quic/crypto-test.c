@@ -61,9 +61,9 @@ static int s2a(const char* s, unsigned char* data){
 
 uint64_t DecodePacketNumber(uint64_t largest_pn, uint64_t truncated_pn, uint8_t pn_nbits){
     uint64_t expected_pn  = largest_pn + 1;
-    uint8_t pn_win       = 1 << pn_nbits;
-    uint8_t pn_hwin      = pn_win / 2;
-    uint8_t pn_mask      = pn_win - 1;
+    uint64_t pn_win       = 1ull << pn_nbits;
+    uint64_t pn_hwin      = pn_win / 2;
+    uint64_t pn_mask      = pn_win - 1;
 // The incoming packet number should be greater than
 // expected_pn - pn_hwin and less than or equal to
 // expected_pn + pn_hwin
@@ -76,7 +76,7 @@ uint64_t DecodePacketNumber(uint64_t largest_pn, uint64_t truncated_pn, uint8_t 
 // makes sure it's within the packet number window.
 // Note the extra checks to prevent overflow and underflow.
     uint64_t candidate_pn = (expected_pn & ~pn_mask) | truncated_pn;
-    if ((candidate_pn <= expected_pn - pn_hwin) && (candidate_pn < (1 << 62) - pn_win)){
+    if ((candidate_pn <= expected_pn - pn_hwin) && (candidate_pn < (1ull << 62) - pn_win)){
         return candidate_pn + pn_win;
     }
     if ((candidate_pn > expected_pn + pn_hwin) && (candidate_pn >= pn_win)){

@@ -13,6 +13,7 @@
 
 
 #define QUIC_CID_LEN     20
+#define QUIC_MAX_CONNECTION_IDS 64
 
 /*
        o

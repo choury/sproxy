@@ -1163,7 +1163,7 @@ QuicBase::FrameResult QuicBase::handleFrames(quic_context *context, const quic_f
     case QUIC_FRAME_STREAMS_BLOCKED_UBI: {
         auto recv_max_streams_uni = frame->extra;
         if (recv_max_streams_uni - my_received_max_unistream_id / 4 <= 100) {
-            my_max_streams_uni += my_received_max_unistream_id/4 + 100;
+            my_max_streams_uni = my_received_max_unistream_id/4 + 100;
             quic_frame *frame = new quic_frame;
             frame->type = QUIC_FRAME_MAX_STREAMS_UBI;
             frame->extra = my_max_streams_uni;
@@ -1290,6 +1290,10 @@ QuicBase::FrameResult QuicBase::handleFrames(quic_context *context, const quic_f
             onError(PROTOCOL_ERR, QUIC_FRAME_ENCODING_ERROR);
             return FrameResult::error;
         }
+        if(frame->new_id.seq >= QUIC_MAX_CONNECTION_IDS){
+            onError(PROTOCOL_ERR, QUIC_CONNECTION_ID_LIMIT_ERROR);
+            return FrameResult::error;
+        }
         hisids.resize(frame->new_id.seq + 1);
         histoken.resize(frame->new_id.seq + 1);
         hisids[frame->new_id.seq] = std::string(frame->new_id.id, frame->new_id.length);
@@ -1302,7 +1306,7 @@ QuicBase::FrameResult QuicBase::handleFrames(quic_context *context, const quic_f
         hisid_idx = frame->new_id.retired;
         return FrameResult::ok;
     case QUIC_FRAME_RETIRE_CONNECTION_ID:
-        if(frame->extra >  myids.size()){
+        if(frame->extra >= myids.size()){
             onError(PROTOCOL_ERR, QUIC_PROTOCOL_VIOLATION);
             return FrameResult::error;
         }
@@ -1973,7 +1977,8 @@ void QuicBase::keepAlive_action() {
     qos->FrontFrame(qos->GetNamespace(ssl_encryption_application), new quic_frame{QUIC_FRAME_PING, {}});
     qos->sendPacket(true);
     //如果没收到回复，那么就在5s后重试
-    keepAlive_timer = UpdateJob(std::move(keepAlive_timer), [this]{keepAlive_action();}, 5000);
+    keepAlive_timer = UpdateJob(std::move(keepAlive_timer), [this]{keepAlive_action();},
+                                std::min(30000, std::max((int)max_idle_timeout/2, 5000)));
 }
 
 void QuicBase::dump(Dumper dp, void* param) {

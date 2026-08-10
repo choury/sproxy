@@ -183,7 +183,7 @@ static int aead_encrypt(const EVP_AEAD* aead,
         plaintext, plaintext_len,
         aad, aad_len))
     {
-        LOGE("EVP_AEAD_CTX_open failed\n");
+        LOGE("EVP_AEAD_CTX_seal failed\n");
         return -1;
     }
     return len;
@@ -670,9 +670,15 @@ static char* pack_crypto_frame(const struct quic_crypto* crypto, char* data){
     return data + crypto->length;
 }
 
-static const char* unpack_crypto_frame(const char* data, struct quic_crypto* crypto){
+static const char* unpack_crypto_frame(const char* data, const char* end, struct quic_crypto* crypto){
+    crypto->buffer = nullptr;
     data += variable_decode(data, &crypto->offset);
     data += variable_decode(data, &crypto->length);
+    if(crypto->length > (uint64_t)(end - data)){
+        LOGE("crypto frame truncated: length: %" PRIu64", remain: %zu\n",
+             crypto->length, (size_t)(end - data));
+        return nullptr;
+    }
     crypto->buffer = new Buffer(crypto->length);
     memcpy(crypto->buffer->mutable_data(), data, crypto->length);
     crypto->buffer->truncate(crypto->length);
@@ -713,20 +719,26 @@ static char* pack_ack_frame(uint64_t type, const struct quic_ack* ack, char* dat
     return data;
 }
 
-static const char* unpack_ack_frame(uint64_t type, const char* data, struct quic_ack* ack){
+static const char* unpack_ack_frame(uint64_t type, const char* data, const char* end, struct quic_ack* ack){
     assert(type == QUIC_FRAME_ACK || type == QUIC_FRAME_ACK_ECN);
+    ack->ranges = nullptr;
     data += variable_decode(data, &ack->acknowledged);
     data += variable_decode(data, &ack->delay);
     data += variable_decode(data, &ack->range_count);
     data += variable_decode(data, &ack->first_range);
+    // Each ack range consumes at least 2 bytes (gap + length varints), so a
+    // range_count claiming more than half the remaining bytes is malformed.
+    if(ack->range_count > (uint64_t)(end - data) / 2){
+        LOGE("ack frame range_count too large: %" PRIu64", remain: %zu\n",
+             ack->range_count, (size_t)(end - data));
+        return nullptr;
+    }
     if(ack->range_count){
         ack->ranges = new quic_ack_range[ack->range_count];
         for(size_t i = 0 ; i < ack->range_count; i++){
             data += variable_decode(data, &ack->ranges[i].gap);
             data += variable_decode(data, &ack->ranges[i].length);
         }
-    }else{
-        ack->ranges = nullptr;
     }
     if(type == QUIC_FRAME_ACK_ECN){
         data += variable_decode(data, &ack->ecn_ect0);
@@ -763,8 +775,9 @@ static char* pack_close_frame(uint64_t type, const struct quic_close* close_fram
     return data + close_frame->reason_len;
 }
 
-static const char* unpack_close_frame(uint64_t type, const char* data, struct quic_close* close_frame){
+static const char* unpack_close_frame(uint64_t type, const char* data, const char* end, struct quic_close* close_frame){
     assert(type == QUIC_FRAME_CONNECTION_CLOSE || type == QUIC_FRAME_CONNECTION_CLOSE_APP);
+    close_frame->reason = nullptr;
     data += variable_decode(data, &close_frame->error);
     if(type == QUIC_FRAME_CONNECTION_CLOSE_APP){
         close_frame->frame_type = QUIC_FRAME_PADDING;
@@ -772,6 +785,11 @@ static const char* unpack_close_frame(uint64_t type, const char* data, struct qu
         data += variable_decode(data, &close_frame->frame_type);
     }
     data += variable_decode(data, &close_frame->reason_len);
+    if(close_frame->reason_len > (uint64_t)(end - data)){
+        LOGE("close frame reason truncated: %" PRIu64", remain: %zu\n",
+             close_frame->reason_len, (size_t)(end - data));
+        return nullptr;
+    }
     close_frame->reason = new char[close_frame->reason_len];
     memcpy(close_frame->reason, data, close_frame->reason_len);
     return data + close_frame->reason_len;
@@ -794,11 +812,20 @@ static char* pack_new_id_frame(const struct quic_new_id* new_id, char* data){
     return data + sizeof(new_id->token);
 }
 
-static const char* unpack_new_id_frame(const char* data, struct quic_new_id* new_id){
+static const char* unpack_new_id_frame(const char* data, const char* end, struct quic_new_id* new_id){
+    new_id->id = nullptr;
     data += variable_decode(data, &new_id->seq);
     data += variable_decode(data, &new_id->retired);
+    if(data >= end){
+        return nullptr;
+    }
     new_id->length = data[0];
     data ++;
+    if((uint64_t)new_id->length + sizeof(new_id->token) > (uint64_t)(end - data)){
+        LOGE("new connection id frame truncated: length: %u, remain: %zu\n",
+             new_id->length, (size_t)(end - data));
+        return nullptr;
+    }
     new_id->id = new char[new_id->length];
     memcpy(new_id->id, data, new_id->length);
     data += new_id->length;
@@ -816,8 +843,14 @@ static char* pack_new_token_frame(const quic_new_token* new_token, char* data){
     return data + new_token->length;
 }
 
-static const char* unpack_new_token_frame(const char* data, struct quic_new_token* new_token){
+static const char* unpack_new_token_frame(const char* data, const char* end, struct quic_new_token* new_token){
+    new_token->token = nullptr;
     data += variable_decode(data, &new_token->length);
+    if(new_token->length > (uint64_t)(end - data)){
+        LOGE("new token frame truncated: length: %" PRIu64", remain: %zu\n",
+             new_token->length, (size_t)(end - data));
+        return nullptr;
+    }
     new_token->token = new char[new_token->length];
     memcpy(new_token->token, data, new_token->length);
     return data + new_token->length;
@@ -1180,10 +1213,10 @@ const char* unpack_frame(const char* data, size_t len, quic_frame* frame){
         }
         return data + frame->extra;
     case QUIC_FRAME_CRYPTO:
-        return unpack_crypto_frame(pos, &frame->crypto);
+        return unpack_crypto_frame(pos, data + len, &frame->crypto);
     case QUIC_FRAME_ACK:
     case QUIC_FRAME_ACK_ECN:
-        return unpack_ack_frame(frame->type, pos, &frame->ack);
+        return unpack_ack_frame(frame->type, pos, data + len, &frame->ack);
     case QUIC_FRAME_PING:
     case QUIC_FRAME_HANDSHAKE_DONE:
         return pos;
@@ -1205,11 +1238,11 @@ const char* unpack_frame(const char* data, size_t len, quic_frame* frame){
         return unpack_stream_blocked(pos, &frame->stream_data_blocked);
     case QUIC_FRAME_CONNECTION_CLOSE:
     case QUIC_FRAME_CONNECTION_CLOSE_APP:
-        return unpack_close_frame(frame->type, pos, &frame->close);
+        return unpack_close_frame(frame->type, pos, data + len, &frame->close);
     case QUIC_FRAME_NEW_CONNECTION_ID:
-        return unpack_new_id_frame(pos, &frame->new_id);
+        return unpack_new_id_frame(pos, data + len, &frame->new_id);
     case QUIC_FRAME_NEW_TOKEN:
-        return unpack_new_token_frame(pos, &frame->new_token);
+        return unpack_new_token_frame(pos, data + len, &frame->new_token);
     case QUIC_FRAME_PATH_CHALLENGE:
     case QUIC_FRAME_PATH_RESPONSE:
         if(len - (pos - data) < sizeof(frame->path_data)){
@@ -1278,7 +1311,11 @@ std::deque<const quic_frame*> decode_packet(const void* data_, size_t len,
         }
         uint64_t payload_len;
         pos += variable_decode(data + pos, &payload_len);
-        assert(len == pos + payload_len);
+        if(len != pos + payload_len){
+            LOGE("QUIC packet length mismatch: len: %zd, pos: %zd, payload_len: %" PRIu64"\n",
+                 len, pos, payload_len);
+            return frames;
+        }
 
         if(hp_encode(secret->hcipher, (unsigned char*)secret->hp, (unsigned char*)data+pos+4, 16, mask) < 0){
             LOGE("hp_encode failed\n");
@@ -1335,7 +1372,7 @@ std::deque<const quic_frame*> decode_packet(const void* data_, size_t len,
     }
     assert(plaintext_len == (int)(len - pos - 16));
     while(pos < len - 16){
-        quic_frame* frame = new quic_frame;
+        quic_frame* frame = new quic_frame{};
         frame->type = QUIC_FRAME_PADDING;
         frames.push_back(frame);
         const char* ret = unpack_frame((const char*)buff + pos, len - pos - 16, frame);
@@ -1660,17 +1697,7 @@ bool verify_retry_integrity_tag(const void* retry_packet, size_t packet_len,
 
     delete[] aad;
 
-    // Check if decryption succeeded and plaintext is all zeros
-    if (result != 0) {
-        for (int i = 0; i < result; i++) {
-            if (plaintext[i] != 0) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    return false;
+    return result == 0;
 }
 
 size_t add_retry_integrity_tag(void* retry_packet, size_t packet_len,
@@ -1685,20 +1712,19 @@ size_t add_retry_integrity_tag(void* retry_packet, size_t packet_len,
     memcpy(aad + 1, original_dcid.data(), original_dcid.length());
     memcpy(aad + 1 + original_dcid.length(), retry_packet, packet_len);
 
-    // Encrypt 16 bytes of zeros to generate the tag
-    char zeros[16] = {0};
-    char tag[32]; // Extra space for tag
-
+    // The integrity tag is the 16-byte GCM tag produced by AEAD-sealing an
+    // empty plaintext with the Retry Pseudo-Packet as AAD (RFC 9000 §17.2.5.3).
+    char tag[16];
+    char empty = 0;
     int tag_len = retry_aead_encrypt_decrypt(key, nonce, aad, aad_len,
-                                           zeros, 16, tag, true);
+                                           &empty, 0, tag, true);
 
     delete[] aad;
 
-    if (tag_len >= 16) {
-        // Append the tag to the packet
-        memcpy((char*)retry_packet + packet_len, tag, 16);
-        return packet_len + 16;
+    if (tag_len != 16) {
+        return packet_len; // Failed to add tag
     }
 
-    return packet_len; // Failed to add tag
+    memcpy((char*)retry_packet + packet_len, tag, 16);
+    return packet_len + 16;
 }

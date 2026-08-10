@@ -105,11 +105,11 @@ static const char* static_table[][2] = {
     {"x-frame-options", "sameorigin"},
 };
 
-static const size_t static_table_count = sizeof(static_table)/(sizeof(static_table[1])) - 1;
+static const size_t static_table_count = sizeof(static_table)/(sizeof(static_table[0]));
 static std::map<std::string, int> static_map;
 
 static void init_static_map(){
-    for(size_t i=1;i<static_table_count;++i){
+    for(size_t i=0;i<static_table_count;++i){
         if(static_table[i][1])
             static_map[std::string(static_table[i][0])+char(0)+static_table[i][1]] = i;
         else
