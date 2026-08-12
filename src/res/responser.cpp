@@ -4,6 +4,7 @@
 #include "misc/config.h"
 #include "misc/cert_manager.h"
 #include "misc/defer.h"
+#include "misc/net.h"
 #include "hook/hook.h"
 #include "prot/memio.h"
 
@@ -111,7 +112,23 @@ void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw)
     if (!req->valid_method()) {
         return response(rw, HttpResHeader::create(S405, sizeof(S405), id), "[[unsupported method]]\n");
     }
-    if(opt.redirect_http && opt.listen_list && is_http_listen_port(rw->getDst().port) && !req->ismethod("CONNECT")) {
+
+    auto should_redirect_308 = [] (const std::shared_ptr<HttpReqHeader>& req, const std::shared_ptr<MemRWer>& rw) -> bool {
+        if(!opt.redirect_http) {
+            return false;
+        }
+        if(!opt.listen_list || !is_http_listen_port(rw->getDst().port)) {
+            return false;
+        }
+        if(req->ismethod("CONNECT")) {
+            return false;
+        }
+        if(isLocalAddr(rw->getSrc().hostname)) {
+            return false;
+        }
+        return true;
+    };
+    if(should_redirect_308(req, rw)) {
         const struct BindInfo* ssl_info = nullptr;
         for(struct bind_list* n = opt.listen_list; n; n = n->next) {
             if(strcmp(n->info.protocol, "ssl") == 0 && !n->info.sni_mode) {
@@ -129,6 +146,8 @@ void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw)
             return response(rw, resh, reqh.geturl().c_str());
         }
     }
+
+
     strategy stra{Strategy::none, ""};
     std::string backend = getBackend(req);
     if(!backend.empty()){

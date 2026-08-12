@@ -768,3 +768,11 @@ bool isFakeAddress(const struct sockaddr_storage* addr) {
     }
     return false;
 }
+
+bool isLocalAddr(const char* ipstr) {
+    struct sockaddr_storage addr;
+    if(storage_aton(ipstr, 0, &addr) == 0) {
+        return false;
+    }
+    return isLocalIp(&addr);
+}

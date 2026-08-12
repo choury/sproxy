@@ -75,6 +75,7 @@ bool isLoopBack(const struct sockaddr_storage* addr);
 bool isAnyAddress(const struct sockaddr_storage* addr);
 bool isBroadcast(const struct sockaddr_storage* addr);
 bool isFakeAddress(const struct sockaddr_storage* addr);
+bool isLocalAddr(const char* ipstr);
 int tun_create(char *dev, int flags);
 
 
