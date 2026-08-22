@@ -37,10 +37,12 @@
     X(408, "Request Timeout") \
     X(409, "Conflict") \
     X(412, "Precondition Failed") \
+    X(413, "Payload Too Large") \
     X(416, "Requested Range Not Satisfiable") \
     X(423, "Locked") \
     X(424, "Failed Dependency") \
     X(429, "Too Many Requests") \
+    X(431, "Request Header Fields Too Large") \
     X(500, "Internal Server Error") \
     X(502, "Bad Gateway") \
     X(503, "Service Unavailable") \
@@ -129,6 +131,7 @@ public:
     std::string rproxy_name;
     std::vector<std::tuple<std::string, uint32_t>> tracker;
     explicit HttpReqHeader(HeaderMap&& headers);
+    static std::shared_ptr<HttpReqHeader> create(HeaderMap&& headers);
     HttpReqHeader(const HttpReqHeader&) = default;
     bool ismethod(const char* method) const;
     [[nodiscard]] bool http_method() const;

@@ -142,218 +142,214 @@ Qpack::Qpack(std::function<void(Buffer&&)> sender, size_t dynamic_table_size_lim
     }
 }
 
-static int literal_decode_wrapper(const unsigned char* s, size_t len, int prefix, std::string& name){
-    uint64_t value;
-    if(integer_decode(s, len, prefix, &value) == 0){
-        return 0;
-    }
-    name.resize(value * 2);
-    int ret = literal_decode(s, len, prefix, &name[0]);
-    if(ret <= 0){
-        return ret;
-    }
-    name = name.c_str();
-    return ret;
-}
-
-
 int Qpack::push_ins(const void *ins, size_t len) {
-    const uchar* pos = (const uchar*)ins;
-    while(pos < (uchar*)ins + len){
-        if(pos[0] & 0x80){
+    HttpCursor cursor(ins, len);
+    while(cursor.length()){
+        uchar flag = cursor.data()[0];
+        if(flag & 0x80){
             //将一个键值对加入动态表，key是索引，value是字面量
-            bool T = pos[0]&0x40;
-            std::string name, value;
-            uint64_t index;
-            size_t l = integer_decode(pos, (uchar*)ins+len-pos, 6, &index);
-            if(l == 0){
+            auto index = cursor.integer_decode(6);
+            if(!index){
                 return 0;
             }
-            pos += l;
+            std::string name;
+            bool T = flag & 0x40;
             if(T){
-                name = static_table[index][0];
-            }else{
+                if(index >= static_table_count){
+                    LOGE("qpack static table index out of range: %d\n", (int)index.value());
+                    return -1;
+                }
+                name = static_table[index.value()][0];
             }
-            l = literal_decode_wrapper(pos, (uchar*)ins+len-pos, 7, name);
-            if(l <= 0){
-                return (int)l;
-            }
-            pos += l;
-            LOGD(DHPACK, "add %s:%s\n", name.c_str(), value.c_str());
-        }else if(pos[0]&0x40){
-            //将一个键值对加入动态表，key和value都是是字面量
-            std::string name, value;
-            size_t l = literal_decode_wrapper(pos, (uchar*)ins+len-pos, 5, name);
-            if(l <= 0){
-                return (int)l;
-            }
-            pos += l;
-            l = literal_decode_wrapper(pos, (uchar*)ins+len-pos, 7, value);
-            if(l <= 0){
-                return (int)l;
-            }
-            pos += l;
-            LOGD(DHPACK, "add %s:%s\n", name.c_str(), value.c_str());
-        }else if(pos[0]&0x20){
-            //设置动态表大小
-            uint64_t cap;
-            size_t l = integer_decode(pos, (uchar*)ins+len-pos, 5, &cap);
-            if(l == 0){
+            auto value = cursor.literal_decode(7);
+            if(!value){
                 return 0;
             }
-            pos += l;
-            LOGD(DHPACK, "set cap: %d\n", (int)cap);
-            return pos - (const uchar*)ins;
+            LOGD(DHPACK, "add %s:%s\n", name.c_str(), value.value().c_str());
+        }else if(flag & 0x40){
+            //将一个键值对加入动态表，key和value都是字面量
+            auto name = cursor.literal_decode(5);
+            if(!name){
+                return 0;
+            }
+            auto value = cursor.literal_decode(7);
+            if(!value){
+                return 0;
+            }
+            LOGD(DHPACK, "add %s:%s\n", name.value().c_str(), value.value().c_str());
+        }else if(flag & 0x20){
+            //设置动态表大小
+            auto cap = cursor.integer_decode(5);
+            if(!cap){
+                return 0;
+            }
+            LOGD(DHPACK, "set cap: %d\n", (int)cap.value());
+            return len - cursor.length();
         }else{
             //复制动态表中的索引处内容
-            uint64_t index;
-            size_t l = integer_decode(pos, (uchar*)ins+len-pos, 5, &index);
-            if(l == 0){
+            auto index = cursor.integer_decode(5);
+            if(!index){
                 return 0;
             }
-            pos += l;
-            LOGD(DHPACK, "dup index: %d\n", (int)index);
+            LOGD(DHPACK, "dup index: %d\n", (int)index.value());
         }
     }
     return -1;
 }
 
-size_t Qpack_encoder::encode(unsigned char *buf, const std::string& name, const std::string& value) {
-    auto pos = buf;
+//返回0表示空间不足，调用方需要断开连接；模式首字节后的字段由integer_encode/literal_encode整体自检空间
+bool Qpack_encoder::encode(HttpCursor& cursor, const std::string& name, const std::string& value) {
+    if(cursor.empty()){
+        LOGE("qpack encode no space\n");
+        return false;
+    }
     uint32_t id = getid(name, value);
     if(id != UINT32_MAX){
-        *pos = 0xC0; //  indexed field line with static name with T set
-        pos += integer_encode(id, 6, pos);
-        return pos - buf;
+        *cursor.mutable_data() = 0xC0; //  indexed field line with static name with T set
+        if(!cursor.integer_encode(id, 6)){
+            LOGE("qpack encode no space for index\n");
+            return false;
+        }
+        return true;
     }
     id = getid(name);
     if(id != UINT32_MAX) {
-        *pos = 0x50; //  indexed name with static name with T set and N cleared
-        pos += integer_encode(id, 4, pos);
-        *pos = 0x00; //clear Huffman flag
-        pos += integer_encode(value.size(), 7, pos);
-        memcpy(pos, value.data(), value.size());
-        pos += value.size();
-        return pos - buf;
+        *cursor.mutable_data() = 0x50; //  indexed field line with static name with T set and N cleared
+        if(!cursor.integer_encode(id, 4)){
+            LOGE("qpack encode no space for index\n");
+            return false;
+        }
+        //RFC 9204 §4.5.4: value为8-bit前缀字面量，Huffman位为最高位
+        if(!cursor.literal_encode(value.data(), value.size(), 7)){
+            LOGE("qpack literal no space: need %zd, left %zd\n", value.size(), cursor.length());
+            return false;
+        }
+        return true;
     }
-    *pos = 0x20; //  literal field line with literal name and value with N and H cleared
-    pos += integer_encode(name.size(), 3, pos);
-    memcpy(pos, name.data(), name.size());
-    pos += name.size();
-    *pos = 0x00; //clear Huffman flag
-    pos += integer_encode(value.size(), 7, pos);
-    memcpy(pos, value.data(), value.size());
-    pos += value.size();
-    return pos - buf;
+    *cursor.mutable_data() = 0x20; //  literal field line with literal name and value with N cleared
+    //RFC 9204 §4.5.6: name为4-bit前缀字面量，Huffman位(0x08)紧邻3-bit长度前缀上方
+    if(!cursor.literal_encode(name.data(), name.size(), 3)) {
+        LOGE("qpack literal no space: need %zd, left %zd\n", name.size(), cursor.length());
+        return false;
+    }
+    if(!cursor.literal_encode(value.data(), value.size(), 7)){
+        LOGE("qpack literal no space: need %zd, left %zd\n", value.size(), cursor.length());
+        return false;
+    }
+    return true;
 }
 
-size_t Qpack_encoder::PackHttp3Req(std::shared_ptr<const HttpReqHeader> req, void *data, __attribute__ ((unused)) size_t len) {
-    uchar* p = (uchar*)data;
-    p += integer_encode(0, 8, p);
-    *p = 0x00; // clear S bit
-    p += integer_encode(0, 7, p);
+size_t Qpack_encoder::PackHttp3Req(std::shared_ptr<const HttpReqHeader> req, void *data, size_t len) {
+    //两个前缀域各占1字节
+    if(len < 2){
+        return 0;
+    }
+    HttpCursor cursor(data, len);
+    cursor.integer_encode(0, 8);
+    *cursor.mutable_data() = 0x00; // clear S bit
+    cursor.integer_encode(0, 7);
     for(const auto& i : req->Normalize()){
-        p += encode(p, i.first, i.second);
+        if(!encode(cursor, i.first, i.second)){
+            return 0;
+        }
     }
-    return p - (uchar*)data;
+    return len - cursor.length();
 }
 
-size_t Qpack_encoder::PackHttp3Res(std::shared_ptr<const HttpResHeader> res, void *data, __attribute__ ((unused)) size_t len) {
-    uchar* p = (uchar*)data;
-    p += integer_encode(0, 8, p);
-    *p = 0x00; // clear S bit
-    p += integer_encode(0, 7, p);
+size_t Qpack_encoder::PackHttp3Res(std::shared_ptr<const HttpResHeader> res, void *data, size_t len) {
+    //两个前缀域各占1字节
+    if(len < 2){
+        return 0;
+    }
+    HttpCursor cursor(data, len);
+    cursor.integer_encode(0, 8);
+    *cursor.mutable_data() = 0x00; // clear S bit
+    cursor.integer_encode(0, 7);
     for(const auto& i : res->Normalize()){
-        p += encode(p, i.first, i.second);
+        if(!encode(cursor, i.first, i.second)){
+            return 0;
+        }
     }
-    return p - (uchar*)data;
+    return len - cursor.length();
 }
 
 
-HeaderMap Qpack_decoder::decode(const unsigned char *data, size_t len) {
+HeaderMap Qpack_decoder::decode(const HttpCursor& cursor) {
     HeaderMap headers;
-    const uchar* pos = (uchar*)data;
-    uint64_t ric;
-    int l = integer_decode(pos, (uchar*)data+len-pos, 8, &ric);
-    if(l == 0){
+    auto ric = cursor.integer_decode(8);
+    if(!ric){
         return headers;
     }
-    pos += l;
-    uint64_t delta;
     // 最高位是delta的符号位，不过我们不支持动态表，所以没有读
-    l = integer_decode(pos, (uchar*)data+len-pos, 7, &delta);
-    if(l == 0){
+    auto delta = cursor.integer_decode(7);
+    if(!delta){
         return headers;
     }
-    pos += l;
-    while(pos < (uchar*)data + len){
+    while(cursor.length()){
         std::string name, value;
-        if(pos[0] & 0x80){  
+        uchar flag = cursor.data()[0];
+        if(flag & 0x80){
             // 如果以1开头，表示这是一个索引
             // 第2位是T，表示这否是一个静态索引
-            bool T = pos[0] & 0x40; 
-            uint64_t index;
-            l = integer_decode(pos, (uchar*)data+len-pos, 6, &index);
-            if(l == 0){
+            bool T = flag & 0x40;
+            auto index = cursor.integer_decode(6);
+            if(!index){
                 return decltype(headers){};
             }
-            pos += l;
             if(T){
                 if(index >= sizeof(static_table)/ sizeof(static_table[0])) {
                     return decltype(headers){};
                 }
-                name = static_table[index][0];
-                value = static_table[index][1];
-                LOGD(DHPACK, "get qpack %s:[%s] id: %d\n", name.c_str(), value.c_str(), (int)index);
+                name = static_table[index.value()][0];
+                value = static_table[index.value()][1];
+                LOGD(DHPACK, "get qpack %s:[%s] id: %d\n", name.c_str(), value.c_str(), (int)index.value());
             }else{ //当前不支持动态索引，因为我们将MAX_FIELD_SECTION_SIZE设置成了0
                 return decltype(headers){};
             }
             goto append;
-        }else if(pos[0] & 0x40){ 
+        }else if(flag & 0x40){
             // 如果以01开头，表示key是索引，value是字面量
             // 第3位是N，表明该条目是否需要插入动态表
             // 第4位是T，表面该条目是否是静态索引
             //bool N = pos[0] & 0x20;
-            bool T = pos[0] & 0x10;
-            uint64_t index;
-            l = integer_decode(pos, (uchar*)data+len-pos, 4, &index);
-            if(l == 0){
+            bool T = flag & 0x10;
+            auto index = cursor.integer_decode(4);
+            if(!index){
                 return decltype(headers){};
             }
-            pos += l;
             if(T){
                 if(index >= sizeof(static_table)/ sizeof(static_table[0])) {
                     return decltype(headers){};
                 }
-                name = static_table[index][0];
-                LOGD(DHPACK, "get qpack key %s id: %d\n", name.c_str(), (int)index);
+                name = static_table[index.value()][0];
+                LOGD(DHPACK, "get qpack key %s id: %d\n", name.c_str(), (int)index.value());
             }else{
                 return decltype(headers){};
             }
-            l = literal_decode_wrapper(pos, (uchar*)data+len-pos, 7, value);
-            if(l <= 0){
+            auto result = cursor.literal_decode(7);
+            if(!result){
                 return decltype(headers){};
             }
+            value = result.value();
             LOGD(DHPACK, "get qpack literal value %s\n", value.c_str());
-            pos += l;
             goto append;
-        }else if(pos[0] & 0x20){
+        }else if(flag & 0x20){
             //如果以001开头，表示key和value都是字面量
             //第4位是N，表明该条目是否需要插入动态表
             //bool N = pos[0]&0x10;
-            l = literal_decode_wrapper(pos, (uchar*)data+len-pos, 3, name);
-            if(l <= 0){
+            auto nameopt = cursor.literal_decode(3);
+            if(!nameopt){
                 return decltype(headers){};
             }
-            pos += l;
-            l = literal_decode_wrapper(pos, (uchar*)data+len-pos, 7, value);
-            if(l <= 0){
+            auto valueopt = cursor.literal_decode(7);
+            if(!valueopt){
                 return decltype(headers){};
             }
+            name = nameopt.value();
+            value = valueopt.value();
             LOGD(DHPACK, "get qpack literal %s:[%s]\n", name.c_str(), value.c_str());
-            pos += l;
             goto append;
-        }else if(pos[0] & 0x10){
+        }else if(flag & 0x10){
             //如果以0001开头，表示是一个基于base位置的动态表索引，暂时不支持
             return decltype(headers){};
         }else{
@@ -361,17 +357,14 @@ HeaderMap Qpack_decoder::decode(const unsigned char *data, size_t len) {
             //第5位是N，表明该条目是否需要插入动态表
             //当前也不支持
             //bool N = pos[0]&0x80;
-            uint64_t index;
-            l = integer_decode(pos, (uchar*)data+len-pos, 3, &index);
-            if(l == 0){
+            auto index = cursor.integer_decode(3);
+            if(!index){
                 return decltype(headers){};
             }
-            pos += l;
-            l = literal_decode_wrapper(pos, (uchar*)data+len-pos, 7, value);
-            if(l <= 0){
+            auto valueopt = cursor.literal_decode(7);
+            if(!valueopt){
                 return decltype(headers){};
             }
-            pos += l;
             return decltype(headers){};
         }
 append:
@@ -381,7 +374,7 @@ append:
 }
 
 std::shared_ptr<HttpResHeader> Qpack_decoder::UnpackHttp3Res(const void *data, size_t len) {
-    auto headers = decode((const uchar*)data, len);
+    auto headers = decode(HttpCursor{data, len});
     if(headers.empty()) {
         return nullptr;
     }
@@ -389,8 +382,13 @@ std::shared_ptr<HttpResHeader> Qpack_decoder::UnpackHttp3Res(const void *data, s
 }
 
 std::shared_ptr<HttpReqHeader> Qpack_decoder::UnpackHttp3Req(const void *data, size_t len) {
-    auto headers = decode((const uchar*)data, len);
+    auto headers = decode(HttpCursor{data, len});
     if(headers.empty()) {
+        return nullptr;
+    }
+    if(headers.count("transfer-encoding")) {
+        //RFC 9114 禁止h3请求携带transfer-encoding，且转发h1时会造成走私
+        LOGE("wrong frame http request, transfer-encoding in h3\n");
         return nullptr;
     }
     if(headers.count(":path")) {
@@ -400,5 +398,5 @@ std::shared_ptr<HttpReqHeader> Qpack_decoder::UnpackHttp3Req(const void *data, s
             return nullptr;
         }
     }
-    return std::make_shared<HttpReqHeader>(std::move(headers));
+    return HttpReqHeader::create(std::move(headers));
 }

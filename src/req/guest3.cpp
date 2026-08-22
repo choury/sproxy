@@ -25,6 +25,13 @@ void Guest3::init() {
             }
             LOGD(DHTTP3, "<guest3> [%" PRIu64 "]: end of stream\n", bb.id);
             ReqStatus& status = statusmap[bb.id];
+            if(status.expect_len >= 0 && status.recv_len != (uint64_t)status.expect_len){
+                //RFC 9114 §4.1.2:FIN时流内数据总长不等于content-length即malformed，流错误
+                LOGE("[%" PRIu64 "]: <guest3> body less than content-length: %" PRIu64 "/%" PRId64 "\n",
+                     status.req->request_id, status.recv_len, status.expect_len);
+                status.cleanJob = AddJob(([this, id = bb.id]{Clean(id, HTTP3_ERR_MESSAGE_ERROR);}), 0, 0);
+                return 0;
+            }
             status.rw->push_data(Buffer{nullptr, bb.id});
             status.flags |= HTTP_REQ_COMPLETED;
             if(status.flags & HTTP_RES_COMPLETED) {
@@ -96,10 +103,9 @@ Guest3::Guest3(std::shared_ptr<QuicMer> rwer): Requester(rwer) {
 Guest3::~Guest3() {
 }
 
-void Guest3::AddInitData(const void *buff, size_t len) {
+void Guest3::AddInitData(Buffer&& buff) {
     auto qrwer = std::dynamic_pointer_cast<QuicBase>(rwer);
-    iovec iov{(void*)buff, len};
-    qrwer->walkPackets(&iov, 1);
+    qrwer->walkPackets(std::move(buff));
 }
 
 void Guest3::Error(int ret, int code){
@@ -163,6 +169,12 @@ void Guest3::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
         _cb,
     };
     ReqStatus& status = statusmap[id];
+    if(!header->ismethod("CONNECT") && strcmp(header->Dest.protocol, "websocket") != 0){
+        if(const char* cl = header->get("Content-Length")){
+            //RFC 9114 §4.1.2:content-length必须等于流内数据总长，入口处记录，Data/fin强制
+            status.expect_len = strtoull(cl, nullptr, 10);
+        }
+    }
     distribute(status.req, status.rw);
 }
 
@@ -183,12 +195,23 @@ ssize_t Guest3::DataProc(Buffer& bb) {
                  status.req->request_id, bb.id, status.req->geturl().c_str());
             return -1;
         }
-        if(cap < bb.len){
+        size_t to_push = std::min(bb.len, cap);
+        if(status.expect_len >= 0 && status.recv_len + to_push > (uint64_t)status.expect_len){
+            //RFC 9114 §4.1.2:流内数据总长超出content-length即malformed，超发字节绝不转发(防走私)
+            LOGE("[%" PRIu64 "]: <guest3> body exceeds content-length: %" PRIu64 " + %zu > %" PRId64 "\n",
+                 status.req->request_id, status.recv_len, to_push, status.expect_len);
+            status.cleanJob = AddJob(([this, id = bb.id]{Clean(id, HTTP3_ERR_MESSAGE_ERROR);}), 0, 0);
+            size_t len = bb.len;
+            bb.len = 0;
+            return (ssize_t)len;
+        }
+        status.recv_len += to_push;
+        if(to_push < bb.len){
             Buffer cbb = bb;
-            cbb.truncate(cap);
+            cbb.truncate(to_push);
             status.rw->push_data(std::move(cbb));
-            bb.reserve((int)cap);
-            return (ssize_t)cap;
+            bb.reserve((int)to_push);
+            return (ssize_t)to_push;
         }
         size_t len = bb.len;
         status.rw->push_data(std::move(bb));
@@ -231,10 +254,16 @@ std::shared_ptr<IMemRWerCallback> Guest3::response(uint64_t id) {
 
         Block buff(BUF_LEN);
         size_t len = qpack_encoder.PackHttp3Res(res, buff.data(), BUF_LEN);
+        if(len == 0){
+            LOGE("http3 response header too long: %" PRIu64 "\n", res->request_id);
+            deleteLater(PROTOCOL_ERR);
+            return;
+        }
         size_t pre = variable_encode_len(HTTP3_STREAM_HEADERS) + variable_encode_len(len);
         char *p = (char *) buff.reserve(-pre);
-        p += variable_encode(p, HTTP3_STREAM_HEADERS);
-        p += variable_encode(p, len);
+        QuicCursor c(p, pre);
+        c.variable_encode(HTTP3_STREAM_HEADERS);
+        c.variable_encode(len);
         SendData({std::move(buff), len + pre, id});
     })->onData([this, id](Buffer&& bb) -> size_t {
         bb.id = id;

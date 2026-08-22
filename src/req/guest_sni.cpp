@@ -133,7 +133,7 @@ size_t Guest_sni::sniffer(Buffer&& bb) {
 }
 
 size_t Guest_sni::sniffer_quic(Buffer&& bb) {
-    auto len = bb.len;
+    const size_t len = bb.len;
     char* hostname = nullptr;
     defer([](char** ptr){free(*ptr);}, &hostname);
 
@@ -143,13 +143,17 @@ size_t Guest_sni::sniffer_quic(Buffer&& bb) {
     int ret;
 #ifdef HAVE_QUIC
     quic_init_packets.emplace_back(bb);
-    for (const auto& bb: quic_init_packets) {
+    for (const auto& ib: quic_init_packets) {
         quic_pkt_header header;
-        int body_len = unpack_meta(bb.data(), len, &header);
-        if (body_len < 0 || body_len > (int)len) {
-            LOGE("[%s] QUIC sni meta unpack failed, body_len: %d, bufflen: %d\n", dumpDest(rwer->getSrc()).c_str(), body_len, (int)len);
+        //队列中的初始包会被后续嗅探重扫：decode_packet内mutable_data检测到共享
+        //会自动COW拷贝再解密，原始密文不受影响，无需手动复制
+        QuicCursor pkt((const unsigned char*)ib.data(), ib.len);
+        auto meta = unpack_meta(pkt, 0);
+        if (!meta) {
+            LOGE("[%s] QUIC sni meta unpack failed, bufflen: %zd\n", dumpDest(rwer->getSrc()).c_str(), ib.len);
             goto Forward;
         }
+        static_cast<quic_meta&>(header) = std::move(*meta);
         if(header.type != QUIC_PACKET_INITIAL) {
             LOGE("[%s] QUIC sni packet type is not initial: 0x%x\n", dumpDest(rwer->getSrc()).c_str(), header.type);
             goto Forward;
@@ -159,23 +163,26 @@ size_t Guest_sni::sniffer_quic(Buffer&& bb) {
             LOGE("[%s] Quic sni faild to generate initial key\n", dumpDest(rwer->getSrc()).c_str());
             goto Forward;
         }
-        auto frames = decode_packet(bb.data(), body_len, &header, &secret);
+        std::deque<quic_frame> frames;
+        if(decode_packet(Buffer(ib), &header, &secret, &frames) != quic_decode_status::ok){
+            LOGE("[%s] Quic sni decode packet failed\n", dumpDest(rwer->getSrc()).c_str());
+            goto Forward;
+        }
         for(const auto& frame: frames) {
-            defer(frame_release, frame);
-            if(frame->type != QUIC_FRAME_CRYPTO){
+            if(frame.type != QUIC_FRAME_CRYPTO){
                 continue;
             }
-            LOGD(DQUIC, "sni get crypto %zd - %zd\n", (size_t)frame->crypto.offset,
-                (size_t)frame->crypto.offset + (size_t)frame->crypto.length);
-            if(frame->crypto.length + frame->crypto.offset > (size_t)BUF_LEN) {
+            LOGD(DQUIC, "sni get crypto %zd - %zd\n", (size_t)frame.crypto.offset,
+                (size_t)frame.crypto.offset + (size_t)frame.crypto.length);
+            if(frame.crypto.length + frame.crypto.offset > (size_t)BUF_LEN) {
                 LOGE("[%s] Quic sni get crypto overflow bufflen: %zd\n", dumpDest(rwer->getSrc()).c_str(),
-                    (size_t)frame->crypto.length + (size_t)frame->crypto.offset);
+                    (size_t)frame.crypto.length + (size_t)frame.crypto.offset);
                 goto Forward;
             }
-            length += frame->crypto.length;
-            memcpy(buffer.get() + frame->crypto.offset, frame->crypto.buffer->data(), frame->crypto.length);
-            if(frame->crypto.offset + frame->crypto.length > max_off) {
-                max_off = frame->crypto.offset + frame->crypto.length;
+            length += frame.crypto.length;
+            memcpy(buffer.get() + frame.crypto.offset, frame.crypto.buffer->data(), frame.crypto.length);
+            if(frame.crypto.offset + frame.crypto.length > max_off) {
+                max_off = frame.crypto.offset + frame.crypto.length;
             }
         }
     }

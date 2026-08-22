@@ -18,10 +18,12 @@ class Guest3: public Requester, public Http3Responser {
         std::shared_ptr<HttpReqHeader>    req;
         std::shared_ptr<MemRWer>          rw;
         std::shared_ptr<IMemRWerCallback> cb;
+        int64_t  expect_len = -1; //请求声明的content-length，-1表示未声明，按RFC 9114 §4.1.2校验
+        uint64_t recv_len = 0;    //已收到的流内数据总长
         uint32_t flags = 0;
         Job      cleanJob = nullptr;
         void reflect(IVisitor& v) {
-            reflect_all(req, rw, flags);
+            reflect_all(req, rw, expect_len, recv_len, flags);
         }
     };
 
@@ -54,7 +56,8 @@ public:
     explicit Guest3(std::shared_ptr<QuicMer> rwer);
     virtual ~Guest3() override;
 
-    void AddInitData(const void* buff, size_t len);
+    //AddInitData经由walkPacket原地解密：独占时零拷贝，共享时COW自动分裂
+    void AddInitData(Buffer&& buff);
 
     virtual void dump_stat(Dumper dp, void* param) override;
     virtual void dump_usage(Dumper dp, void* param) override;

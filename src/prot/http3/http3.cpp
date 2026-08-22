@@ -62,50 +62,51 @@ size_t Http3Base::Http3_Proc(Buffer& bb) {
         if(bb.len == 0){
             return 0;
         }
-        size_t type_len = variable_decode_len(bb.data());
-        if(type_len >= bb.len){
+        QuicCursor fc(bb.data(), bb.len);
+        auto stream = fc.variable_decode();
+        if(!stream){
             return 0;
         }
-        uint64_t stream, length;
-        variable_decode(bb.data(), &stream);
-        const char* pos = (const char*)bb.data() + type_len;
-        size_t len_len = variable_decode_len(pos);
-        if(type_len + len_len > bb.len){
+        auto length = fc.variable_decode();
+        if(!length || length.value() > fc.length()){
             return 0;
         }
-        variable_decode(pos, &length);
-        if(length > bb.len - type_len - len_len){
-            return 0;
-        }
-        bb.reserve((int)(type_len + len_len));
-        switch(stream){
+        size_t header_len = bb.len - fc.length();
+        bb.reserve((int)header_len);
+        switch(stream.value()){
         case HTTP3_STREAM_SETTINGS:
-            LOGD(DHTTP3, "Get a settings frame: length: %" PRIu64 "\n", length);
-            SettingsProc((const uchar*)bb.data(), length);
+            LOGD(DHTTP3, "Get a settings frame: length: %" PRIu64 "\n", length.value());
+            SettingsProc((const uchar*)bb.data(), length.value());
             break;
         case HTTP3_STREAM_GOAWAY:{
-            LOGD(DHTTP3, "Get a goaway frame: length: %" PRIu64 "\n", length);
-            uint64_t lastid;
-            variable_decode(bb.data(), &lastid);
+            LOGD(DHTTP3, "Get a goaway frame: length: %" PRIu64 "\n", length.value());
+            //last stream id是varint，必须限制在帧长内解析，空帧/截断帧直接报错
+            QuicCursor c(bb.data(), length.value());
+            auto lastid = c.variable_decode();
+            if(!lastid){
+                LOGE("http3 goaway frame without last stream id\n");
+                ErrProc(HTTP3_ERR_FRAME_ERROR);
+                return 0;
+            }
             http3_flag |= HTTP3_FLAG_GOAWAYED;
-            GoawayProc(lastid);
+            GoawayProc(lastid.value());
             break;
         }
         case HTTP3_STREAM_DATA:
         case HTTP3_STREAM_HEADERS:
         case HTTP3_STREAM_PUSH_PROMISE:
-            LOGE("http3 unexpected frame for control: type 0x%" PRIx64 ", length:%zd\n", stream, (size_t)length);
+            LOGE("http3 unexpected frame for control: type 0x%" PRIx64 ", length:%zd\n", stream.value(), (size_t)length.value());
             ErrProc(HTTP3_ERR_FRAME_UNEXPECTED);
             return 0;
         default:
-            if((stream - 0x21) % 0x1f == 0){
-                LOGD(DHTTP3, "reserved stream type: 0x%" PRIx64 ", length:%zd\n", stream, (size_t)length);
+            if((stream.value() - 0x21) % 0x1f == 0){
+                LOGD(DHTTP3, "reserved stream type: 0x%" PRIx64 ", length:%zd\n", stream.value(), (size_t)length.value());
             }else{
-                LOGD(DHTTP3, "doesn't support stream type: %" PRIx64 "\n", stream);
+                LOGD(DHTTP3, "doesn't support stream type: %" PRIx64 "\n", stream.value());
             }
             break;
         }
-        bb.reserve((int)length);
+        bb.reserve((int)length.value());
     }else if(qpackeid_remote && bb.id == qpackeid_remote){
         int ret = Qpack_encoder::push_ins(bb.data(), bb.len);
         if(ret < 0){
@@ -139,28 +140,25 @@ size_t Http3Base::Http3_Proc(Buffer& bb) {
         if(bb.len == 0){
             return 0;
         }
-        size_t type_len = variable_decode_len(bb.data());
-        if(type_len >= bb.len){
+        QuicCursor fc(bb.data(), bb.len);
+        auto stream = fc.variable_decode();
+        if(!stream){
             LOGD(DHTTP3, "not enough to get stream type: %zd\n", bb.len);
             return 0;
         }
-        uint64_t stream, length;
-        variable_decode(bb.data(), &stream);
-        const char* pos = (const char*)bb.data() + type_len;
-        size_t len_len = variable_decode_len(pos);
-        if(type_len + len_len > bb.len){
-            LOGD(DHTTP3, "not enough to get frame [%" PRIu64"] len: %zd\n", stream, bb.len);
+        auto length = fc.variable_decode();
+        if(!length){
+            LOGD(DHTTP3, "not enough to get frame [%" PRIu64"] len: %zd\n", stream.value(), bb.len);
             return 0;
         }
-        variable_decode(pos, &length);
-        size_t header_len = type_len + len_len;
-        if(stream == HTTP3_STREAM_DATA){
-            LOGD(DHTTP3, "Get a data frame: %" PRIu64 ", length: %" PRIu64 "\n", bb.id, length);
+        size_t header_len = bb.len - fc.length();
+        if(stream.value() == HTTP3_STREAM_DATA){
+            LOGD(DHTTP3, "Get a data frame: %" PRIu64 ", length: %" PRIu64 "\n", bb.id, length.value());
             bb.reserve((int)header_len);
-            if(length == 0){
+            if(length.value() == 0){
                 return len - bb.len;
             }
-            data_remain[bb.id] = length;
+            data_remain[bb.id] = length.value();
             auto it2 = data_remain.find(bb.id);
             ssize_t ret = consume_data(it2->second);
             if(ret < 0){
@@ -174,40 +172,41 @@ size_t Http3Base::Http3_Proc(Buffer& bb) {
             }
             return len - bb.len;
         }
-        if(length > bb.len - header_len){
+        if(length.value() > bb.len - header_len){
             return 0;
         }
         bb.reserve((int)header_len);
-        switch(stream){
+        switch(stream.value()){
         case HTTP3_STREAM_HEADERS:
-            LOGD(DHTTP3, "Get a header frame: %" PRIu64 ", length: %" PRIu64 "\n", bb.id, length);
-            HeadersProc(bb.id, (const uchar*)bb.data(), length);
+            LOGD(DHTTP3, "Get a header frame: %" PRIu64 ", length: %" PRIu64 "\n", bb.id, length.value());
+            HeadersProc(bb.id, (const uchar*)bb.data(), length.value());
             break;
         case HTTP3_STREAM_CANCEL_PUSH:
         case HTTP3_STREAM_MAX_PUSH_ID:
         case HTTP3_STREAM_GOAWAY:
-            LOGE("http3 unexpected frame for data: type 0x%x\n", (int)stream);
+            LOGE("http3 unexpected frame for data: type 0x%x\n", (int)stream.value());
             ErrProc(HTTP3_ERR_FRAME_UNEXPECTED);
             return 0;
         default:
-            if((stream - 0x21) % 0x1f == 0){
-                LOGD(DHTTP3, "reserved stream type: 0x%" PRIx64 ", length:%zd\n", stream, (size_t)length);
+            if((stream.value() - 0x21) % 0x1f == 0){
+                LOGD(DHTTP3, "reserved stream type: 0x%" PRIx64 ", length:%zd\n", stream.value(), (size_t)length.value());
             }else{
-                LOGD(DHTTP3, "doesn't support stream type: %" PRIx64 "\n", stream);
+                LOGD(DHTTP3, "doesn't support stream type: %" PRIx64 "\n", stream.value());
             }
             break;
         }
-        bb.reserve((int)length);
+        bb.reserve((int)length.value());
     } else {
-        uint64_t type;
         if(bb.len == 0){
             return 0;
         }
-        if(variable_decode_len(bb.data()) > bb.len){
+        QuicCursor c(bb.data(), bb.len);
+        auto type = c.variable_decode();
+        if(!type){
             return 0;
         }
-        bb.reserve(variable_decode(bb.data(), &type));
-        switch(type){
+        bb.reserve((int)(bb.len - c.length()));
+        switch(type.value()){
         case HTTP3_STREAM_TYPE_CONTROL:
             ctrlid_remote = bb.id;
             LOGD(DHTTP3, "Get control stream id: %" PRIu64 "\n", bb.id);
@@ -221,11 +220,11 @@ size_t Http3Base::Http3_Proc(Buffer& bb) {
             LOGD(DHTTP3, "Get qpack decode stream id: %" PRIu64 "\n", bb.id);
             break;
         default:
-            if((type - 0x21) % 0x1f == 0){
-                LOGD(DHTTP3, "reserved stream type: %" PRIu64 "\n", type);
+            if((type.value() - 0x21) % 0x1f == 0){
+                LOGD(DHTTP3, "reserved stream type: %" PRIu64 "\n", type.value());
                 bb.reserve(bb.len);
             }else{
-                LOGD(DHTTP3, "doesn't support stream type: %" PRIu64 "\n", type);
+                LOGD(DHTTP3, "doesn't support stream type: %" PRIu64 "\n", type.value());
                 ErrProc(HTTP3_ERR_STREAM_CREATION_ERROR);
                 return 0;
             }
@@ -244,16 +243,16 @@ void Http3Base::Datagram_Proc(Buffer&& bb) {
     }
 
     // Parse Quarter Stream ID
-    uint64_t quarter_stream_id;
-    if(variable_decode_len(bb.data()) > bb.len) {
+    QuicCursor c(bb.data(), bb.len);
+    auto quarter_stream_id = c.variable_decode();
+    if(!quarter_stream_id) {
         LOGE("Invalid HTTP Datagram: insufficient data for Quarter Stream ID\n");
         ErrProc(HTTP3_ERR_DATAGRAM_ERROR);
         return;
     }
 
-    size_t decoded_len = variable_decode(bb.data(), &quarter_stream_id);
-    bb.reserve(decoded_len);
-    bb.id = quarter_stream_id * 4;
+    bb.reserve((int)(bb.len - c.length()));
+    bb.id = quarter_stream_id.value() * 4;
     LOGD(DHTTP3, "Get a datagram frame: %" PRIu64 ", length: %zd\n", bb.id, bb.len);
     DatagramProc(std::move(bb));
 }
@@ -265,73 +264,77 @@ void Http3Base::Init() {
     qpackdid_local = CreateUbiStream();
 
     Block buff(BUF_LEN);
-    char* pos = (char*)buff.data();
-    pos += variable_encode(pos, HTTP3_SETTING_QPACK_MAX_TABLE_CAPACITY);
-    pos += variable_encode(pos, 0);
-    pos += variable_encode(pos, HTTP3_SETTING_MAX_FIELD_SECTION_SIZE);
-    pos += variable_encode(pos, BUF_LEN);
-    pos += variable_encode(pos, HTTP3_SETTING_ENABLE_CONNECT_PROTOCOL);
-    pos += variable_encode(pos, 1);
-    pos += variable_encode(pos, HTTP3_SETTING_H3_DATAGRAM);
-    pos += variable_encode(pos, 1);
-    size_t len = pos - (char*)buff.data();
-    pos = (char*)buff.reserve(-3); // type + id + length
-    pos += variable_encode(pos, HTTP3_STREAM_TYPE_CONTROL);
-    pos += variable_encode(pos, HTTP3_STREAM_SETTINGS);
-    pos += variable_encode(pos, len);
+    QuicCursor c(buff.data(), BUF_LEN);
+    c.variable_encode(HTTP3_SETTING_QPACK_MAX_TABLE_CAPACITY);
+    c.variable_encode(0);
+    c.variable_encode(HTTP3_SETTING_MAX_FIELD_SECTION_SIZE);
+    c.variable_encode(BUF_LEN);
+    c.variable_encode(HTTP3_SETTING_ENABLE_CONNECT_PROTOCOL);
+    c.variable_encode(1);
+    c.variable_encode(HTTP3_SETTING_H3_DATAGRAM);
+    c.variable_encode(1);
+    size_t len = BUF_LEN - c.length();
+    char* pos = (char*)buff.reserve(-3); // type + id + length
+    QuicCursor fc(pos, 3);
+    fc.variable_encode(HTTP3_STREAM_TYPE_CONTROL);
+    fc.variable_encode(HTTP3_STREAM_SETTINGS);
+    fc.variable_encode(len);
     SendData({std::move(buff), len+3, ctrlid_local});
 
     Block buff1(variable_encode_len(HTTP3_STREAM_TYPE_QPACK_ENCODE));
-    pos = (char*)buff1.data();
-    pos += variable_encode(pos, HTTP3_STREAM_TYPE_QPACK_ENCODE);
-    len = pos - (char*)buff1.data();
-    SendData({std::move(buff1), len, qpackeid_local});
+    QuicCursor c1(buff1.data(), variable_encode_len(HTTP3_STREAM_TYPE_QPACK_ENCODE));
+    c1.variable_encode(HTTP3_STREAM_TYPE_QPACK_ENCODE);
+    SendData({std::move(buff1), variable_encode_len(HTTP3_STREAM_TYPE_QPACK_ENCODE) - c1.length(), qpackeid_local});
 
     Block buff2(variable_encode_len(HTTP3_STREAM_TYPE_QPACK_DECODE));
-    pos = (char*)buff2.data();
-    pos += variable_encode(pos, HTTP3_STREAM_TYPE_QPACK_DECODE);
-    len = pos - (char*)buff2.data();
-    SendData({std::move(buff2), len, qpackdid_local});
+    QuicCursor c2(buff2.data(), variable_encode_len(HTTP3_STREAM_TYPE_QPACK_DECODE));
+    c2.variable_encode(HTTP3_STREAM_TYPE_QPACK_DECODE);
+    SendData({std::move(buff2), variable_encode_len(HTTP3_STREAM_TYPE_QPACK_DECODE) - c2.length(), qpackdid_local});
     http3_flag |= HTTP3_FLAG_INITED;
 }
 
 
 void Http3Base::SettingsProc(const uchar* header, size_t len) {
-    const uchar* pos = header;
-    while(pos - header < (int)len){
-        uint64_t id, value;
-        pos += variable_decode(pos, &id);
-        pos += variable_decode(pos, &value);
-        switch(id){
+    QuicCursor c(header, len);
+    while(c.length()){
+        auto id = c.variable_decode();
+        auto value = c.variable_decode();
+        if(!id || !value){
+            //SETTINGS内容里的varint越过帧尾属于畸形帧(RFC 9114 §7.2.4)
+            LOGE("http3 settings varint truncated\n");
+            ErrProc(HTTP3_ERR_FRAME_ERROR);
+            return;
+        }
+        switch(id.value()){
         case HTTP3_SETTING_MAX_FIELD_SECTION_SIZE:
-            LOGD(DHTTP3, "Get max_filed_section_size: %" PRIu64"\n", value);
+            LOGD(DHTTP3, "Get max_filed_section_size: %" PRIu64"\n", value.value());
             break;
         case HTTP3_SETTING_QPACK_MAX_TABLE_CAPACITY:
-            LOGD(DHTTP3, "Get qpack_max_table_capacity: %" PRIu64"\n", value);
+            LOGD(DHTTP3, "Get qpack_max_table_capacity: %" PRIu64"\n", value.value());
             break;
         case HTTP3_SETTING_QPACK_BLOCKED_STREAMS:
-            LOGD(DHTTP3, "Get qpack_blocked_streams: %" PRIu64"\n", value);
+            LOGD(DHTTP3, "Get qpack_blocked_streams: %" PRIu64"\n", value.value());
             break;
         case HTTP3_SETTING_ENABLE_CONNECT_PROTOCOL:
             LOGD(DHTTP3, "Get enable_connect_protocol\n");
-            if(value == 1) {
+            if(value.value() == 1) {
                 http3_flag |= HTTP3_FLAG_ENABLE_PROTOCOL;
             }
             break;
         case HTTP3_SETTING_H3_DATAGRAM:
-            LOGD(DHTTP3, "Get h3_datagram: %" PRIu64"\n", value);
-            if(value == 1) {
+            LOGD(DHTTP3, "Get h3_datagram: %" PRIu64"\n", value.value());
+            if(value.value() == 1) {
                 http3_flag |= HTTP3_FLAG_H3_DATAGRAM;
             }
             break;
         default:
-            if(((id - 0x21) % 0x1f) == 0){
-                LOGD(DHTTP3, "Get reserved settings: 0x%" PRIx64"\n", id);
-            }else if(id < HTTP3_SETTING_MAX_FIELD_SECTION_SIZE){
+            if(((id.value() - 0x21) % 0x1f) == 0){
+                LOGD(DHTTP3, "Get reserved settings: 0x%" PRIu64"\n", id.value());
+            }else if(id.value() < HTTP3_SETTING_MAX_FIELD_SECTION_SIZE){
                 ErrProc(HTTP3_ERR_SETTINGS_ERROR);
                 return;
             }else{
-                LOGD(DHTTP3, "Get unknown settings: 0x%" PRIx64 " = %" PRIu64"\n", id, value);
+                LOGD(DHTTP3, "Get unknown settings: 0x%" PRIu64 " = %" PRIu64"\n", id.value(), value.value());
             }
             break;
         }
@@ -349,27 +352,27 @@ void Http3Base::Goaway(uint64_t lastid){
         return;
     }
     Block buff(1 + 1 + 8); // enough for goway frame
-    char* pos = (char*)buff.data();
-    pos += variable_encode(pos, HTTP3_STREAM_GOAWAY);
-    pos += variable_encode(pos, variable_encode_len(lastid));
-    pos += variable_encode(pos , lastid);
-    size_t len  = pos - (char*)buff.data();
-    SendData({std::move(buff), len, ctrlid_local});
+    QuicCursor c(buff.data(), 1 + 1 + 8);
+    c.variable_encode(HTTP3_STREAM_GOAWAY);
+    c.variable_encode(variable_encode_len(lastid));
+    c.variable_encode(lastid);
+    SendData({std::move(buff), (1 + 1 + 8) - c.length(), ctrlid_local});
 }
 
 void Http3Base::PushData(Buffer&& bb) {
     if(bb.refs() == 1 || bb.len == 0) {
         size_t size = bb.len;
-        bb.reserve(-(1 + (int) variable_encode_len(size)));
-        char *pos = (char *) bb.mutable_data();
-        pos += variable_encode(pos, HTTP3_STREAM_DATA);
-        pos += variable_encode(pos, size);
+        size_t pre = 1 + variable_encode_len(size);
+        bb.reserve(-(int)pre);
+        QuicCursor c(bb.mutable_data(), pre);
+        c.variable_encode(HTTP3_STREAM_DATA);
+        c.variable_encode(size);
     } else {
         size_t size = 1 + variable_encode_len(bb.len);
         Block buff(size);
-        char* pos = (char*)buff.data();
-        pos += variable_encode(pos, HTTP3_STREAM_DATA);
-        pos += variable_encode(pos, bb.len);
+        QuicCursor c(buff.data(), size);
+        c.variable_encode(HTTP3_STREAM_DATA);
+        c.variable_encode(bb.len);
         SendData({std::move(buff), size, bb.id});
     }
     SendData(std::move(bb));
@@ -389,8 +392,9 @@ void Http3Base::PushDatagram(Buffer&& bb) {
 
     size_t quarter_len = variable_encode_len(quarter_stream_id);
     // Prepend Quarter Stream ID to payload
-    bb.reserve(-quarter_len);
-    variable_encode((char*)bb.mutable_data(), quarter_stream_id);
+    bb.reserve(-(int)quarter_len);
+    QuicCursor c(bb.mutable_data(), quarter_len);
+    c.variable_encode(quarter_stream_id);
     SendDatagram(std::move(bb));
 }
 

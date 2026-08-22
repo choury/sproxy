@@ -27,7 +27,7 @@ static int get_packet_namespace(OSSL_ENCRYPTION_LEVEL level){
 
 
 QuicQos::QuicQos(bool isServer, const send_func& sent,
-           std::function<void(pn_namespace*, quic_frame*)> resendFrames):
+           std::function<void(pn_namespace*, quic_frame)> resendFrames):
             isServer(isServer), resendFrames(std::move(resendFrames)){
     pns[QUIC_PACKET_NAMESPACE_INITIAL] = new pn_namespace('I', [sent](auto&& v1, auto&& v2, auto&& v3, auto&& v4){
         return sent(ssl_encryption_initial, v1, v2, v3, v4);
@@ -113,7 +113,7 @@ void QuicQos::OnLossDetectionTimeout(pn_namespace* ns){
              ns->name, (now - ns->time_of_last_ack_eliciting_packet) / 1000.0, pto_count);
         pto_count++;
         pto_timeouts++;
-        FrontFrame(ns, new quic_frame{QUIC_FRAME_PING, {}});
+        FrontFrame(ns, quic_frame{QUIC_FRAME_PING});
         packet_tx = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, 0);
     }
     SetLossDetectionTimer();
@@ -238,7 +238,7 @@ void QuicQos::sendPacket(bool force) {
     }
 }
 
-std::set<uint64_t> QuicQos::handleFrame(OSSL_ENCRYPTION_LEVEL level, uint64_t number, const quic_frame *frame) {
+std::set<uint64_t> QuicQos::handleFrame(OSSL_ENCRYPTION_LEVEL level, uint64_t number, const quic_frame& frame) {
     pn_namespace* ns = this->GetNamespace(level);
     dumpFrame(">", ns->name, frame);
     if(!ns->hasKey){
@@ -254,9 +254,9 @@ std::set<uint64_t> QuicQos::handleFrame(OSSL_ENCRYPTION_LEVEL level, uint64_t nu
     // even if none of the packets in the datagram are successfully processed.
     // In such a case, the PTO timer will need to be rearmed.
     std::set<uint64_t> streamIds;
-    if(frame->type == QUIC_FRAME_ACK || frame->type == QUIC_FRAME_ACK_ECN){
+    if(frame.type == QUIC_FRAME_ACK || frame.type == QUIC_FRAME_ACK_ECN){
         last_receipt_ack_time = getutime();
-        auto acked = ns->DetectAndRemoveAckedPackets(&frame->ack, &rtt, his_max_ack_delay * 1000);
+        auto acked = ns->DetectAndRemoveAckedPackets(&frame.ack, &rtt, his_max_ack_delay * 1000);
         if(acked.empty()){
             return {};
         }
@@ -264,10 +264,10 @@ std::set<uint64_t> QuicQos::handleFrame(OSSL_ENCRYPTION_LEVEL level, uint64_t nu
             streamIds.insert(meta.streamIds.begin(), meta.streamIds.end());
         }
 
-        if(frame->type == QUIC_FRAME_ACK_ECN && frame->ack.ecn_ce > ns->ecn_ce_counters) {
+        if(frame.type == QUIC_FRAME_ACK_ECN && frame.ack.ecn_ce > ns->ecn_ce_counters) {
             // If the ECN-CE counter reported by the peer has increased,
             // this could be a new congestion event.
-            ns->ecn_ce_counters = frame->ack.ecn_ce;
+            ns->ecn_ce_counters = frame.ack.ecn_ce;
             uint64_t sent_time = acked.back().sent_time;
             OnCongestionEvent(sent_time);
         }
@@ -302,8 +302,8 @@ void QuicQos::HandleRetry() {
 
     for(auto& packet: ns->sent_packets){
         assert(!packet.frames.empty());
-        for(auto frame: packet.frames){
-            PushFrame(ns, frame);
+        for(auto& frame: packet.frames){
+            PushFrame(ns, std::move(frame));
         }
     }
     ns->sent_packets.clear();
@@ -325,26 +325,26 @@ void QuicQos::maySend(bool acked) {
     }
 }
 
-void QuicQos::PushFrame(pn_namespace* ns, quic_frame *frame) {
+void QuicQos::PushFrame(pn_namespace* ns, quic_frame frame) {
     if(has_drain_all) {
         dumpFrame("<", 'X', frame);
         return;
     }
     dumpFrame("<", ns->name, frame);
-    assert(frame->type != QUIC_FRAME_ACK && frame->type != QUIC_FRAME_ACK_ECN);
-    ns->pend_frames.push_back(frame);
+    assert(frame.type != QUIC_FRAME_ACK && frame.type != QUIC_FRAME_ACK_ECN);
+    ns->pend_frames.push_back(std::move(frame));
     maySend();
 }
 
-void QuicQos::FrontFrame(pn_namespace* ns, quic_frame *frame) {
+void QuicQos::FrontFrame(pn_namespace* ns, quic_frame frame) {
     dumpFrame("*<", ns->name, frame);
-    assert(frame->type != QUIC_FRAME_ACK && frame->type != QUIC_FRAME_ACK_ECN);
-    ns->pend_frames.push_front(frame);
+    assert(frame.type != QUIC_FRAME_ACK && frame.type != QUIC_FRAME_ACK_ECN);
+    ns->pend_frames.push_front(std::move(frame));
     maySend();
 }
 
-void QuicQos::PushFrame(OSSL_ENCRYPTION_LEVEL level, quic_frame* frame) {
-    return PushFrame(GetNamespace(level), frame);
+void QuicQos::PushFrame(OSSL_ENCRYPTION_LEVEL level, quic_frame frame) {
+    return PushFrame(GetNamespace(level), std::move(frame));
 }
 
 void QuicQos::Migrated() {
@@ -387,7 +387,7 @@ size_t QuicQos::mem_usage() {
                 usage += frame_size(frame);
             }
         }
-        usage += pn->pend_frames.size() * sizeof(quic_frame*);
+        usage += pn->pend_frames.size() * sizeof(quic_frame);
         for(const auto& frame: pn->pend_frames) {
             usage += frame_size(frame);
         }
@@ -398,7 +398,7 @@ size_t QuicQos::mem_usage() {
 std::unique_ptr<QuicQos> createQos(
     bool isServer,
     const QuicQos::send_func& sent,
-    std::function<void(pn_namespace*, quic_frame*)> resendFrames
+    std::function<void(pn_namespace*, quic_frame)> resendFrames
 ) {
     if(opt.quic_cc_algorithm && strcmp(opt.quic_cc_algorithm, "bbr") == 0){
         return std::make_unique<QuicBBR>(isServer, sent, resendFrames);

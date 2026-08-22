@@ -7,7 +7,7 @@
 #include <inttypes.h>
 
 QuicReno::QuicReno(bool isServer, const send_func& sent,
-                     std::function<void(pn_namespace*, quic_frame*)> resendFrames):
+                     std::function<void(pn_namespace*, quic_frame)> resendFrames):
         QuicQos(isServer, sent, resendFrames) {
 }
 
@@ -28,20 +28,20 @@ void QuicReno::OnCongestionEvent(uint64_t sent_time) {
     //TODO: A packet can be sent to speed up loss recovery.
 }
 
-void QuicReno::OnPacketsLost(pn_namespace* ns, const std::list<quic_packet_pn>& lost_packets) {
+void QuicReno::OnPacketsLost(pn_namespace* ns, std::list<quic_packet_pn>& lost_packets) {
     uint64_t sent_time_of_last_loss = 0;
     uint64_t earliest_lost_time = UINT64_MAX;
     uint64_t latest_lost_time   = 0;
 
     // Remove lost packets from bytes_in_flight and collect timestamps for
     // both immediate congestion reaction and persistent congestion detection.
-    for (const auto& lost_packet : lost_packets) {
+    for (auto& lost_packet : lost_packets) {
         if (lost_packet.meta.in_flight) {
             bytes_in_flight -= lost_packet.meta.sent_bytes;
             sent_time_of_last_loss = std::max(sent_time_of_last_loss, lost_packet.meta.sent_time);
         }
-        for(auto frame: lost_packet.frames){
-            resendFrames(ns, frame);
+        for(auto& frame: lost_packet.frames){
+            resendFrames(ns, std::move(frame));
         }
         if (lost_packet.meta.sent_time <= rtt.first_rtt_sample || !lost_packet.meta.ack_eliciting) {
             continue;

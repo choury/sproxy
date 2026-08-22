@@ -17,12 +17,12 @@ protected:
     uint64_t ssthresh = UINT64_MAX;
 
     virtual void OnPacketsAcked(const std::list<quic_packet_meta>& acked_packets) override;
-    virtual void OnPacketsLost(pn_namespace* ns, const std::list<quic_packet_pn>& lost_packets) override;
+    virtual void OnPacketsLost(pn_namespace* ns, std::list<quic_packet_pn>& lost_packets) override;
     virtual void OnCongestionEvent(uint64_t sent_time) override;
     virtual void Migrated() override;
 public:
     QuicReno(bool isServer, const send_func& sent,
-             std::function<void(pn_namespace*, quic_frame*)> resendFrames);
+             std::function<void(pn_namespace*, quic_frame)> resendFrames);
     [[nodiscard]] virtual ssize_t windowLeft() const override;
 };
 

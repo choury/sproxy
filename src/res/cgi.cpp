@@ -32,7 +32,17 @@ struct CGI_NVLenPair{
     uint16_t valueLength;
 }__attribute__((packed));
 
-static char *cgi_addnv(char *p, const string &name, const string &value) {
+static char *cgi_addnv(char *p, char *end, const string &name, const string &value) {
+    if(name.size() > 0xffff || value.size() > 0xffff){
+        // 长度字段是 uint16，超长会截断成错误的数据
+        LOGE("cgi nv too long: %s\n", name.c_str());
+        return nullptr;
+    }
+    size_t need = sizeof(CGI_NVLenPair) + name.size() + value.size();
+    if((size_t)(end - p) < need){
+        LOGE("cgi nv no space: need %zd, left %zd\n", need, (size_t)(end - p));
+        return nullptr;
+    }
     CGI_NVLenPair *cgi_pairs = (CGI_NVLenPair *) p;
     cgi_pairs->nameLength = htons(name.size());
     cgi_pairs->valueLength = htons(value.size());
@@ -74,7 +84,7 @@ std::shared_ptr<HttpReqHeader> UnpackCgiReq(const void *header, size_t len) {
         LOGE("wrong frame http request, no method\n");
         return nullptr;
     }
-    return std::make_shared<HttpReqHeader>(std::move(headers));
+    return HttpReqHeader::create(std::move(headers));
 }
 
 std::shared_ptr<HttpResHeader> UnpackCgiRes(const void *header, size_t len) {
@@ -91,21 +101,25 @@ std::shared_ptr<HttpResHeader> UnpackCgiRes(const void *header, size_t len) {
 
 size_t PackCgiReq(std::shared_ptr<const HttpReqHeader> req, void *data, size_t len) {
     char* p = (char*)data;
+    char* const end = p + len;
     for(const auto& i : req->Normalize()){
-        p = cgi_addnv(p, i.first, i.second);
+        p = cgi_addnv(p, end, i.first, i.second);
+        if(p == nullptr){
+            return 0;
+        }
     }
-    assert(p - (char*)data <= (int)len);
-    (void)len;
     return p - (char*)data;
 }
 
 size_t PackCgiRes(std::shared_ptr<const HttpResHeader> res, void *data, size_t len) {
     char *p = (char *)data;
+    char* const end = p + len;
     for(const auto& i : res->Normalize()){
-        p = cgi_addnv(p, i.first, i.second);
+        p = cgi_addnv(p, end, i.first, i.second);
+        if(p == nullptr){
+            return 0;
+        }
     }
-    assert(p - (char*)data <= (int)len);
-    (void)len;
     return p - (char*)data;
 }
 
@@ -303,8 +317,13 @@ void Cgi::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> r
     header->type = CGI_REQUEST;
     header->flag = 0;
     header->requestId = htonl(req->request_id);
-    header->contentLength = htons(PackCgiReq(req, header->data, BUF_LEN - sizeof(CGI_Header)));
-    buff.truncate(sizeof(CGI_Header) + ntohs(header->contentLength));
+    size_t content_len = PackCgiReq(req, header->data, BUF_LEN - sizeof(CGI_Header));
+    if(content_len == 0){
+        LOGE("[CGI] %s pack request failed, header too long\n", basename(filename));
+        return response(rw, HttpResHeader::create(S431, sizeof(S431), id), "");
+    }
+    header->contentLength = htons(content_len);
+    buff.truncate(sizeof(CGI_Header) + content_len);
     rwer->Send(std::move(buff));
     auto _cb = IRWerCallback::create()->onRead([this, id](Buffer&& bb)->size_t {
         LOGD(DFILE, "<cgi> [%s] stream %" PRIu32 " recv: %zd\n", basename(filename), id, bb.len);
@@ -407,9 +426,15 @@ int cgi_response(int fd, SpinLock& l, std::shared_ptr<const HttpResHeader> res) 
     header->type = CGI_RESPONSE;
     header->flag = 0;
     header->requestId = htonl(res->request_id);
-    header->contentLength = htons(PackCgiRes(res, header->data, BUF_LEN - sizeof(CGI_Header)));
+    size_t content_len = PackCgiRes(res, header->data, BUF_LEN - sizeof(CGI_Header));
+    if(content_len == 0){
+        LOGE("pack cgi response failed, header too long\n");
+        free(header);
+        return -1;
+    }
+    header->contentLength = htons(content_len);
     size_t cap = GetCapSize(fd);
-    size_t len = sizeof(CGI_Header) + ntohs(header->contentLength);
+    size_t len = sizeof(CGI_Header) + content_len;
     while(true){
         std::lock_guard<SpinLock> g(l);
         if(cap - GetBuffSize(fd) < len) {

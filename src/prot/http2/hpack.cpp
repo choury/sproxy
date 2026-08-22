@@ -184,129 +184,97 @@ Hpack::~Hpack()
     }
 }
 
-static int literal_decode_wrapper(const unsigned char* s, size_t len, std::string& name){
-    uint64_t value;
-    if(integer_decode(s, len, 7, &value) == 0){
-        return 0;
-    }
-    name.resize(value * 2);
-    int ret = literal_decode(s, len, 7, &name[0]);
-    if(ret <= 0){
-        return ret;
-    }
-    name = name.c_str();
-    return ret;
-}
-
-
-static size_t literal_encode_wrapper(const std::string& name, unsigned char* result){
-    return literal_encode(name.c_str(), 7, result);
-}
-
-HeaderMap Hpack_decoder::decode(const unsigned char* s, size_t len) {
-    const uchar* pos = s;
+HeaderMap Hpack_decoder::decode(const HttpCursor& cursor) {
     HeaderMap headers;
     bool noDynamic = false;
-    while(pos <  s + len) {
-        if(*pos & 0x80) {
+    while(cursor.length()) {
+        uchar flag = cursor.data()[0];
+        if(flag & 0x80) {
             noDynamic = true;
-            uint64_t index;
-            int l = integer_decode(pos, len - (pos - s), 7, &index);
-            if(l == 0){
+            auto index = cursor.integer_decode(7);
+            if(!index){
                 LOGE("incomplete integer found in hpack\n");
                 return decltype(headers){};
             }
-            pos += l;
-            if(index == 0){
+            if(index.value() == 0){
                 LOGE("want to get value of index zero\n");
                 return decltype(headers){};
             }
-            const Hpack_index *value = getvalue(index);
+            const Hpack_index *value = getvalue(index.value());
             if(value == nullptr){
-                LOGE("get null index from %d\n", (int)index);
+                LOGE("get null index from %d\n", (int)index.value());
                 return decltype(headers){};
             }
             headers.insert(std::make_pair(value->name, value->value));
-        }else if(*pos & 0x40) {
+        }else if(flag & 0x40) {
             noDynamic = true;
-            uint64_t index;
-            int l = integer_decode(pos, len - (pos - s), 6, &index);
-            if(l == 0){
+            auto index = cursor.integer_decode(6);
+            if(!index){
                 LOGE("incomplete integer found in hpack\n");
                 return decltype(headers){};
             }
-            pos += l;
             std::string name, value;
-            if(index == 0) {
-                l = literal_decode_wrapper(pos, len - (pos - s), name);
-                if(l <= 0){
+            if(index.value() == 0) {
+                auto result = cursor.literal_decode(7);
+                if(!result){
                     LOGE("failed to decode literal in hpack\n");
                     return decltype(headers){};
                 }
-                pos += l;
-            } else if (auto v = getvalue(index); v){
+                name = result.value();
+            } else if (auto v = getvalue(index.value()); v){
                 name = v->name;
             } else {
-                LOGE("get null index from %d\n", (int)index);
+                LOGE("get null index from %d\n", (int)index.value());
                 return decltype(headers){};
             }
-            l = literal_decode_wrapper(pos, len - (pos - s), value);
-            if(l <= 0){
+            auto result = cursor.literal_decode(7);
+            if(!result ){
                 LOGE("failed to decode literal in hpack\n");
                 return decltype(headers){};
             }
-            pos += l;
+            value = result.value();
             headers.insert(std::make_pair(name, value));
             add_dynamic_table(name, value);
-        }else if(*pos & 0x20) {
+        }else if(flag & 0x20) {
             if(noDynamic){
                 LOGE("found update dynamic table limit after normal entry\n");
                 return decltype(headers){};
             }
-            uint64_t size;
-            int l = integer_decode(pos, len - (pos - s), 5, &size);
-            if(l == 0){
+            auto size = cursor.integer_decode(5);
+            if(!size){
                 LOGE("incomplete integer found in hpack\n");
                 return decltype(headers){};
             }
-            pos += l;
-            if(!set_dynamic_table_size_limit(size)){
+            if(!set_dynamic_table_size_limit(size.value())){
                 return decltype(headers){};
             }
         }else {
             noDynamic = true;
-            uint64_t index;
-            int l = integer_decode(pos, len - (pos - s), 4, &index);
-            if(l == 0){
+            auto index = cursor.integer_decode(4);
+            if(!index){
                 LOGE("incomplete integer found in hpack\n");
                 return decltype(headers){};
             }
-            pos += l;
-            std::string name, value;
-            if(index == 0) {
-                l = literal_decode_wrapper(pos, len - (pos - s), name);
-                if(l <= 0){
+            std::string name;
+            if(index.value() == 0) {
+                auto result = cursor.literal_decode(7);
+                if(!result){
                     LOGE("failed to decode literal in hpack\n");
                     return decltype(headers){};
                 }
-                pos += l;
-            } else if (auto v = getvalue(index); v){
+                name = result.value();
+            } else if (auto v = getvalue(index.value()); v){
                 name = v->name;
             } else {
-                LOGE("get null index from %d\n", (int)index);
+                LOGE("get null index from %d\n", (int)index.value());
                 return decltype(headers){};
             }
-            l = literal_decode_wrapper(pos, len - (pos - s), value);
-            if(l <= 0){
+            auto result = cursor.literal_decode(7);
+            if(!result){
                 LOGE("failed to decode literal in hpack\n");
                 return decltype(headers){};
             }
-            pos += l;
-            headers.insert(std::make_pair(name, value));
-        }
-        if(pos - s > (int)len){
-            LOGE("may be overflow: %zu/%zu\n", pos - s, len);
-            return decltype(headers){};
+            headers.insert(std::make_pair(name, result.value()));
         }
     }
     //evict_dynamic_table();
@@ -314,8 +282,13 @@ HeaderMap Hpack_decoder::decode(const unsigned char* s, size_t len) {
 }
 
 std::shared_ptr<HttpReqHeader> Hpack_decoder::UnpackHttp2Req(const void *header, size_t len) {
-    auto headers = decode((const unsigned char*)header, len);
+    auto headers = decode(HttpCursor{header, len});
     if(headers.empty()){
+        return nullptr;
+    }
+    if(headers.count("transfer-encoding")) {
+        //RFC 9113 禁止h2请求携带transfer-encoding，且转发h1时会造成走私
+        LOGE("wrong frame http request, transfer-encoding in h2\n");
         return nullptr;
     }
     if(headers.count(":path")) {
@@ -335,11 +308,11 @@ std::shared_ptr<HttpReqHeader> Hpack_decoder::UnpackHttp2Req(const void *header,
             return nullptr;
         }
     }
-    return std::make_shared<HttpReqHeader>(std::move(headers));
+    return HttpReqHeader::create(std::move(headers));
 }
 
 std::shared_ptr<HttpResHeader> Hpack_decoder::UnpackHttp2Res(const void *header, size_t len) {
-    auto headers = decode((const unsigned char*)header, len);
+    auto headers = decode(HttpCursor{header, len});
     if(headers.empty()){
         return nullptr;
     }
@@ -356,43 +329,63 @@ std::shared_ptr<HttpResHeader> Hpack_decoder::UnpackHttp2Res(const void *header,
     return std::make_shared<HttpResHeader>(std::move(headers));
 }
 
-size_t Hpack_encoder::encode(unsigned char* buf, const char* name, const char* value) {
-    unsigned char *buf_begin = buf;
+//返回false表示空间不足，调用方需要断开连接；模式首字节与varint由integer_encode/literal_encode自检空间
+bool Hpack_encoder::encode(HttpCursor& cursor, const char* name, const char* value) {
+    if(cursor.length() < 1){
+        LOGE("hpack encode no space\n");
+        return false;
+    }
     uint32_t index = getid(name, value);
     if(index){
-        *buf = 0x80;
-        buf += integer_encode(index, 7, buf);
+        *cursor.mutable_data() = 0x80;
+        if(!cursor.integer_encode(index, 7)){
+            LOGE("hpack encode no space for index\n");
+            return false;
+        }
+        return true;
     }else if((index = getid(name))) {
-        *buf = 0x40;
-        buf += integer_encode(index, 6, buf);
-        buf += literal_encode_wrapper(value, buf);
+        *cursor.mutable_data() = 0x40;
+        if(!cursor.integer_encode(index, 6)){
+            LOGE("hpack encode no space for index\n");
+            return false;
+        }
+        if(!cursor.literal_encode(value, 7)){
+            LOGE("hpack encode no space for literal\n");
+            return false;
+        }
         add_dynamic_table(name, value);
     }else {
-        *buf = 0x40;
-        buf++;
-        buf += literal_encode_wrapper(name, buf);
-        buf += literal_encode_wrapper(value, buf);
+        *cursor.mutable_data() = 0x40;
+        cursor.advance(1);
+        if(!cursor.literal_encode(name, 7)){
+            LOGE("hpack encode no space for literal\n");
+            return false;
+        }
+        if(!cursor.literal_encode(value, 7)){
+            LOGE("hpack encode no space for literal\n");
+            return false;
+        }
         add_dynamic_table(name, value);
     }
-    return buf - buf_begin;
+    return true;
 }
 
 size_t Hpack_encoder::PackHttp2Req(std::shared_ptr<const HttpReqHeader> req, void *data, size_t len) {
-    uchar* p = (uchar*)data;
+    HttpCursor cursor(data, len);
     for(const auto& i : req->Normalize()){
-        p += encode(p, i.first.c_str(), i.second.c_str());
+        if(!encode(cursor, i.first.c_str(), i.second.c_str())){
+            return 0;
+        }
     }
-    assert(p - (uchar*)data <= (int)len);
-    (void)len;
-    return p - (uchar*)data;
+    return len - cursor.length();
 }
 
 size_t Hpack_encoder::PackHttp2Res(std::shared_ptr<const HttpResHeader> res, void *data, size_t len) {
-    uchar *p = (uchar *)data;
+    HttpCursor cursor(data, len);
     for(const auto& i : res->Normalize()){
-        p += encode(p, i.first.c_str(), i.second.c_str());
+        if(!encode(cursor, i.first.c_str(), i.second.c_str())){
+            return 0;
+        }
     }
-    assert(p - (uchar*)data <= (int)len);
-    (void)len;
-    return p - (uchar*)data;
+    return len - cursor.length();
 }

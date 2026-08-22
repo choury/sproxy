@@ -15,6 +15,8 @@
 #include <unistd.h>
 #include <assert.h>
 #include <limits.h>
+#include <stdlib.h>
+#include <errno.h>
 
 #include <openssl/hmac.h>
 #include <openssl/evp.h>
@@ -133,6 +135,24 @@ static uint16_t splitport_cidr(string& prefix_str) {
     return 0;
 }
 
+// Parse CIDR prefix suffix, returns false if it is not a decimal number in [0, 128].
+// stoi() throws on garbage input, which would terminate the daemon (H-2).
+static bool parse_prefix(const string& prefix_str, int& prefix) {
+    if(prefix_str.empty()){
+        return false;
+    }
+    errno = 0;
+    char* endp = nullptr;
+    long value = strtol(prefix_str.c_str(), &endp, 10);
+    if(endp == prefix_str.c_str() || *endp != '\0' || errno == ERANGE ||
+       value < 0 || value > 128)
+    {
+        return false;
+    }
+    prefix = (int)value;
+    return true;
+}
+
 static bool mergestrategy(const string& host_, const string& strategy_str, const string& ext){
     Strategy s;
     if(strategy_str == "direct"){
@@ -165,11 +185,11 @@ static bool mergestrategy(const string& host_, const string& strategy_str, const
         string ip = host.substr(0, mask_pos);
         string prefix_str = host.substr(mask_pos+1);
         uint16_t port = splitport_cidr(prefix_str);
-#ifdef __ANDROID__
-        int prefix = atoi(prefix_str.c_str());
-#else
-        int prefix = stoi(prefix_str);
-#endif
+        int prefix = -1;
+        if(!parse_prefix(prefix_str, prefix)){
+            LOGE("Wrong CIDR prefix: %s\n", host.c_str());
+            return false;
+        }
         return ipinsert(ip.c_str(), stra, prefix, port);
     }
     uint16_t port = splitport(host);
@@ -273,11 +293,11 @@ bool delstrategy(const char* host_) {
         string ip = host.substr(0, mask_pos);
         string prefix_str = host.substr(mask_pos+1);
         uint16_t port = splitport_cidr(prefix_str);
-#ifdef __ANDROID__
-        int prefix = atoi(prefix_str.c_str());
-#else
-        int prefix = stoi(prefix_str);
-#endif
+        int prefix = -1;
+        if(!parse_prefix(prefix_str, prefix)){
+            LOGE("Wrong CIDR prefix: %s\n", host.c_str());
+            return false;
+        }
         ipremove(ip.c_str(), found, prefix, port);
     }else{
         uint16_t port = splitport(host);
@@ -503,6 +523,7 @@ std::string gen_token() {
 bool checktoken(const char* token) {
     if (token == nullptr || *token == '\0') return false;
 
+    if (strlen(token) >= 128) return false;
     char decoded[128];
     size_t len = Base64DeUrl(token, strlen(token), decoded);
     if (len != 8 + 32) return false; // 8 bytes timestamp + 32 bytes SHA256

@@ -9,7 +9,7 @@ class Quic_server: public Ep {
     std::map<std::string, QuicRWer*> rwers;
     uint16_t listen_port = 0;
     virtual void defaultHE(RW_EVENT events);
-    void PushData(const sockaddr_storage* myaddr, const sockaddr_storage* hisaddr, const void* buff, size_t len);
+    void PushData(const sockaddr_storage* myaddr, const sockaddr_storage* hisaddr, Buffer&& buff);
 public:
     Quic_server(int fd, uint16_t port, SSL_CTX *ctx);
     virtual ~Quic_server() override{

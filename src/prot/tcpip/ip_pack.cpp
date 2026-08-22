@@ -1037,7 +1037,7 @@ size_t Ip::gethdrlen() const {
     case IPPROTO_ICMPV6:
         return hdrlen + sizeof(icmp6_hdr);
     case IPPROTO_TCP:
-        return hdrlen + sizeof(tcphdr) + tcp->tcpoptlen;
+        return hdrlen + sizeof(tcphdr) + (tcp ? tcp->tcpoptlen : 0);
     case IPPROTO_UDP:
         return hdrlen + sizeof(udphdr);
     default:
@@ -1055,13 +1055,13 @@ bool Ip::isValid() const {
     }
     switch(type){
     case IPPROTO_ICMP:
-        return icmp->valid;
+        return icmp && icmp->valid;
     case IPPROTO_ICMPV6:
-        return icmp6->valid;
+        return icmp6 && icmp6->valid;
     case IPPROTO_TCP:
-        return tcp->valid;
+        return tcp && tcp->valid;
     case IPPROTO_UDP:
-        return udp->valid;
+        return udp && udp->valid;
     default:
         return false;
     }
@@ -1366,27 +1366,31 @@ Ip6::Ip6(const char* packet, size_t len) {
         case IPPROTO_ICMPV6:
             hdrlen = (const char*)ext_hdr - packet;
             icmp6 = new Icmp6((const char*)ext_hdr, packet+len-(char*)ext_hdr);
-            break;
+            return;
         case IPPROTO_TCP:
             hdrlen = (const char*)ext_hdr - packet;
             tcp = new Tcp((const char*)ext_hdr, packet+len-(char*)ext_hdr);
-            break;
+            return;
         case IPPROTO_UDP:
             hdrlen = (const char*)ext_hdr - packet;
             udp = new Udp((const char*)ext_hdr, packet+len-(char*)ext_hdr);
-            break;
+            return;
         case IPPROTO_FRAGMENT:
             LOGE("ip fragment not implement now\n");
             valid = false;
             return;
+        default:
+            break;
         }
-        if(icmp6){
-            //jus pick some one to check if handled
+        //ext header needs at least 2 bytes: nxt + hdr_len
+        if((const char*)ext_hdr + 2 - packet > (long)len){
             break;
         }
         type = ext_hdr->ip6e_nxt;
         ext_hdr = (ip6_ext*)((char*)(ext_hdr + 1)+ext_hdr->ip6e_len);
     }
+    //L4 header not found within the packet
+    valid = false;
 }
 
 Ip6::Ip6(const Ip6 *ip6) {

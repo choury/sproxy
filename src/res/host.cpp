@@ -77,7 +77,13 @@ void Host::reply(){
         return;
     }
     Buffer buff{BUF_LEN, status.req->request_id};
-    buff.truncate(PackHttpReq(status.req, buff.mutable_data(), BUF_LEN));
+    size_t hlen = PackHttpReq(status.req, buff.mutable_data(), BUF_LEN);
+    if(hlen == 0){
+        LOGE("http request header too long: %s\n", status.req->geturl().c_str());
+        deleteLater(PROTOCOL_ERR);
+        return;
+    }
+    buff.truncate(hlen);
     rwer->Send(std::move(buff));
     status.rw->SetCallback(status.cb);
 }
@@ -172,6 +178,12 @@ void Host::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> 
     assert(status.rw == nullptr);
     status.req = req;
     status.rw = rw;
+    if(!req->no_body() && !req->ismethod("CONNECT") &&
+       !req->has("Content-Length") && strcmp(req->Dest.protocol, "websocket") != 0 )
+    {
+        status.flags |= HTTP_CHUNK_F;
+        req->set("Transfer-Encoding", "chunked");
+    }
     if(req->no_end()){
         status.flags |= HTTP_NOEND_F;
     }
@@ -184,9 +196,9 @@ void Host::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> 
             if(status.flags & HTTP_NOEND_F){
                 //如果是这种，只能通过关闭连接的方式来结束请求
                 rwer->Send({nullptr, bb.id});
-            }else{
-                //TODO: chunked
-                //其他情况，可以不发送结束符
+            }else if(status.flags & HTTP_CHUNK_F){
+                //空chunk终结body(空body请求=仅终结块)
+                rwer->Send(Buffer{"0" CRLF CRLF, strlen("0" CRLF CRLF), bb.id});
             }
             return 0;
         }
@@ -202,7 +214,19 @@ void Host::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> 
         auto len = std::min(bb.len, (size_t)cap);
         tx_bytes += len;
         bb.truncate(len);
-        rwer->Send(std::move(bb));
+        if(status.flags & HTTP_CHUNK_F){
+            static Buffer crlf{CRLF, 2};
+            char prefix[20];
+            int prelen = snprintf(prefix, sizeof(prefix), "%zx" CRLF, len);
+            bb.reserve(-prelen);
+            memcpy(bb.mutable_data(), prefix, prelen);
+            auto cbb = crlf;
+            cbb.id = bb.id;
+            rwer->Send(std::move(bb));
+            rwer->Send(std::move(cbb));
+        }else{
+            rwer->Send(std::move(bb));
+        }
         return len;
     })->onWrite([this](uint64_t id){
         rwer->Unblock(id);
@@ -233,7 +257,13 @@ void Host::ResProc(uint64_t, std::shared_ptr<HttpResHeader> header) {
 
 ssize_t Host::DataProc(Buffer& bb) {
     HOOK_BPF(this, status, bb);
-    assert((status.flags & HTTP_RES_COMPLETED) == 0);
+    if(status.flags & HTTP_RES_COMPLETED){
+        //响应已结束还收到数据：上游违反了声明的长度，直接断开，避免响应错配
+        LOGE("[%" PRIu64 "]: <host> extra data after response completed (%s)\n",
+            status.req->request_id, status.req->geturl().c_str());
+        deleteLater(PEER_LOST_ERR);
+        return -1;
+    }
     int cap = status.rw->cap(bb.id);
     if (cap <= 0) {
         LOGE("[%" PRIu64 "]: <host> the guest's write buff is full (%s)\n",

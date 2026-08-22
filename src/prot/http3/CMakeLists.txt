@@ -8,3 +8,6 @@ set(http3_src
         )
 
 target_sources(prot PRIVATE ${http3_src})
+
+add_executable(qpack_test qpack_test.cpp qpack.cpp ../http/http_code.cpp)
+target_link_libraries(qpack_test PRIVATE sproxy_headers)

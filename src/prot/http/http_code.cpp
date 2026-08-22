@@ -560,12 +560,57 @@ __attribute__((constructor, unused)) static void init_hfmtree() {
 }
 
 
-int hfm_decode(const unsigned char *s, size_t len, char* result) {
+//varint占用的字节数(首字节含prefix位前缀)
+static size_t integer_encode_len(uint64_t value, int prefix){
+    uint32_t mask = ((1u << prefix) - 1u);
+    if(value < mask)
+        return 1;
+    size_t len = 1;
+    value -= mask;
+    while(value >= 128){
+        value /= 128;
+        len++;
+    }
+    return len + 1;
+}
+
+bool HttpCursor::hfm_encode(const char *s, size_t len) {
+    unsigned char out=0;
+    int count=0;
+    while(len--) {
+        int lenght = hfmnodes[*(uchar *)s].len;
+        int code  = hfmnodes[*(uchar *)s].code;
+        //TODO 待优化去掉循环
+        while(lenght--){
+            if(count == 8){
+                if(!write(out)){
+                    return false;
+                }
+                count = 0;
+            }
+            out<<=1u;
+            out |= (code >> lenght) & 1u;
+            count++;
+        }
+        s++;
+    }
+    if(count){
+        out <<= 8u-count;
+        //padding位必须置1
+        if(!write<unsigned char>(out | (0xffu >> count))){
+            return false;
+        }
+    }
+    return true;
+}
+
+
+std::optional<std::string> HttpCursor::hfm_decode() const{
     struct node *curnode = &root;
     int padding = 0;
-    int n = 0;
-    for(size_t i = 0; i < len; ++i){
-        uint8_t c = s[i];
+    std::string result;
+    for(size_t i = 0; i < length(); ++i){
+        uint8_t c = data()[i];
         for(int j = 8; j; --j) {
             if(c & 0x80u)
                 curnode = curnode->right;
@@ -577,9 +622,9 @@ int hfm_decode(const unsigned char *s, size_t len, char* result) {
             if(curnode->len) {
                 if(unlikely(curnode->info == HFM_EOS)){
                     LOGE("found EOS in hfm encoder packet\n");
-                    return -1;
+                    return std::nullopt;
                 }
-                result[n++] = (char)curnode->info;
+                result.push_back((char)curnode->info);
                 curnode = &root;
                 padding = 0;
             }
@@ -587,122 +632,123 @@ int hfm_decode(const unsigned char *s, size_t len, char* result) {
     }
     if(padding > 7 || curnode->info != (1<<padding)-1) {
         LOGE("the padding in pack packet is not corresponding, padding: %d, info: 0x%x\n", padding, curnode->info);
-        return -1;
+        return std::nullopt;
     }
-    return n;
+    return result;
 }
 
-size_t hfm_encode(const char *s, size_t len, unsigned char *result){
-    unsigned char out=0;
-    unsigned char *buf_begin = result;
-    int count=0;
-    while(len--) {
-        int lenght = hfmnodes[*(uchar *)s].len;
-        int code  = hfmnodes[*(uchar *)s].code;
-        //TODO 待优化去掉循环
-        while(lenght--){
-            if(count == 8){
-                *result++ = out;
-                count = 0;
-            }
-            out<<=1u;
-            out |= (code >> lenght) & 1u;
-            count++;
-        }
-        s++;
-    }
-    if(count){
-        out<<=8u-count;
-        *result++ = out | (0xffu >> count);
-    }
-    return result - buf_begin;
-}
 
-int integer_decode(const unsigned char *s, size_t len, int prefix, uint64_t *value) {
+bool HttpCursor::integer_encode(uint64_t value, int prefix) {
     assert(prefix <= 8);
-    if(len == 0){
-        return 0;
+    if(length() < integer_encode_len(value, prefix)){
+        return false;
     }
     uint32_t mask = ((1u << prefix) - 1u);
-    if((s[0] & mask) == mask){
-        *value = mask;
-        size_t i;
-        for(i=1;i < len && (s[i]&0x80);++i) {
-            *value += (uint64_t)(s[i]&0x7fu) << (i*7-7);
-        }
-        if(i >= len){
-            return 0;
-        }
-        *value += (uint64_t)s[i] << (i*7-7);
-        return (int)i + 1;
-    } else {
-        *value = s[0] & mask;
-        return 1;
-    }
-}
-
-size_t integer_encode(uint64_t value, int prefix, unsigned char *buff){
-    assert(prefix <= 8);
-    unsigned char *buf_begin = buff;
-    uint32_t mask = ((1u << prefix) - 1u);
+    //函数开头的integer_encode_len检查保证了后续write不会失败
     if(value < mask) {
-        *buff &= ~mask;
-        *buff++ |= value;
+        write<unsigned char>((*data() & ~mask) | value);
     }else{
-        *buff++ |= mask;
+        write<unsigned char>(*data() | mask);
         value -= mask;
         while(value >= 128){
-            *buff++ = (value%128u) | 0x80u;
+            write<unsigned char>((value%128u) | 0x80u);
             value /= 128;
         }
-        *buff++ = value;
+        write<unsigned char>(value);
     }
-    return buff - buf_begin;
+    return true;
 }
 
-int literal_decode(const unsigned char *s, size_t len, int prefix, char* result) {
-    assert(prefix >= 0 && prefix <= 7);
-    uint64_t value;
-    int i = integer_decode(s, len, prefix, &value);
-    if(i == 0)
-        return 0;
-    if(i + value > len) {
-        //incomplete literal
-        return 0;
-    }
-    if(value >= 0xffff){
-        LOGE("too long value: %d\n", (int)value);
-        return -1;
-    }
-    if(s[0] & (1<<prefix)) {
-        int ret = hfm_decode(s+i, value, result);
-        if(ret < 0)return -1;
-        result[ret] = 0;
-    } else {
-        memcpy(result, s+i, value);
-        result[value] = 0;
-    }
-    return i + (int)value;
-}
 
-size_t literal_encode(const char* s, int prefix, unsigned char *result){
-    unsigned char *buf_begin = result;
-    size_t size = strlen(s);
-    size_t len = hfm_encode(s, size, result + 1);
-    if(len >= size){
-        *result &= ~(1<<prefix);
-        result += integer_encode(size, prefix, result);
-        memcpy(result, s, size);
-        return result + size - buf_begin;
-    }else{
-        *result |= (1<<prefix);
-        result += integer_encode(len, prefix, result);
-        if(result - buf_begin > 1){
-            result += hfm_encode(s, size, result);
-        }else{
-            result += len;
+std::optional<uint64_t> HttpCursor::integer_decode(int prefix) const {
+    assert(prefix <= 8);
+    if(length() == 0){
+        return std::nullopt;
+    }
+    uint64_t value = 0;
+    uint32_t mask = ((1u << prefix) - 1u);
+    if((data()[0] & mask) == mask){
+        value = mask;
+        advance(1);
+        //continuation bytes: 低7位是数据，最高位表示是否还有后续
+        for(int padding = 0;; padding++) {
+            if(length() == 0){
+                return std::nullopt;
+            }
+            if(padding > 9){
+                //超过 2^63，非法;也避免 >=64 的移位 UB
+                return std::nullopt;
+            }
+            value += (uint64_t)(data()[0]&0x7fu) << (7*padding);
+            bool cont = data()[0]&0x80u;
+            advance(1);
+            if(!cont){
+                break;
+            }
         }
-        return result - buf_begin;
+    } else {
+        value = data()[0] & mask;
+        advance(1);
     }
+    return value;
 }
 
+
+bool HttpCursor::literal_encode(const void* s, size_t size, int prefix) {
+    if(length() < integer_encode_len(size, prefix) + size){
+        return false;
+    }
+    auto preview = HttpCursor(mutable_data() + 1, length() - 1);
+    bool hfm_result = preview.hfm_encode((const char*)s, size);
+    size_t hlen = preview.data() - data() - 1;
+    if(!hfm_result || hlen >= size){
+        *mutable_data() &= ~(1<<prefix);
+        integer_encode(size, prefix);
+        if(!write_data(s, size)){
+            return false;
+        }
+    }else{
+        *mutable_data() |= (1<<prefix);
+        size_t l = integer_encode_len(hlen, prefix);
+        if(l > 1) {
+            //varint多字节，把试探写在result+1的数据重新编码到位
+            memmove(mutable_data() + l, mutable_data() + 1, hlen);
+        }
+        integer_encode(hlen, prefix);
+        advance(hlen);
+    }
+    return true;
+}
+
+bool HttpCursor::literal_encode(const char* s, int prefix) {
+    return literal_encode(s, strlen(s), prefix);
+}
+
+std::optional<std::string> HttpCursor::literal_decode(int prefix) const {
+    assert(prefix >= 0 && prefix <= 7);
+    if(length() == 0){
+        return std::nullopt;
+    }
+    auto flag = *data();
+    auto len = integer_decode(prefix);
+    if(!len)
+        return std::nullopt;
+    if(len >= 0xffff || len > length()){
+        LOGE("too long value: %d\n", (int)len.value());
+        return std::nullopt;
+    }
+    std::optional<std::string> result;
+    if(flag & (1<<prefix)) {
+        //huffman数据只有len个字节，用子游标限制解码范围
+        HttpCursor huffman{data(), len.value()};
+        result = huffman.hfm_decode();
+        advance(len.value());
+    } else {
+        result = std::string((const char*)data(), len.value());
+        advance(len.value());
+    }
+    if(result && result.value().find_first_of("\r\n") != std::string::npos) {
+        return std::nullopt;
+    }
+    return result;
+}

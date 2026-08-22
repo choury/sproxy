@@ -46,7 +46,7 @@ public:
 
 class pn_namespace{
     typedef std::function<std::list<quic_packet_pn>(uint64_t pn, uint64_t ack,
-                                                    std::list<quic_frame*>& pend_frames, size_t window)> send_func;
+                                                    std::list<quic_frame>& pend_frames, size_t window)> send_func;
 public:
     pn_namespace(char name, send_func sent);
     ~pn_namespace();
@@ -61,7 +61,7 @@ public:
     uint64_t time_of_last_ack_eliciting_packet = 0;
     uint64_t ecn_ce_counters = 0;
     uint64_t loss_time = UINT64_MAX;
-    std::list <quic_frame*>    pend_frames;
+    std::list <quic_frame>     pend_frames;
     std::list <quic_packet_pn> sent_packets;
 
     size_t sendPacket(size_t window, size_t delivered_bytes, size_t& packets_sent);

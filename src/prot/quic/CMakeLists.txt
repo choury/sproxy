@@ -14,6 +14,9 @@ set(quic_src
 
 target_sources(prot PRIVATE ${quic_src})
 
+add_executable(quic_frame_test quic_frame_test.cpp quic_pack.cpp ../../misc/buffer.cpp)
+target_link_libraries(quic_frame_test PRIVATE sproxy_headers ${OPENSSL_LIBRARIES})
+
 
 if(false)
     add_executable(crypto_test crypto-test.c quic_pack.cpp)

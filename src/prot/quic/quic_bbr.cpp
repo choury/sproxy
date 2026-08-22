@@ -34,7 +34,7 @@ static const int pacing_gain_array[] = {
         BBR_UNIT, BBR_UNIT, BBR_UNIT     // 继续巡航，不创建过多队列
 };
 
-QuicBBR::QuicBBR(bool isServer, send_func sent, std::function<void(pn_namespace *, quic_frame *)> resendFrames):
+QuicBBR::QuicBBR(bool isServer, send_func sent, std::function<void(pn_namespace *, quic_frame)> resendFrames):
         QuicQos(isServer, sent, resendFrames),
         rtProp(10 * TIME_US_TO_S),  // RTT测量器，10秒时间窗口
         btlBw(10 * TIME_US_TO_S)    // 带宽测量器，10秒时间窗口
@@ -136,18 +136,18 @@ void QuicBBR::OnPacketsAcked(const std::list<quic_packet_meta> &acked_packets) {
 }
 
 // BBR丢包处理：与CUBIC不同，BBR对丢包的反应更温和，但需要重传这些包
-void QuicBBR::OnPacketsLost(pn_namespace* ns, const std::list<quic_packet_pn>& lost_packets) {
+void QuicBBR::OnPacketsLost(pn_namespace* ns, std::list<quic_packet_pn>& lost_packets) {
     // BBR算法对丢包的反应较为温和，主要是重传丢失的包
     // 不像CUBIC那样激进地减少拥塞窗口
 
-    for (const auto& lost_packet : lost_packets) {
+    for (auto& lost_packet : lost_packets) {
         if (lost_packet.meta.in_flight) {
             bytes_in_flight -= lost_packet.meta.sent_bytes;
         }
 
         // 重传丢失的帧
-        for (auto frame : lost_packet.frames) {
-            resendFrames(ns, frame);
+        for (auto& frame : lost_packet.frames) {
+            resendFrames(ns, std::move(frame));
         }
     }
 

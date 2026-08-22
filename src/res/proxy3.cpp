@@ -161,10 +161,16 @@ void Proxy3::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer
     Block buff(BUF_LEN);
     memset(buff.data(), 0, BUF_LEN);
     size_t len = qpack_encoder.PackHttp3Req(req, buff.data(), BUF_LEN);
+    if(len == 0){
+        LOGE("http3 request header too long: %s\n", req->geturl().c_str());
+        statusmap.erase(id);
+        return response(rw, HttpResHeader::create(S431, sizeof(S431), req->request_id), "");
+    }
     size_t pre = variable_encode_len(HTTP3_STREAM_HEADERS) + variable_encode_len(len);
-    char* p = (char*) buff.reserve(-(char) pre);
-    p += variable_encode(p, HTTP3_STREAM_HEADERS);
-    p += variable_encode(p, len);
+    char* p = (char*) buff.reserve(-(int)pre);
+    QuicCursor c(p, pre);
+    c.variable_encode(HTTP3_STREAM_HEADERS);
+    c.variable_encode(len);
     SendData({std::move(buff), pre + len, id});
     status.cb = IRWerCallback::create()->onRead([this, id](Buffer&& bb) -> size_t {
         HOOK_BPF(this, statusmap, id, bb);

@@ -9,6 +9,51 @@
 #include "prot/tls.h"
 
 #include <unistd.h>
+#include <map>
+#include <string>
+
+//未验证地址的Initial建连限速：
+//1. 伪造源地址的Initial会让我们向受害者回完整握手flight(反射放大)，按源IP限速可以把放大带宽压住；
+//2. 每个新DCID都会创建socket+SSL+QuicRWer，无限流时伪造包洪泛可以耗尽本机资源。
+//完整方案是Retry/地址验证(RFC 9000 §8.1)，这里以限速作为缓解。
+static constexpr uint32_t QUIC_NEWCONN_PER_IP = 32;   // 每源IP每秒新建连接数
+static constexpr uint32_t QUIC_NEWCONN_GLOBAL = 256;  // 全局每秒新建连接数
+static bool allow_new_quic_conn(const sockaddr_storage* hisaddr) {
+    static std::map<std::string, std::pair<time_t, uint32_t>> counters;
+    static time_t last_gc = 0;
+    static time_t global_win = 0;
+    static uint32_t global_cnt = 0;
+
+    time_t now = time(nullptr);
+    if(now - last_gc >= 60){
+        for(auto it = counters.begin(); it != counters.end();){
+            if(it->second.first < now - 60){
+                it = counters.erase(it);
+            }else{
+                ++it;
+            }
+        }
+        last_gc = now;
+    }
+    if(global_win != now){
+        global_win = now;
+        global_cnt = 0;
+    }
+    if(++global_cnt > QUIC_NEWCONN_GLOBAL){
+        return false;
+    }
+    std::string key;
+    if(hisaddr->ss_family == AF_INET6){
+        key.assign((const char*)((const sockaddr_in6*)hisaddr)->sin6_addr.s6_addr, 16);
+    }else{
+        key.assign((const char*)&((const sockaddr_in*)hisaddr)->sin_addr, 4);
+    }
+    auto& entry = counters[key];
+    if(entry.first != now){
+        entry = {now, 0};
+    }
+    return ++entry.second <= QUIC_NEWCONN_PER_IP;
+}
 
 static void set_listen_port(sockaddr_storage* addr, uint16_t port) {
     if(addr == nullptr) {
@@ -70,16 +115,17 @@ void Quic_server::defaultHE(RW_EVENT events) {
             ssl_cert_version = opt.cert_version;
             LOG("QUIC SSL context updated due to certificate reload (version %u)\n", ssl_cert_version);
         }
-        char buff[max_datagram_size];
+        Buffer buff(max_datagram_size);
         sockaddr_storage myaddr, hisaddr;
 
-        ssize_t ret = recvwithaddr(getFd(), buff, max_datagram_size, &myaddr, &hisaddr);
+        ssize_t ret = recvwithaddr(getFd(), buff.mutable_data(), max_datagram_size, &myaddr, &hisaddr);
         if(ret < 0){
             LOGE("recvfrom error: %s\n", strerror(errno));
             return;
         }
+        buff.truncate(ret);
         set_listen_port(&myaddr, listen_port);
-        PushData(&myaddr, &hisaddr, buff, ret);
+        PushData(&myaddr, &hisaddr, std::move(buff));
     } else {
         LOGE("unknown error\n");
         return;
@@ -87,21 +133,23 @@ void Quic_server::defaultHE(RW_EVENT events) {
 }
 
 void Quic_server::PushData(const sockaddr_storage* myaddr, const sockaddr_storage* hisaddr,
-                           const void *buff, size_t len) {
-    quic_pkt_header header;
-    header.dcid.resize(QUIC_CID_LEN);
-    int body_len = unpack_meta(buff, len, &header);
-    if (body_len < 0 || body_len > (int)len) {
-        LOGE("QUIC meta unpack failed, disacrd it, body_len: %d, len: %d\n", body_len, (int)len);
+                           Buffer&& buff) {
+    QuicCursor pkt((const unsigned char*)buff.data(), buff.len);
+    auto meta = unpack_meta(pkt, QUIC_CID_LEN);
+    if (!meta) {
+        LOGE("QUIC meta unpack failed, disacrd it, len: %zd\n", buff.len);
         return;
     }
-    auto r = rwers.find(header.dcid);
+    auto r = rwers.find(meta->dcid);
     if(r != rwers.end()){
         // Trigger path validation for the new address
         r->second->sendPathChallenge(myaddr, hisaddr);
-        iovec iov{(void*)buff, len};
-        r->second->walkPackets(&iov, 1);
-    }else if(header.type == QUIC_PACKET_INITIAL){
+        r->second->walkPackets(std::move(buff));
+    }else if(meta->type == QUIC_PACKET_INITIAL){
+        if(!allow_new_quic_conn(hisaddr)){
+            LOGD(DQUIC, "QUIC initial rate limited from %s\n", storage_ntoa(hisaddr));
+            return;
+        }
         int clsk = ListenUdp(myaddr, nullptr);
         if (clsk < 0) {
             LOGE("ListenNet %s failed: %s\n", storage_ntoa(myaddr), strerror(errno));
@@ -116,13 +164,13 @@ void Quic_server::PushData(const sockaddr_storage* myaddr, const sockaddr_storag
         SetUdpOptions(clsk, hisaddr);
         auto qrwer = std::make_shared<QuicRWer>(clsk, hisaddr, ctx, this);
         auto guest = new Guest3(qrwer);
-        guest->AddInitData(buff, len);
-    }else if(header.type == QUIC_PACKET_1RTT){
-        if(len < 42){
-            LOG("QUIC packet 1RTT too short: %zd, will not trigger reset\n", len);
+        guest->AddInitData(std::move(buff));
+    }else if(meta->type == QUIC_PACKET_1RTT){
+        if(buff.len < 42){
+            LOG("QUIC packet 1RTT too short: %zd, will not trigger reset\n", buff.len);
             return;
         }
-        std::string token = sign_cid(header.dcid);
+        std::string token = sign_cid(meta->dcid);
         if(token.empty()){
             return;
         }
@@ -138,7 +186,7 @@ void Quic_server::PushData(const sockaddr_storage* myaddr, const sockaddr_storag
             LOGE("sendto %s failed: %s\n", storage_ntoa(hisaddr), strerror(errno));
             return;
         }
-        LOGD(DQUIC, "send stateless reset for %s\n", dumpHex(header.dcid.c_str(), header.dcid.size()).c_str());
+        LOGD(DQUIC, "send stateless reset for %s\n", dumpHex(meta->dcid.c_str(), meta->dcid.size()).c_str());
     }
 }
 

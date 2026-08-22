@@ -124,6 +124,12 @@ void Guest2::ReqProc(uint32_t id, std::shared_ptr<HttpReqHeader> header) {
         localframewindowsize,
     };
     ReqStatus& status = statusmap[id];
+    if(!header->ismethod("CONNECT") && strcmp(header->Dest.protocol, "websocket") != 0){
+        if(const char* cl = header->get("Content-Length")){
+            //RFC 9113 §8.1.1:content-length必须等于DATA帧总长，入口处记录，Data/EndProc强制
+            status.expect_len = strtoull(cl, nullptr, 10);
+        }
+    }
     distribute(status.req, status.rw);
 }
 
@@ -151,6 +157,16 @@ void Guest2::DataProc(Buffer&& bb) {
             return;
         }
         status.localwinsize -= bb.len;
+        if(status.expect_len >= 0){
+            //RFC 9113 §8.1.1:DATA总长超出content-length即malformed，超发字节绝不转发(防走私)
+            if(status.recv_len + bb.len > (uint64_t)status.expect_len){
+                LOGE("[%" PRIu64 "]: <guest2> body exceeds content-length: %" PRIu64 " + %zu > %" PRId64 "\n",
+                     status.req->request_id, status.recv_len, bb.len, status.expect_len);
+                status.cleanJob = AddJob(([this, id = bb.id]{Clean(id, HTTP2_ERR_PROTOCOL_ERROR);}), 0, 0);
+                return;
+            }
+            status.recv_len += bb.len;
+        }
         auto cap = status.rw->bufsize();
         if ((status.buffer && status.buffer->length() > 0) || (cap < bb.len)) {
             //把多余的数据放到buffer里
@@ -182,6 +198,13 @@ void Guest2::EndProc(uint32_t id) {
         return;
     }
     ReqStatus& status = statusmap[id];
+    if(status.expect_len >= 0 && status.recv_len != (uint64_t)status.expect_len){
+        //RFC 9113 §8.1.1:END_STREAM时DATA总长不等于content-length即malformed，流错误
+        LOGE("[%" PRIu64 "]: <guest2> body less than content-length: %" PRIu64 "/%" PRId64 "\n",
+             status.req->request_id, status.recv_len, status.expect_len);
+        status.cleanJob = AddJob(([this, id]{Clean(id, HTTP2_ERR_PROTOCOL_ERROR);}), 0, 0);
+        return;
+    }
     status.flags |= HTTP_REQ_COMPLETED;
     if(status.buffer == nullptr || status.buffer->length() == 0){
         status.rw->push_data(Buffer{nullptr, (uint64_t)id});
@@ -205,6 +228,11 @@ std::shared_ptr<IMemRWerCallback> Guest2::response(uint64_t id) {
         h2header->flags = HTTP2_END_HEADERS_F;
         set32(h2header->id, id);
         size_t len = hpack_encoder.PackHttp2Res(res, h2header + 1, BUF_LEN - sizeof(Http2_header));
+        if(len == 0){
+            LOGE("http2 response header too long: %" PRIu64 "\n", res->request_id);
+            deleteLater(PROTOCOL_ERR);
+            return;
+        }
         set24(h2header->length, len);
         SendData(Buffer{std::move(buff), len + sizeof(Http2_header), id});
 

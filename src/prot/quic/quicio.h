@@ -84,13 +84,6 @@
 
 class Quic_server;
 
-class Recvq{
-public:
-    std::list<const quic_frame*> data;
-    ~Recvq();
-    void insert(const quic_frame* frame);
-};
-
 
 class QuicBase {
 protected:
@@ -142,7 +135,7 @@ protected:
     uint64_t nextLocalBiId;
     uint64_t nextRemoteBiId;
     std::map <uint64_t, QuicStreamStatus> streammap;
-    std::list<quic_frame*> fullq;
+    std::list<quic_frame> fullq;  //被流控挡住的待发stream帧
     std::deque<Buffer*> datagrams;
 
     uint64_t max_idle_timeout = 120000;
@@ -176,7 +169,8 @@ protected:
     void sinkData(uint64_t id, QuicStreamStatus& status);
     void sinkData(uint64_t id);
     void reorderData();
-    void walkPacket(const void* buff, size_t length);
+    //walkPacket原地解密解帧：buff独占时零拷贝，共享时由COW自动分裂
+    void walkPacket(Buffer&& buff);
 
     void generateCid();
     // Connection migration methods (server-side path validation)
@@ -193,17 +187,17 @@ protected:
     virtual FrameResult handleCryptoFrame(quic_context* context, const quic_crypto* crypto);
     virtual FrameResult handleStreamFrame(uint64_t type, const quic_stream* stream);
     virtual FrameResult handleResetFrame(const quic_reset *stream);
-    virtual FrameResult handleHandshakeFrames(quic_context* context, const quic_frame* frame);
-    virtual FrameResult handleFrames(quic_context* context, const quic_frame* frame);
+    virtual FrameResult handleHandshakeFrames(quic_context* context, const quic_frame& frame);
+    virtual FrameResult handleFrames(quic_context* context, quic_frame& frame); //datagram帧会移出Buffer所有权
     virtual FrameResult handlePathResponseFrame(const char* /*response*/) {
         return FrameResult::ok;
     };
 
-    std::function<int(const quic_pkt_header* header, std::deque<const quic_frame*>& frames)> walkHandler;
-    virtual int handleHandshakePacket(const quic_pkt_header* header, std::deque<const quic_frame*>& frames);
+    std::function<int(const quic_pkt_header* header, std::deque<quic_frame>& frames)> walkHandler;
+    virtual int handleHandshakePacket(const quic_pkt_header* header, std::deque<quic_frame>& frames);
     virtual int handleRetryPacket(const quic_pkt_header* header);
-    virtual int handle1RttPacket(const quic_pkt_header* header, std::deque<const quic_frame*>& frames);
-    virtual int handlePacket(const quic_pkt_header* header, std::deque<const quic_frame*>& frames);
+    virtual int handle1RttPacket(const quic_pkt_header* header, std::deque<quic_frame>& frames);
+    virtual int handlePacket(const quic_pkt_header* header, std::deque<quic_frame>& frames);
     bool checkStatelessReset(const void* may_be_token);
 
     using iterator = typename decltype(streammap)::iterator;
@@ -213,11 +207,13 @@ protected:
     static bool isBidirect(uint64_t id);
 
     size_t envelopLen(OSSL_ENCRYPTION_LEVEL level, uint64_t pn, uint64_t ack, size_t len);
-    size_t envelop(OSSL_ENCRYPTION_LEVEL level, uint64_t pn, uint64_t ack, const char *in, size_t len, void *out);
+    //明文封装加密到out(容量out_cap)，返回报文总长，失败返回0
+    size_t envelop(OSSL_ENCRYPTION_LEVEL level, uint64_t pn, uint64_t ack,
+                   const char* in, size_t len, void* out, size_t out_cap);
     std::list<quic_packet_pn> send(OSSL_ENCRYPTION_LEVEL level,
                                    uint64_t pn, uint64_t ack,
-                                   std::list<quic_frame*>& pend_frames, size_t window);
-    void resendFrames(pn_namespace* ns, quic_frame* frame);
+                                   std::list<quic_frame>& pend_frames, size_t window);
+    void resendFrames(pn_namespace* ns, quic_frame frame);
 
 
     void notifyBlocked(uint64_t id);
@@ -260,7 +256,7 @@ public:
     static int send_alert(SSL *ssl, OSSL_ENCRYPTION_LEVEL level, uint8_t alert);
 
     int doSslConnect(const char* hostname);
-    void walkPackets(const iovec* iov, int iovcnt);
+    void walkPackets(Buffer&& buff);
     void sendData(Buffer&& bb);
     void sendDatagram(Buffer&& bb);
     void reset(uint64_t id, uint32_t code);
@@ -358,7 +354,7 @@ public:
     // build socket connection for validated path (server-side migration)
     int buildFdToAddress(const sockaddr_storage* local_addr, const sockaddr_storage* remote_addr);
     void sendPathChallenge(const sockaddr_storage* local_addr, const sockaddr_storage* remote_addr);
-    bool sendFrameDirectly(const quic_frame* frame, const sockaddr_storage* remote_addr);
+    bool sendFrameDirectly(const quic_frame& frame, const sockaddr_storage* remote_addr);
     // Trigger immediate connection migration
     bool triggerMigration();
 

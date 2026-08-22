@@ -32,8 +32,10 @@ public:
     };
 };
 
+class HttpCursor;
+
 class Hpack_decoder: public Hpack {
-    HeaderMap decode(const unsigned char* s, size_t len);
+    HeaderMap decode(const HttpCursor& cursor);
 public:
     explicit Hpack_decoder(size_t dynamic_table_size_limit_max = 4096): Hpack(dynamic_table_size_limit_max){}
     std::shared_ptr<HttpReqHeader> UnpackHttp2Req(const void* header, size_t len);
@@ -41,7 +43,7 @@ public:
 };
 
 class Hpack_encoder: public Hpack {
-    size_t encode(unsigned char* buf, const char* name, const char* value);
+    bool encode(HttpCursor& cursor, const char* name, const char* value);
 public:
     explicit Hpack_encoder(size_t dynamic_table_size_limit_max = 4096): Hpack(dynamic_table_size_limit_max){}
     size_t PackHttp2Req(std::shared_ptr<const HttpReqHeader> req, void* data, size_t len);

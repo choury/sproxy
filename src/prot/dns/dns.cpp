@@ -1,8 +1,9 @@
 #include "dns.h"
 #include "misc/net.h"
+#include "misc/cursor.h"
 #include <string.h>
-#include <assert.h>
 
+#include <optional>
 #include <string>
 
 typedef struct DNS_QUE {
@@ -18,71 +19,105 @@ typedef struct DNS_RR {
     unsigned char rdata[0];
 } __attribute__((packed)) DNS_RR;
 
-static const unsigned char * getdomain(const DNS_HDR *hdr, const unsigned char *p, size_t len, char* domain, int depth) {
-    if(depth > 16) {
-        domain[0] = 0;
-        return p;
+//DNS报文游标：在通用游标上叠加DNS原语
+//base为报文起点指针，作为压缩指针绝对偏移的基准，永不变化
+class DnsCursor: public cursor {
+    const unsigned char* base;
+    //报文总长 = 已消费(data()-base) + 剩余(length())，advance一增一减和不变
+    size_t packet_len() const {
+        return length() + (data() - base);
     }
-    if(depth == 0) domain[0] = 0;
-    size_t off = strlen(domain);
-    while (p < (unsigned char*)hdr + len && *p) {
-        if (*p > 63) {
-            if(p + 1 >= (unsigned char*)hdr + len) {
-                domain[0] = 0;
-                return p;
-            }
-            const unsigned char* buf = (const unsigned char *)hdr;
-            const unsigned char *q = buf+((*p & 0x3f) <<8U) + *(p+1);
-            if(q <= buf || q >= (unsigned char*)hdr + len) {
-                domain[0] = 0;
-                return p;
-            }
-            getdomain(hdr, q, len, domain, depth + 1);
-            return p+2;
-        } else {
-            if(off + *p + 1 >= DOMAINLIMIT) {
-                domain[off] = 0;
-                return p;
-            }
-            memcpy(domain + off, p+1, *p);
-            domain[off + *p]='.';
-            domain[off + *p + 1]=0;
-            off += *p + 1;
-            p += *p+1;
-        }
-    }
-    if(off == 0){
-        domain[0] = 0;
-    }else{
-        domain[off - 1] = 0;
-    }
-    return p+1;
-}
+    //仅供derive：位置游标与基准分别指定，保证子游标的base仍是报文起点
+    DnsCursor(const cursor& pos, const unsigned char* pkt): cursor(pos), base(pkt) {}
+public:
+    DnsCursor(const void* buff, size_t len):
+        cursor(buff, len), base(static_cast<const unsigned char*>(buff)) {}
+    DnsCursor(void* buff, size_t len):
+        cursor(buff, len), base(static_cast<const unsigned char*>(buff)) {}
 
-static int putdomain(unsigned char *buf, const char *domain){
-    if(domain[0] == '.' || domain[0] == 0){
-        *buf = 0;
-        return 1;
-    }
-    unsigned char *p = buf+1;
-    strcpy((char*)p, domain);
-
-    int i = 0;
-    while(*p){
-        if ( *p == '.' ) {
-            *(p-i-1) = i;
-            i = 0;
-        } else {
-            i++;
+    //按报文内绝对偏移派生子游标(压缩指针用)；偏移0(ID字段)或越界返回nullopt
+    //base必须保持报文起点：链式压缩时内层指针仍按报文绝对偏移解析
+    std::optional<DnsCursor> derive(size_t offset) const {
+        if(offset == 0 || offset >= packet_len()){
+            return std::nullopt;
         }
-        p++;
+        return DnsCursor(cursor(base + offset, packet_len() - offset), base);
     }
-    *(p-i-1) = i;
-    if(i == 0)
-        return p-buf;
-    else
-        return p-buf+1;
-}
+
+    //解析一个域名并越过它；返回值不带尾部'.'，失败返回nullopt
+    //plen为祖先递归已积累的长度，用于约束拼接后的总长
+    std::optional<std::string> getdomain(int depth = 0, size_t plen = 0) {
+        if(depth > 16){
+            return std::nullopt;
+        }
+        std::string domain;
+        while(length() && *data()) {
+            unsigned char l = *data();
+            if(l > 63) {
+                //压缩指针：从报文起点派生子游标，不做指针回退
+                if(length() < 2){
+                    return std::nullopt;
+                }
+                size_t offset = ((l & 0x3fu) << 8) | data()[1];
+                auto child = derive(offset);
+                if(!child){
+                    return std::nullopt;
+                }
+                auto rest = child->getdomain(depth + 1, plen + domain.size());
+                if(!rest || !advance(2)){
+                    return std::nullopt;
+                }
+                if(rest->empty() && !domain.empty()) {
+                    domain.pop_back(); //指针指向根标签：去掉父级尾点
+                }
+                domain += *rest; //父级尾点保留作标签分隔符
+                return domain;
+            }
+            if(length() < (size_t)l + 1){
+                return std::nullopt;
+            }
+            if(plen + domain.size() + l + 1 >= DOMAINLIMIT){
+                return std::nullopt;
+            }
+            domain.append((const char*)data() + 1, l);
+            domain.push_back('.');
+            advance(l + 1);
+        }
+        if(!length()){
+            return std::nullopt; //缺少根标签
+        }
+        advance(1);
+        if(!domain.empty()){
+            domain.pop_back();
+        }
+        return domain;
+    }
+
+    //将域名编码为标签序列写入游标；空间不足或标签超长(>63)时返回false
+    //写入的字节数由调用方经游标length()前后差获得
+    bool putdomain(const char* domain) {
+        if(domain[0] == '.' || domain[0] == 0){
+            return write<unsigned char>(0);
+        }
+        const char* p = domain;
+        while(*p){
+            const char* dot = strchr(p, '.');
+            size_t l = dot ? dot - p : strlen(p);
+            if(l == 0 || l > 63) {
+                return false;
+            }
+            if(!write<unsigned char>((unsigned char)l) || !write_data(p, l)) {
+                return false;
+            }
+            p += l;
+            if(!dot) {
+                break;
+            }
+            p++; //跳过'.'
+        }
+        return write<unsigned char>(0);
+    }
+};
 
 Dns_Query::Dns_Query(const char* domain, uint16_t type, uint16_t id):  type(type), id(id), valid(true) {
     strcpy(this->domain, domain);
@@ -118,19 +153,19 @@ static bool is_valid(const char* domain) {
 }
 
 Dns_Query::Dns_Query(const char* buff, size_t len) {
-    if(len < sizeof(DNS_HDR)){
+    DnsCursor packet(buff, len);
+    const DNS_HDR* dnshdr = packet.read<DNS_HDR>();
+    if(dnshdr == nullptr){
         return;
     }
-    const DNS_HDR *dnshdr = (const DNS_HDR*)buff;
-
     id = ntohs(dnshdr->id);
-    const unsigned char *p = getdomain(dnshdr, (const unsigned char *)(dnshdr+1), len, domain, 0);
-    if(!is_valid(domain)) {
+    auto name = packet.getdomain();
+    if(!name || !is_valid(name->c_str())) {
         return;
     }
-    const DNS_QUE *que = (const DNS_QUE*)p;
-    if((const char*)que + sizeof(DNS_QUE) - buff > (int)len ||
-       ntohs(que->classes) != ns_c_in) {
+    strcpy(domain, name->c_str());
+    const DNS_QUE* que = packet.read<DNS_QUE>();
+    if(que == nullptr || ntohs(que->classes) != ns_c_in){
         return;
     }
     type = ntohs(que->type);
@@ -169,44 +204,60 @@ Dns_Query::Dns_Query(const char* buff, size_t len) {
 
 
 
-int Dns_Query::build(unsigned char* buf) const {
-    DNS_HDR  *dnshdr = (DNS_HDR *)buf;
-    memset(dnshdr, 0, sizeof(DNS_HDR));
+int Dns_Query::build(unsigned char* buf, size_t buf_len) const {
+    DnsCursor c(buf, buf_len);
+    DNS_HDR* dnshdr = c.write<DNS_HDR>();
+    if(dnshdr == nullptr){
+        LOGE("[DNS] buffer too small to build query: %zd\n", buf_len);
+        return 0;
+    }
     dnshdr->id = htons(id);
     dnshdr->rd = 1;
     dnshdr->qdcount = htons(1);
 
-    int len = sizeof(DNS_HDR);
-
-    len += putdomain(buf+len, domain);
-
-    DNS_QUE  *que = (DNS_QUE *)(buf+len);
+    if(!c.putdomain(domain)){
+        LOGE("[DNS] buffer too small to build query: %zd\n", buf_len);
+        return 0;
+    }
+    DNS_QUE* que = c.write<DNS_QUE>();
+    if(que == nullptr){
+        return 0;
+    }
     que->classes = htons(ns_c_in);
     que->type = htons(type);
 
-    return len + sizeof(DNS_QUE);
+    return (int)(buf_len - c.length());
 }
 
 Dns_Result::Dns_Result(const char* buff, size_t len): id(0) {
-    if(len < sizeof(DNS_HDR)){
+    DnsCursor packet(buff, len);
+    const DNS_HDR* dnshdr = packet.read<DNS_HDR>();
+    if(dnshdr == nullptr){
         error = ns_r_formerr;
         LOGE("[DNS] incomplete DNS response\n");
         return;
     }
-    const DNS_HDR *dnshdr = (const DNS_HDR *)buff;
+    if(ntohs(dnshdr->qdcount) == 0 || !dnshdr->qr){
+        error = ns_r_formerr;
+        LOGE("[DNS] <%d> malformed response header\n", ntohs(dnshdr->id));
+        return;
+    }
     uint16_t numq = ntohs(dnshdr->qdcount);
-    const unsigned char *p = (const unsigned char *)(dnshdr +1);
-    assert(numq && dnshdr->qr);
     for (int i = 0; i < numq; ++i) {
-        p = (unsigned char *)getdomain(dnshdr, p, len, domain, 0);
-        if((const char*)p + sizeof(DNS_QUE) - buff > (int)len){
+        auto name = packet.getdomain();
+        if(!name){
+            error = ns_r_formerr;
+            LOGE("[DNS] <%d> numq formerr\n", ntohs(dnshdr->id));
+            return;
+        }
+        strcpy(domain, name->c_str());
+        const DNS_QUE* que = packet.read<DNS_QUE>();
+        if(que == nullptr){
             error = ns_r_formerr;
             LOGE("[DNS] <%d> numq overflow\n", ntohs(dnshdr->id));
             return;
         }
-        DNS_QUE* que = (DNS_QUE*)p;
         type = ntohs(que->type);
-        p+= sizeof(DNS_QUE);
         LOGD(DDNS, "[%d] response for %s, type: %d:\n", ntohs(dnshdr->id), domain, type);
     }
     if(dnshdr->rcode !=0){
@@ -216,66 +267,73 @@ Dns_Result::Dns_Result(const char* buff, size_t len): id(0) {
     }
     uint16_t numa = ntohs(dnshdr->ancount);
     for(int i = 0; i < numa; ++i) {
-        p = (unsigned char *)getdomain(dnshdr, p, len, domain, 0);
-        if((const char*)p + sizeof(DNS_RR) - buff > (int)len){
+        auto name = packet.getdomain();
+        if(!name){
+            error = ns_r_formerr;
+            LOGE("[DNS] <%d> numa formerr\n", ntohs(dnshdr->id));
+            return;
+        }
+        strcpy(domain, name->c_str());
+        const DNS_RR* dnsrr = packet.read<DNS_RR>();
+        if(dnsrr == nullptr){
             error = ns_r_formerr;
             LOGE("[DNS] <%d> numa overflow\n", ntohs(dnshdr->id));
             return;
         }
-        DNS_RR *dnsrr = (DNS_RR*)p;
         if(ntohs(dnsrr->classes) != ns_c_in){
             error = ns_r_formerr;
             return;
         }
         uint32_t ttl = ntohl(dnsrr->TTL);
         uint16_t rdlength = ntohs(dnsrr->rdlength);
-
-        p+= sizeof(DNS_RR);
-        if((const char*)p + rdlength - buff > (int)len){
+        if(packet.length() < rdlength){
             error = ns_r_formerr;
             LOGE("[DNS] <%d> rdlength overflow\n", ntohs(dnshdr->id));
             return;
         }
         char __attribute__((unused)) ipaddr[INET6_ADDRSTRLEN] = {0};
         switch (ntohs(dnsrr->type)) {
-            sockaddr_storage ip;
         case ns_t_a:{
             if(rdlength < sizeof(in_addr)) break;
+            sockaddr_storage ip;
             memset(&ip, 0, sizeof(ip));
             sockaddr_in* ip4 = (sockaddr_in*)&ip;
             ip4->sin_family = AF_INET;
-            memcpy(&ip4->sin_addr, p, sizeof(in_addr));
+            memcpy(&ip4->sin_addr, packet.data(), sizeof(in_addr));
             addrs.push_back(ip);
-            LOGD(DDNS, "A: %s ==> %s [%d]\n", domain, inet_ntop(AF_INET, p, ipaddr, sizeof(ipaddr)), ttl);
+            LOGD(DDNS, "A: %s ==> %s [%d]\n", domain, inet_ntop(AF_INET, packet.data(), ipaddr, sizeof(ipaddr)), ttl);
             break;
         }
         case ns_t_ns: {
-            char ns[DOMAINLIMIT];
-            getdomain(dnshdr, p, len, ns, 0);
-            LOGD(DDNS, "NS: %s ==> %s [%d]\n", domain, ns, ttl);
+            DnsCursor rc = packet; //rdata内的名字用子游标解析，主游标按rdlength跳过
+            if(auto ns = rc.getdomain()) {
+                LOGD(DDNS, "NS: %s ==> %s [%d]\n", domain, ns->c_str(), ttl);
+            }
             break;
         }
         case ns_t_cname: {
-            char cname[DOMAINLIMIT];
-            getdomain(dnshdr, p, len, cname, 0);
-            LOGD(DDNS, "CNAME: %s ==> %s [%d]\n", domain, cname, ttl);
+            DnsCursor rc = packet;
+            if(auto cname = rc.getdomain()) {
+                LOGD(DDNS, "CNAME: %s ==> %s [%d]\n", domain, cname->c_str(), ttl);
+            }
             break;
         }
         case ns_t_aaaa:{
             if(rdlength < sizeof(in6_addr)) break;
+            sockaddr_storage ip;
             memset(&ip, 0, sizeof(ip));
             sockaddr_in6* ip6 = (sockaddr_in6*)&ip;
             ip6->sin6_family = AF_INET6;
-            memcpy(&ip6->sin6_addr, p, sizeof(in6_addr));
+            memcpy(&ip6->sin6_addr, packet.data(), sizeof(in6_addr));
             addrs.push_back(ip);
-            LOGD(DDNS, "AAAA: %s ==> %s [%d]\n", domain, inet_ntop(AF_INET6, p, ipaddr, sizeof(ipaddr)), ttl);
+            LOGD(DDNS, "AAAA: %s ==> %s [%d]\n", domain, inet_ntop(AF_INET6, packet.data(), ipaddr, sizeof(ipaddr)), ttl);
             break;
         }
         default:
             break;
         }
         this->ttl = std::min(ttl, this->ttl);
-        p+= rdlength;
+        packet.advance(rdlength);
     }
     id = ntohs(dnshdr->id);
 }
@@ -309,60 +367,92 @@ Dns_Result::Dns_Result(const char *domain): ttl(0) {
     strcpy(this->domain, domain);
 }
 
-int Dns_Result::build(const Dns_Query* query, unsigned char* buf)const {
-    int len = query->build(buf);
-    DNS_HDR *dnshdr = (DNS_HDR *)buf;
+//在query->build写好的报文头部设置响应标志位
+//头指针借用buf起点：游标只前进，对已写区域的回借不属于游标操作
+static DNS_HDR* set_response_flags(unsigned char* buf) {
+    DNS_HDR* dnshdr = (DNS_HDR*)buf;
     dnshdr->qr = 1;
     dnshdr->rd = 1;
     dnshdr->ra = 1;
+    return dnshdr;
+}
+
+int Dns_Result::build(const Dns_Query* query, unsigned char* buf, size_t buf_len) const {
+    int len = query->build(buf, buf_len);
+    if(len == 0){
+        return 0;
+    }
+    DNS_HDR* dnshdr = set_response_flags(buf);
+    DnsCursor c(buf, buf_len);
+    c.advance(len);
 
     for(auto addr : addrs) {
         if(query->type == ns_t_a && addr.ss_family == AF_INET){
-            len += putdomain(buf+len, query->domain);
-            DNS_RR* rr= (DNS_RR*)(buf + len);
+            //试探-提交：子游标上确认整条RR放得下，再正式写入(提交后write不会再失败)
+            DnsCursor trial = c;
+            if(!trial.putdomain(query->domain) ||
+               trial.length() < sizeof(DNS_RR) + sizeof(in_addr))
+            {
+                break;
+            }
+            c.putdomain(query->domain);
+            DNS_RR* rr = c.write<DNS_RR>();
             rr->classes = htons(ns_c_in);
             rr->type = htons(ns_t_a);
             rr->TTL = htonl(ttl);
             rr->rdlength = htons(sizeof(in_addr));
             sockaddr_in* addr4 = (sockaddr_in*)&addr;
-            memcpy(rr->rdata, &addr4->sin_addr, sizeof(in_addr));
-            len += sizeof(DNS_RR) + sizeof(in_addr);
+            c.write(addr4->sin_addr);
             dnshdr->ancount ++;
         }
         if(query->type == ns_t_aaaa && addr.ss_family == AF_INET6){
-            len += putdomain(buf+len, query->domain);
-            DNS_RR* rr= (DNS_RR*)(buf + len);
+            DnsCursor trial = c;
+            if(!trial.putdomain(query->domain) ||
+               trial.length() < sizeof(DNS_RR) + sizeof(in6_addr))
+            {
+                break;
+            }
+            c.putdomain(query->domain);
+            DNS_RR* rr = c.write<DNS_RR>();
             rr->classes = htons(ns_c_in);
             rr->type = htons(ns_t_aaaa);
             rr->TTL = htonl(ttl);
             rr->rdlength = htons(sizeof(in6_addr));
             sockaddr_in6* addr6 = (sockaddr_in6*)&addr;
-            memcpy(rr->rdata, &addr6->sin6_addr, sizeof(in6_addr));
-            len += sizeof(DNS_RR) + sizeof(in6_addr);
+            c.write(addr6->sin6_addr);
             dnshdr->ancount ++;
         }
     }
     if(query->type == ns_t_ptr){
-        len += putdomain(buf+len, query->domain);
-        DNS_RR* rr= (DNS_RR*)(buf + len);
-        rr->classes = htons(ns_c_in);
-        rr->type = htons(ns_t_ptr);
-        rr->TTL = htonl(ttl);
-        int rdlength = putdomain(rr->rdata, domain);
-        rr->rdlength = htons(rdlength);
-        len += sizeof(DNS_RR) + rdlength;
-        dnshdr->ancount ++;
+        DnsCursor trial = c;
+        if(trial.putdomain(query->domain) && trial.length() >= sizeof(DNS_RR)){
+            //rdata中的名字再派生子游标试写，写入前后length()差即精确rdlength
+            DnsCursor rdata = trial;
+            rdata.advance(sizeof(DNS_RR));
+            size_t before = rdata.length();
+            if(rdata.putdomain(domain)){
+                size_t rdlength = before - rdata.length();
+                c.putdomain(query->domain);
+                DNS_RR* rr = c.write<DNS_RR>();
+                rr->classes = htons(ns_c_in);
+                rr->type = htons(ns_t_ptr);
+                rr->TTL = htonl(ttl);
+                rr->rdlength = htons(rdlength);
+                c.putdomain(domain);
+                dnshdr->ancount ++;
+            }
+        }
     }
     HTONS(dnshdr->ancount);
-    return len;
+    return (int)(buf_len - c.length());
 }
 
 int Dns_Result::buildError(const Dns_Query* query, unsigned char errcode, unsigned char *buf){
-    int len = query->build(buf);
-    DNS_HDR *dnshdr = (DNS_HDR *)buf;
-    dnshdr->qr = 1;
-    dnshdr->rd = 1;
-    dnshdr->ra = 1;
+    int len = query->build(buf, BUF_LEN);
+    if(len == 0){
+        return 0;
+    }
+    DNS_HDR* dnshdr = set_response_flags(buf);
     dnshdr->rcode = errcode;
     return len;
 }

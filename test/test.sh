@@ -750,6 +750,9 @@ fi
 jobs
 
 $buildpath/prot/dns/dns_test
+$buildpath/prot/http2/hpack_test
+$buildpath/prot/http3/qpack_test
+$buildpath/prot/quic/quic_frame_test
 $buildpath/misc/trie_test
 $buildpath/misc/buffer_test
 if [ $ker == 'Linux' ];then

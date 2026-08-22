@@ -118,31 +118,29 @@ void pn_namespace::PendAck() {
     }
     assert(!tracked_receipt_pns.items.empty());
     should_ack = false;
-    quic_frame *ack = new quic_frame;
-    memset(ack, 0, sizeof(quic_frame));
-    ack->type = QUIC_FRAME_ACK;
-    ack->ack.acknowledged = tracked_receipt_pns.items.back().second;
-    ack->ack.delay = (getutime() - tracked_receipt_pns.latest_time) >> 3;
-    ack->ack.first_range = tracked_receipt_pns.items.back().second - tracked_receipt_pns.items.back().first;
-    ack->ack.range_count = tracked_receipt_pns.items.size() - 1;
-    ack->ack.ranges = new quic_ack_range[ack->ack.range_count];
+    quic_frame ack{QUIC_FRAME_ACK};
+    ack.ack.acknowledged = tracked_receipt_pns.items.back().second;
+    ack.ack.delay = (getutime() - tracked_receipt_pns.latest_time) >> 3;
+    ack.ack.first_range = tracked_receipt_pns.items.back().second - tracked_receipt_pns.items.back().first;
+    ack.ack.range_count = tracked_receipt_pns.items.size() - 1;
+    ack.ack.ranges = new quic_ack_range[ack.ack.range_count];
     int index = 0;
     for(auto i = tracked_receipt_pns.items.rbegin(); i != tracked_receipt_pns.items.rend();){
         auto j = i++;
         if(i == tracked_receipt_pns.items.rend()){
             break;
         }
-        ack->ack.ranges[index].gap = j->first - i->second - 2;
-        ack->ack.ranges[index].length = i->second - i->first;
+        ack.ack.ranges[index].gap = j->first - i->second - 2;
+        ack.ack.ranges[index].length = i->second - i->first;
         index++;
     }
-    if(ack->ack.range_count && pend_frames.empty()){
+    if(ack.ack.range_count && pend_frames.empty()){
         //append ping if only ack
-        pend_frames.emplace_back(new quic_frame{QUIC_FRAME_PING, {}});
+        pend_frames.push_back(quic_frame{QUIC_FRAME_PING});
     }
 
     dumpFrame("<", name, ack);
-    pend_frames.push_front(ack);
+    pend_frames.push_front(std::move(ack));
 }
 
 size_t pn_namespace::sendPacket(size_t window, size_t delivered_bytes, size_t& packets_sent) {
@@ -192,13 +190,12 @@ std::list<quic_packet_meta> pn_namespace::DetectAndRemoveAckedPackets(
             if(i->meta.ack_eliciting){
                 ack_elicited = true;
             }
-            for(auto frame: i->frames) {
-                if (frame->type == QUIC_FRAME_ACK || frame->type == QUIC_FRAME_ACK_ECN) {
-                    latest_acked_pn = frame->ack.acknowledged;
+            for(auto& frame: i->frames) {
+                if (frame.type == QUIC_FRAME_ACK || frame.type == QUIC_FRAME_ACK_ECN) {
+                    latest_acked_pn = frame.ack.acknowledged;
                 }
-                frame_release(frame);
             }
-            i = sent_packets.erase(i);
+            i = sent_packets.erase(i); //帧随包析构释放
         } else if(i->meta.pn > p.Max()){
             break;
         } else {
@@ -255,7 +252,7 @@ std::list<quic_packet_pn> pn_namespace::DetectAndRemoveLostPackets(Rtt *rtt) {
         }
         if(largest_acked_packet - i->meta.pn >= kPacketThreshold || now - i->meta.sent_time >= timeThreshold){
             LOGD(DQUIC, "[%c] mark lost packet: [%" PRIu64"]\n", name, i->meta.pn);
-            lost_packets.emplace_back(*i);
+            lost_packets.emplace_back(std::move(*i));
             i = sent_packets.erase(i);
             continue;
         }else if(i->meta.sent_time + timeThreshold < loss_time){
@@ -267,15 +264,6 @@ std::list<quic_packet_pn> pn_namespace::DetectAndRemoveLostPackets(Rtt *rtt) {
 }
 
 void pn_namespace::clear() {
-    for(auto i : pend_frames){
-        frame_release(i);
-    }
-    for(const auto& packet : sent_packets){
-        assert(!packet.frames.empty());
-        for(auto frame: packet.frames) {
-            frame_release(frame);
-        }
-    }
     pend_frames.clear();
     sent_packets.clear();
     loss_time = UINT64_MAX;

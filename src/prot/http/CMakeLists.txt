@@ -5,7 +5,7 @@
 set(http_src
         http.cpp
         http_header.cpp
-        http_code.c
+        http_code.cpp
         )
 
 target_sources(prot PRIVATE ${http_src})

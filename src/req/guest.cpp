@@ -314,7 +314,13 @@ std::shared_ptr<IMemRWerCallback> Guest::response(uint64_t id) {
             res->set("Alt-Svc", opt.alt_svc);
         }
         Buffer buff{BUF_LEN, res->request_id};
-        buff.truncate(PackHttpRes(res, buff.mutable_data(), BUF_LEN));
+        size_t hlen = PackHttpRes(res, buff.mutable_data(), BUF_LEN);
+        if(hlen == 0){
+            LOGE("http response header too long: %" PRIu64 "\n", res->request_id);
+            deleteLater(PROTOCOL_ERR);
+            return;
+        }
+        buff.truncate(hlen);
         rwer->Send(std::move(buff));
     })->onData([this](Buffer&& bb) {
         return Recv(std::move(bb));

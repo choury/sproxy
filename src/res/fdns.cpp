@@ -206,7 +206,10 @@ void FDns::Recv(Buffer&& bb) {
         return;
     }
     Buffer buff{BUF_LEN, bb.id};
-    buff.truncate(result->build(que.get(), (uchar*)buff.mutable_data()));
+    buff.truncate(result->build(que.get(), (uchar*)buff.mutable_data(), BUF_LEN));
+    if(buff.len == 0){
+        LOGE("fdns failed to build response for %s\n", que->domain);
+    }
     status.rw->Send(std::move(buff));
     succeed_count++;
     delete result;
@@ -250,7 +253,7 @@ void FDns::DnsCb(std::shared_ptr<void> param, int error, const std::list<sockadd
             }
         }
         result->ttl = ttl;
-        buff.truncate(result->build(que.get(), (uchar*)buff.mutable_data()));
+        buff.truncate(result->build(que.get(), (uchar*)buff.mutable_data(), BUF_LEN));
         status.rw->Send(std::move(buff));
         fdns->succeed_count++;
     } else {
@@ -274,7 +277,7 @@ void FDns::DnsCb(std::shared_ptr<void> param, int error, const std::list<sockadd
             }
             result->addrs.push_back(ip);
         }
-        buff.truncate(result->build(que.get(), (uchar*)buff.mutable_data()));
+        buff.truncate(result->build(que.get(), (uchar*)buff.mutable_data(), BUF_LEN));
         status.rw->Send(std::move(buff));
         fdns->succeed_count++;
     }
@@ -303,6 +306,10 @@ void FDns::RawCb(std::shared_ptr<void> param, const char* data, size_t size) {
     std::shared_ptr<Dns_Query> que = status.quemap.at(qid);
     assert(que->id == qid);
     Buffer buff{BUF_LEN, id};
+    if(data && size > BUF_LEN){
+        LOGE("fdns raw response too large: %zd\n", size);
+        data = nullptr;
+    }
     if(data){
         LOGD(DDNS, "<FDNS> Query raw response [%d]\n", que->id);
         memcpy(buff.mutable_data(), data, size);

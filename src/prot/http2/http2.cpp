@@ -41,6 +41,12 @@ size_t Http2Base::DefaultProc(Buffer& bb) {
         }
         uint8_t padlen = 0;
         if (header->flags & HTTP2_PADDED_F) {
+            if(length == 0){
+                //length-- 会回绕成 UINT32_MAX，使后续所有校验失效并触发 ~4GB 的 truncate
+                LOGE("ERROR pad frame without padding field: %d\n", length);
+                ErrProc(HTTP2_ERR_PROTOCOL_ERROR);
+                return 0;
+            }
             padlen = *(const char*)bb.data();
             length --;
             bb.reserve(1);
@@ -71,14 +77,18 @@ size_t Http2Base::DefaultProc(Buffer& bb) {
     }
     case HTTP2_STREAM_HEADERS: {
         const char *pos = (const char *) bb.data();
+        size_t prelen_min = 0;
+        if (header->flags & HTTP2_PADDED_F) prelen_min += 1;
+        if (header->flags & HTTP2_PRIORITY_F) prelen_min += 5;
+        if (prelen_min > length){
+            //长度不足时 padlen/优先级字段的读取越界，且 length-1 会回绕
+            LOGE("ERROR headers frame too short for flags: %d/%d\n", length, header->flags);
+            ErrProc(HTTP2_ERR_PROTOCOL_ERROR);
+            return 0;
+        }
         uint8_t padlen = 0;
         if (header->flags & HTTP2_PADDED_F) {
             padlen = *pos++;
-        }
-        if(padlen > length - 1){
-            LOGE("ERROR padlen exceed length: %d/%d\n", padlen, length);
-            ErrProc(HTTP2_ERR_PROTOCOL_ERROR);
-            return 0;
         }
         uint32_t streamdep = 0;
         uint8_t weigth = 0;
@@ -99,6 +109,11 @@ size_t Http2Base::DefaultProc(Buffer& bb) {
             return 0;
         }
         size_t prelen = pos - (char*)bb.data();
+        if(prelen + padlen > length){
+            LOGE("ERROR padlen exceed length: %d/%d\n", padlen, length);
+            ErrProc(HTTP2_ERR_PROTOCOL_ERROR);
+            return 0;
+        }
         header_buffer = std::make_unique<Buffer>(bb);
         header_buffer->reserve(prelen);
         header_buffer->truncate(length - prelen - padlen);
@@ -137,6 +152,12 @@ size_t Http2Base::DefaultProc(Buffer& bb) {
         PingProc(header);
         break;
     case HTTP2_STREAM_GOAWAY:
+        //GoawayProc会按lastid+errcode读8字节，帧长不足时越界读
+        if(length < (int)sizeof(Goaway_Frame)){
+            LOGE("ERROR goaway frame: %d\n", length);
+            ErrProc(HTTP2_ERR_FRAME_SIZE_ERROR);
+            return 0;
+        }
         http2_flag |= HTTP2_FLAG_GOAWAYED;
         GoawayProc(header);
         break;
@@ -177,6 +198,12 @@ size_t Http2Base::DefaultProc(Buffer& bb) {
         if (header_buffer->id != bb.id) {
             LOGE("ERROR get another header id: %d/%" PRIu64"\n", (int) header_buffer->id, bb.id);
             ErrProc(HTTP2_ERR_COMPRESSION_ERROR);
+            return 0;
+        }
+        if (header_buffer->len + length > HTTP2_HEADER_LIMIT) {
+            //CONTINUATION 无限累积会吃满内存
+            LOGE("ERROR header block too large: %zu/%d\n", header_buffer->len + length, HTTP2_HEADER_LIMIT);
+            ErrProc(HTTP2_ERR_ENHANCE_YOUR_CALM);
             return 0;
         }
         size_t origin = header_buffer->truncate(header_buffer->len + length);
@@ -226,14 +253,14 @@ size_t Http2Base::DefaultProc(Buffer& bb) {
             return 0;
         }
         const char *pos = (const char *) bb.data();
+        if((header->flags & HTTP2_PADDED_F) && length == 0){
+            LOGE("ERROR push promise pad frame without padding field: %d\n", length);
+            ErrProc(HTTP2_ERR_PROTOCOL_ERROR);
+            return 0;
+        }
         uint8_t padlen = 0;
         if (header->flags & HTTP2_PADDED_F) {
             padlen = *pos++;
-        }
-        if(padlen > length - 1){
-            LOGE("ERROR padlen exceed length: %d/%d\n", padlen, length);
-            ErrProc(HTTP2_ERR_PROTOCOL_ERROR);
-            return 0;
         }
 
         if(header_buffer != nullptr){
@@ -242,6 +269,11 @@ size_t Http2Base::DefaultProc(Buffer& bb) {
             return 0;
         }
         size_t prelen = pos - (char*)bb.data();
+        if(prelen + padlen > length){
+            LOGE("ERROR padlen exceed length: %d/%d\n", padlen, length);
+            ErrProc(HTTP2_ERR_PROTOCOL_ERROR);
+            return 0;
+        }
         header_buffer = std::make_unique<Buffer>(bb);
         header_buffer->reserve(prelen);
         header_buffer->truncate(length - prelen - padlen);

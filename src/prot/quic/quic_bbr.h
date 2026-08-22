@@ -119,11 +119,11 @@ class QuicBBR: public QuicQos {
     void UpdateBBRState(bool sample_app_limited); // 更新BBR状态机
     bool IsFullBandwidthReached();   // 检查是否达到满带宽
     virtual void OnPacketsAcked(const std::list<quic_packet_meta>& acked_packets) override;
-    virtual void OnPacketsLost(pn_namespace* ns, const std::list<quic_packet_pn>& lost_packets) override;
+    virtual void OnPacketsLost(pn_namespace* ns, std::list<quic_packet_pn>& lost_packets) override;
     virtual void OnCongestionEvent(uint64_t sent_time) override;
     virtual void Migrated() override;
 public:
-    QuicBBR(bool isServer, send_func sent, std::function<void(pn_namespace*, quic_frame*)> resendFrames);
+    QuicBBR(bool isServer, send_func sent, std::function<void(pn_namespace*, quic_frame)> resendFrames);
     [[nodiscard]] virtual ssize_t windowLeft() const override;
     [[nodiscard]] virtual ssize_t sendWindow() const override;
 };

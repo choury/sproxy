@@ -468,6 +468,9 @@ int spliturl(const char* url, struct Destination* server, char* path) {
         scan_pos = url;
     }
     if(scheme_len){
+        if(scheme_len >= sizeof(server->scheme)) {
+            return -2; // scheme too long
+        }
         memcpy(server->scheme, url, scheme_len);
         server->scheme[scheme_len] = 0;
     }

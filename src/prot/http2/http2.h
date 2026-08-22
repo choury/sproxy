@@ -73,6 +73,8 @@ struct Goaway_Frame{
 
 #define FRAMEBODYLIMIT BUF_LEN
 #define localframewindowsize  FRAMEBODYLIMIT
+//一个header块(HEADERS+CONTINUATION累计)的总长度上限，防止未认证连接无限累积内存
+#define HTTP2_HEADER_LIMIT (64*1024)
 
 struct Http2_frame{
     Http2_header *header;

@@ -21,7 +21,8 @@ struct Dns_Query{
     bool valid = false;
     Dns_Query(const char* domain, uint16_t type, uint16_t id);
     explicit Dns_Query(const char *buff, size_t len);
-    int build(unsigned char *buf)const;
+    //returns 0 if the buffer is too small
+    int build(unsigned char *buf, size_t buf_len)const;
     void reflect(IVisitor& v) {
         reflect_all(domain, ptr_addr, type, id, valid);
     }
@@ -40,7 +41,8 @@ public:
     explicit Dns_Result(const char* domain, const in_addr* addr);
     explicit Dns_Result(const char* domain, const in6_addr* addr);
     explicit Dns_Result(const char* buff, size_t len);
-    int build(const Dns_Query* query, unsigned char *buf)const;
+    //returns 0 if the buffer is too small; otherwise the built length
+    int build(const Dns_Query* query, unsigned char *buf, size_t buf_len)const;
     static int buildError(const Dns_Query* query, unsigned char errcode, unsigned char *buf);
 };
 

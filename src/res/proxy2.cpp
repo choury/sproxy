@@ -285,6 +285,11 @@ void Proxy2::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer
     }
     set32(header->id, id);
     size_t len = hpack_encoder.PackHttp2Req(req, header+1, BUF_LEN - sizeof(Http2_header));
+    if(len == 0){
+        LOGE("http2 request header too long: %s\n", req->geturl().c_str());
+        statusmap.erase(id);
+        return response(rw, HttpResHeader::create(S431, sizeof(S431), req->request_id), "");
+    }
     set24(header->length, len);
     SendData(Buffer{std::move(buff), len + sizeof(Http2_header), id});
 

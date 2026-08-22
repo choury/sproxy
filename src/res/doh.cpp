@@ -108,6 +108,15 @@ void Doh::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> r
                 query_raw(status.data.data(), status.data.size(), DnsCB, std::make_shared<decltype(id)>(id));
                 return 0;
             }
+            //DNS 报文上限64K，超长的POST直接拒绝，防止未认证慢速累积内存
+            if (status.data.size() > 65535 || status.data.size() + bb.len > 65535) {
+                LOGD(DDNS, "<doh> POST read %" PRIu64 " failed: body too large\n", id);
+                failed_count++;
+                auto rw = status.rw;
+                statusmap.erase(id);
+                response(rw, HttpResHeader::create(S413, sizeof(S413), id), "[[payload too large]]\n");
+                return bb.len;
+            }
             LOGD(DDNS, "<doh> POST read %" PRIu64 ": %zu bytes (total: %zu)\n", id, bb.len, status.data.size() + bb.len);
             status.data.append((const char*)bb.data(), bb.len);
             return bb.len;

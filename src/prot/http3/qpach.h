@@ -37,8 +37,10 @@ public:
     }
 };
 
+class HttpCursor;
+
 class Qpack_decoder: public Qpack {
-    static HeaderMap decode(const unsigned char *s, size_t len);
+    static HeaderMap decode(const HttpCursor& cursor);
 public:
     explicit Qpack_decoder(std::function<void(Buffer&&)> sender, size_t dynamic_table_size_limit_max = 0):
         Qpack(std::move(sender), dynamic_table_size_limit_max){};
@@ -47,10 +49,10 @@ public:
 };
 
 class Qpack_encoder: public Qpack {
-    static size_t encode(unsigned char *buf, const std::string& name, const std::string& value);
 public:
     explicit Qpack_encoder(std::function<void(Buffer&&)> sender, size_t dynamic_table_size_limit_max = 0):
         Qpack(std::move(sender), dynamic_table_size_limit_max){};
+    static bool encode(HttpCursor& cursor, const std::string& name, const std::string& value);
     static size_t PackHttp3Req(std::shared_ptr<const HttpReqHeader> req, void* data, size_t len);
     static size_t PackHttp3Res(std::shared_ptr<const HttpResHeader> res, void* data, size_t len);
 };

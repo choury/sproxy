@@ -46,44 +46,58 @@ size_t variable_encode_len(uint64_t value){
     return 0;
 }
 
-size_t variable_encode(void* data_, uint64_t value){
-    unsigned char* data = (unsigned  char*)data_;
-    if(value <= 63){
-        data[0] = (unsigned char)value;
-        return 1;
+//返回varint占用的字节数(1/2/4/8)；pos==end时返回0
+static size_t variable_decode_len(const void* pos_, const void* end){
+    const unsigned char* pos = (const unsigned  char*)pos_;
+    if(pos >= (const unsigned char*)end){
+        return 0;
     }
-    if(value <= 16383){
-        set16(data, value);
-        data[0] |= 0x40;
-        return 2;
-    }
-    if(value <= 1073741823){
-        set32(data, value);
-        data[0] |= 0x80;
-        return 4;
-    }
-    if(value <= 4611686018427387903) {
-        set64(data, value);
-        data[0] |= 0xc0;
-        return 8;
-    }
-    abort();
+    return 1 << (pos[0] >> 6);
 }
 
-size_t variable_decode(const void* data_, uint64_t* value){
-    const unsigned char* data = (const unsigned  char*)data_;
-    size_t size = 1 << (data[0] >> 6);
-    *value = data[0] & 0x3f;
+std::optional<uint64_t> QuicCursor::variable_decode() const{
+    size_t size = variable_decode_len(data(), data() + length());
+    if(size == 0 || length() < size){
+        return std::nullopt;
+    }
+    uint64_t value = data()[0] & 0x3fu;
     for(size_t i = 1; i < size; i ++){
-        *value <<= 8;
-        *value += data[i];
+        value = (value << 8) + data()[i];
     }
-    return size;
+    advance(size);
+    return value;
 }
 
-size_t variable_decode_len(const void* data_){
-    const unsigned char* data = (const unsigned  char*)data_;
-    return 1 << (data[0] >> 6);
+bool QuicCursor::variable_encode(uint64_t value){
+    size_t size = variable_encode_len(value);
+    if(size == 0 || length() < size){
+        return false;
+    }
+    unsigned char* p = mutable_data();
+    for(size_t i = 0; i < size; i++){
+        p[i] = (unsigned char)(value >> (8 * (size - 1 - i)));
+    }
+    p[0] |= (unsigned char)(size == 2 ? 0x40 : size == 4 ? 0x80 : size == 8 ? 0xc0 : 0);
+    advance(size);
+    return true;
+}
+
+std::optional<uint64_t> QuicCursor::decode_long_packet(const quic_pkt_header* header) const{
+    if(!advance(7 + header->dcid.length() + header->scid.length())){
+        return std::nullopt;
+    }
+    if(header->type == QUIC_PACKET_INITIAL) {
+        auto token_len = variable_decode();
+        if(!token_len || token_len.value() > length()){
+            return std::nullopt;
+        }
+        advance(token_len.value());
+    }
+    return variable_decode();
+}
+
+bool QuicCursor::decode_short_packet(const quic_pkt_header* header) const{
+    return advance(1 + header->dcid.length());
 }
 
 //only used for initial key, so just use EVP_sha256
@@ -159,14 +173,19 @@ err:
 
 #ifdef USE_BORINGSSL
 static int aead_encrypt(const EVP_AEAD* aead,
-                       const unsigned char *plaintext, int plaintext_len,
-                       const unsigned char *aad, int aad_len,
+                       const cursor& plaintext,
+                       const cursor& aad,
                        const unsigned char *key,
                        const unsigned char *iv,
-                       unsigned char *ciphertext)
+                       cursor& ciphertext)
 {
     if (!aead) {
         LOGE("aead_encrypt: aead is null\n");
+        return -1;
+    }
+    if(ciphertext.length() < plaintext.length() + 16){
+        LOGE("aead_encrypt: no space for ciphertext: %zd need %zd\n",
+             ciphertext.length(), plaintext.length() + 16);
         return -1;
     }
     size_t len = SIZE_MAX;
@@ -178,24 +197,30 @@ static int aead_encrypt(const EVP_AEAD* aead,
     }
 
     if(!EVP_AEAD_CTX_seal(ctx,
-        ciphertext, &len, len,
+        ciphertext.mutable_data(), &len, len,
         iv, EVP_AEAD_nonce_length(aead),
-        plaintext, plaintext_len,
-        aad, aad_len))
+        plaintext.data(), plaintext.length(),
+        aad.data(), aad.length()))
     {
         LOGE("EVP_AEAD_CTX_seal failed\n");
         return -1;
     }
+    ciphertext.advance(len);
     return len;
 }
 
 static int aead_decrypt(const EVP_AEAD* aead,
-                          unsigned char *ciphertext, int ciphertext_len,
-                          unsigned char *aad, int aad_len,
+                          const cursor& ciphertext,
+                          const cursor& aad,
                           unsigned char* key,
-                          unsigned char *iv,
-                          unsigned char *plaintext
+                          unsigned char* iv,
+                          cursor& plaintext
 ) {
+    if(ciphertext.length() < 16 || plaintext.length() + 16 < ciphertext.length()){
+        LOGE("aead_decrypt: bad lengths: ct %zd, pt %zd\n",
+             ciphertext.length(), plaintext.length());
+        return -1;
+    }
     EVP_AEAD_CTX* ctx = EVP_AEAD_CTX_new(aead, key, EVP_AEAD_key_length(aead), EVP_AEAD_DEFAULT_TAG_LENGTH);
     defer(EVP_AEAD_CTX_free, ctx);
     if(!EVP_AEAD_CTX_init(ctx, aead, key, EVP_AEAD_key_length(aead), EVP_AEAD_DEFAULT_TAG_LENGTH, nullptr)){
@@ -205,26 +230,32 @@ static int aead_decrypt(const EVP_AEAD* aead,
 
     size_t len = 0;
     if(!EVP_AEAD_CTX_open(ctx,
-        plaintext, &len, ciphertext_len,
+        plaintext.mutable_data(), &len, ciphertext.length() - 16,
         iv, EVP_AEAD_nonce_length(aead),
-        ciphertext, ciphertext_len,
-        aad, aad_len))
+        ciphertext.data(), ciphertext.length(),
+        aad.data(), aad.length()))
     {
         LOGE("EVP_AEAD_CTX_open failed\n");
         return -1;
     }
+    plaintext.advance(len);
     return len;
 }
 
 #else
 
 static int aead_encrypt(const EVP_CIPHER* cipher,
-                       const unsigned char *plaintext, int plaintext_len,
-                       const unsigned char *aad, int aad_len,
+                       const cursor& plaintext,
+                       const cursor& aad,
                        const unsigned char *key,
                        const unsigned char *iv,
-                       unsigned char *ciphertext)
+                       cursor& ciphertext)
 {
+    if(ciphertext.length() < plaintext.length() + 16){
+        LOGE("aead_encrypt: no space for ciphertext: %zd need %zd\n",
+             ciphertext.length(), plaintext.length() + 16);
+        return -1;
+    }
     EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
     int len, ciphertext_len;
 
@@ -253,7 +284,7 @@ static int aead_encrypt(const EVP_CIPHER* cipher,
      * Provide any AAD data. This can be called zero or more times as
      * required
      */
-    if(EVP_EncryptUpdate(ctx, nullptr, &len, aad, aad_len) != 1) {
+    if(EVP_EncryptUpdate(ctx, nullptr, &len, aad.data(), aad.length()) != 1) {
         LOGE("EVP_EncryptUpdate failed\n");
         return -1;
     }
@@ -261,7 +292,7 @@ static int aead_encrypt(const EVP_CIPHER* cipher,
      * Provide the message to be encrypted, and obtain the encrypted output.
      * EVP_EncryptUpdate can be called multiple times if necessary
      */
-    if(EVP_EncryptUpdate(ctx, ciphertext, &len, plaintext, plaintext_len) != 1) {
+    if(EVP_EncryptUpdate(ctx, ciphertext.mutable_data(), &len, plaintext.data(), plaintext.length()) != 1) {
         LOGE("EVP_EncryptUpdate failed\n");
         return -1;
     }
@@ -270,27 +301,34 @@ static int aead_encrypt(const EVP_CIPHER* cipher,
      * Finalise the encryption. Normally ciphertext bytes may be written at
      * this stage, but this does not occur in GCM mode
      */
-    if(EVP_EncryptFinal_ex(ctx, ciphertext + ciphertext_len, &len) != 1) {
+    if(EVP_EncryptFinal_ex(ctx, ciphertext.mutable_data() + ciphertext_len, &len) != 1) {
         LOGE("EVP_EncryptFinal_ex failed\n");
         return -1;
     }
     ciphertext_len += len;
 
-    if(EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_GET_TAG, 16, ciphertext + ciphertext_len) != 1) {
+    if(EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_GET_TAG, 16, ciphertext.mutable_data() + ciphertext_len) != 1) {
         LOGE("EVP_CIPHER_CTX_ctrl GET_TAG failed\n");
         return -1;
     }
-    return ciphertext_len + 16;
+    ciphertext_len += 16;
+    ciphertext.advance(ciphertext_len);
+    return ciphertext_len;
 }
 
 
 static int aead_decrypt(const EVP_CIPHER* cipher,
-                       unsigned char *ciphertext, int ciphertext_len,
-                       unsigned char *aad, int aad_len,
+                       const cursor& ciphertext,
+                       const cursor& aad,
                        unsigned char *key,
                        unsigned char *iv,
-                       unsigned char *plaintext)
+                       cursor& plaintext)
 {
+    if(ciphertext.length() < 16 || plaintext.length() + 16 < ciphertext.length()){
+        LOGE("aead_decrypt: bad lengths: ct %zd, pt %zd\n",
+             ciphertext.length(), plaintext.length());
+        return -1;
+    }
     EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
     int len, plaintext_len;
 
@@ -313,7 +351,8 @@ static int aead_decrypt(const EVP_CIPHER* cipher,
     }
 
     /* Set expected tag value. Works in OpenSSL 1.0.1d and later */
-    if(EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_SET_TAG, 16, ciphertext + ciphertext_len - 16) != 1) {
+    if(EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_SET_TAG, 16,
+                           (void*)(ciphertext.data() + ciphertext.length() - 16)) != 1) {
         LOGE("EVP_CIPHER_CTX_ctrl SET_TAG failed\n");
         return -1;
     }
@@ -328,7 +367,7 @@ static int aead_decrypt(const EVP_CIPHER* cipher,
      * Provide any AAD data. This can be called zero or more times as
      * required
      */
-    if(EVP_DecryptUpdate(ctx, nullptr, &len, aad, aad_len) != 1) {
+    if(EVP_DecryptUpdate(ctx, nullptr, &len, aad.data(), aad.length()) != 1) {
         LOGE("EVP_DecryptUpdate failed\n");
         return -1;
     }
@@ -337,7 +376,7 @@ static int aead_decrypt(const EVP_CIPHER* cipher,
      * Provide the message to be decrypted, and obtain the plaintext output.
      * EVP_DecryptUpdate can be called multiple times if necessary
      */
-    if(EVP_DecryptUpdate(ctx, plaintext, &len, ciphertext, ciphertext_len - 16) != 1) {
+    if(EVP_DecryptUpdate(ctx, plaintext.mutable_data(), &len, ciphertext.data(), ciphertext.length() - 16) != 1) {
         LOGE("EVP_DecryptUpdate failed\n");
         return -1;
     }
@@ -348,22 +387,29 @@ static int aead_decrypt(const EVP_CIPHER* cipher,
      * Finalise the decryption. A positive return value indicates success,
      * anything else is a failure - the plaintext is not trustworthy.
      */
-    if(EVP_DecryptFinal_ex(ctx, plaintext + len, &len) != 1) {
+    if(EVP_DecryptFinal_ex(ctx, plaintext.mutable_data() + len, &len) != 1) {
         LOGE("EVP_DecryptFinal_ex failed\n");
         return -1;
     }
 
     plaintext_len += len;
+    plaintext.advance(plaintext_len);
     return plaintext_len;
 }
 
 #endif
 
+//头部保护掩码：对sample游标处16字节采样加密得到掩码；采样不足16字节返回-1
 static int hp_encode(const EVP_CIPHER* cipher,
                       const unsigned char* key,
-                      const unsigned char* data, int data_len,
+                      const cursor& sample,
                       unsigned char* out)
 {
+    if(sample.length() < 16){
+        LOGE("hp sample too short: %zd\n", sample.length());
+        return -1;
+    }
+    const unsigned char* data = sample.data();
     if(cipher) {
         EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
         if(ctx == nullptr)
@@ -376,7 +422,7 @@ static int hp_encode(const EVP_CIPHER* cipher,
             return -1;
 
         int len;
-        if(EVP_EncryptUpdate(ctx, out, &len, data, data_len) != 1)
+        if(EVP_EncryptUpdate(ctx, out, &len, data, 16) != 1)
             return -1;
         int outlen = len;
 
@@ -520,102 +566,133 @@ int quic_secret_set_key(struct quic_secret* secret, const char* key, uint32_t ci
     return 0;
 }
 
-static int pack_header(const struct quic_pkt_header* header, char* data, uint16_t data_len){
+//写出PN字段(pn_length字节)并推进游标；空间不足返回false
+bool QuicCursor::put_pn(const quic_pkt_header* header){
     uint8_t pn_len = header->pn_length;
     assert(pn_len <= 4 && pn_len >=1);
-    size_t p = 0;
-    if(header->type == QUIC_PACKET_1RTT){
-        data[0] = 0x40 | header->flags | (pn_len - 1);
-        memcpy(data + 1, header->dcid.data(), header->dcid.length());
-        p = 1 + header->dcid.length();
-    }else{
-        uint8_t wire_type = header->type;
-        // Map standard types back to QUICv2 wire format
-        if (header->version == QUIC_VERSION_2) {
-            switch (header->type) {
-            case QUIC_PACKET_RETRY:
-                wire_type = QUIC_V2_RETRY_RAW;
-                break;
-            case QUIC_PACKET_INITIAL:
-                wire_type = QUIC_V2_INITIAL_RAW;
-                break;
-            case QUIC_PACKET_0RTT:
-                wire_type = QUIC_V2_0RTT_RAW;
-                break;
-            case QUIC_PACKET_HANDSHAKE:
-                wire_type = QUIC_V2_HANDSHAKE_RAW;
-                break;
-            }
-        }
-        data[0] = 0xc0 | wire_type | (pn_len - 1);
-        if(header->version){
-            set32(data+1, header->version);
-        }else{
-            set32(data+1, QUIC_VERSION_1);
-        }
-        p = 5;
-        p += variable_encode(data + p, header->dcid.length());
-        memcpy(data + p, header->dcid.data(), header->dcid.length());
-        p += header->dcid.length();
-        p += variable_encode(data + p, header->scid.length());
-        memcpy(data + p, header->scid.data(), header->scid.length());
-        p += header->scid.length();
-        if(header->type == QUIC_PACKET_INITIAL) {
-            p += variable_encode(data + p, header->token.length());
-            if (!header->token.empty()) {
-                memcpy(data + p, header->token.data(), header->token.length());
-                p += header->token.length();
-            }
-        }
-        p += variable_encode(data + p, data_len + pn_len);
+    if(length() < pn_len){
+        return false;
     }
     switch(pn_len) {
     case 1:
-        data[p] = header->pn & 0xff;
+        mutable_data()[0] = header->pn & 0xff;
         break;
     case 2:
-        set16(data +p , header->pn & 0xffff);
+        set16(mutable_data(), header->pn & 0xffff);
         break;
     case 3:
-        set24(data + p, header->pn & 0xffffff);
+        set24(mutable_data(), header->pn & 0xffffff);
         break;
     case 4:
-        set32(data + p, header->pn & 0xffffffff);
+        set32(mutable_data(), header->pn & 0xffffffff);
         break;
     default:
         abort();
     }
-    return  (int)p + pn_len;
+    advance(pn_len);
+    return true;
+}
+
+bool QuicCursor::encode_short_packet(const quic_pkt_header* header){
+    assert(header->pn_length >= 1 && header->pn_length <= 4);
+    if(length() < 1){
+        return false;
+    }
+    mutable_data()[0] = 0x40 | header->flags | (header->pn_length - 1);
+    advance(1);
+    if(!write_data(header->dcid.data(), header->dcid.length())){
+        return false;
+    }
+    return put_pn(header);
+}
+
+bool QuicCursor::encode_long_packet(const quic_pkt_header* header, size_t payload_len){
+    uint8_t pn_len = header->pn_length;
+    assert(pn_len <= 4 && pn_len >=1);
+    if(length() < 1){
+        return false;
+    }
+    uint8_t wire_type = header->type;
+    // Map standard types back to QUICv2 wire format
+    if (header->version == QUIC_VERSION_2) {
+        switch (header->type) {
+        case QUIC_PACKET_RETRY:
+            wire_type = QUIC_V2_RETRY_RAW;
+            break;
+        case QUIC_PACKET_INITIAL:
+            wire_type = QUIC_V2_INITIAL_RAW;
+            break;
+        case QUIC_PACKET_0RTT:
+            wire_type = QUIC_V2_0RTT_RAW;
+            break;
+        case QUIC_PACKET_HANDSHAKE:
+            wire_type = QUIC_V2_HANDSHAKE_RAW;
+            break;
+        }
+    }
+    mutable_data()[0] = 0xc0 | wire_type | (pn_len - 1);
+    advance(1);
+    if(length() < 4){
+        return false;
+    }
+    set32(mutable_data(), header->version ? header->version : QUIC_VERSION_1);
+    advance(4);
+    if(!variable_encode(header->dcid.length()) ||
+       !write_data(header->dcid.data(), header->dcid.length()))
+    {
+        return false;
+    }
+    if(!variable_encode(header->scid.length()) ||
+       !write_data(header->scid.data(), header->scid.length()))
+    {
+        return false;
+    }
+    if(header->type == QUIC_PACKET_INITIAL) {
+        if(!variable_encode(header->token.length()) ||
+           !write_data(header->token.data(), header->token.length()))
+        {
+            return false;
+        }
+    }
+    if(!variable_encode(payload_len + pn_len)){
+        return false;
+    }
+    return put_pn(header);
 }
 
 
-size_t encode_packet(const void* data_, size_t len,
-                  const quic_pkt_header* header, const quic_secret* secret,
-                  char* body){
-
+size_t encode_packet(cursor plaintext, const quic_pkt_header* header,
+                     const quic_secret* secret, QuicCursor& out) {
     if (!secret || !secret->cipher) {
         LOGE("encode_packet: secret or secret->cipher is null\n");
         return 0;
     }
 
-    size_t header_len = pack_header(header, body, len + 16);
+    //回借报文起点：AAD与HP定位需要已写区域，游标只前进，回借不属于游标操作
+    unsigned char* base = out.mutable_data();
+    const size_t cap = out.length();
+    if(header->type == QUIC_PACKET_1RTT ? !out.encode_short_packet(header)
+                                        : !out.encode_long_packet(header, plaintext.length() + 16)){
+        LOGE("encode_packet: no space for header, cap: %zd\n", cap);
+        return 0;
+    }
+    size_t header_len = cap - out.length();
     char iv[12];
     memcpy(iv, secret->iv, 12);
     for(int i = 0; i < 8; i++){
         iv[11-i] ^= (header->pn>>(i*8))&0xff;
     }
-    size_t pn_length = (body[0] & 0x03) + 1;
+    size_t pn_length = (base[0] & 0x03) + 1;
     assert(pn_length == header->pn_length);
 
+    cursor aad(base, header_len);
     int ciphertext_len = aead_encrypt(
             secret->cipher,
-            (const unsigned char*)data_,
-            len,
-            (const unsigned char*)body,
-            header_len,
+            plaintext,
+            aad,
             (const unsigned char*)secret->key,
             (const unsigned char*)iv,
-            (unsigned char*)body + header_len);
+            out);
     if(ciphertext_len < 0){
         LOGE("gcm_encrypt error\n");
         return 0;
@@ -623,37 +700,15 @@ size_t encode_packet(const void* data_, size_t len,
 
     unsigned char mask[128];
     memset(mask, 0, 128);
-    char* pos = body;
-    if((body[0] & 0x80) == 0x80){ // long header
-        pos += 7 + header->dcid.length() + header->scid.length();
-        if(header->type == QUIC_PACKET_INITIAL) {
-            uint64_t token_len;
-            pos += variable_decode(pos, &token_len);
-            assert(token_len == header->token.length());
-            pos += header->token.length();
-        }
-
-        uint64_t payload_len;
-        pos += variable_decode(pos, &payload_len);
-        assert(payload_len == len + pn_length + 16);
-
-        int mask_len = hp_encode(secret->hcipher, (unsigned char*)secret->hp, (unsigned char*)pos + 4, 16, mask);
-        if(mask_len < 0){
-            LOGE("hp_encode failed\n");
-            return 0;
-        }
-        body[0] ^= mask[0] & 0x0f;
-    }else{
-        pos += 1 + header->dcid.length();
-
-        if(hp_encode(secret->hcipher, (unsigned char*)secret->hp, (unsigned char*)pos + 4, 16, mask) < 0){
-            LOGE("hp_encode failed\n");
-            return 0;
-        }
-        body[0] ^= mask[0] & 0x1f;
+    //PN字段是头部最后写出的内容，HP采样点固定为其后4字节起的16字节
+    unsigned char* pn_pos = base + header_len - pn_length;
+    if(hp_encode(secret->hcipher, (const unsigned char*)secret->hp, cursor(pn_pos + 4, 16), mask) < 0){
+        LOGE("hp_encode failed\n");
+        return 0;
     }
+    base[0] ^= (base[0] & 0x80) ? (mask[0] & 0x0f) : (mask[0] & 0x1f);
     for(size_t i = 0; i < pn_length; i++){
-        pos[i] ^= mask[i + 1];
+        pn_pos[i] ^= mask[i + 1];
     }
     return header_len + ciphertext_len;
 }
@@ -663,26 +718,50 @@ static size_t pack_crypto_frame_len(const struct quic_crypto* crypto){
 
 }
 
-static char* pack_crypto_frame(const struct quic_crypto* crypto, char* data){
-    data += variable_encode(data, crypto->offset);
-    data += variable_encode(data, crypto->length);
-    memcpy(data, crypto->buffer->data(), crypto->length);
-    return data + crypto->length;
+static bool pack_crypto_frame(QuicCursor& c, const struct quic_crypto* crypto){
+    return c.variable_encode(crypto->offset) &&
+           c.variable_encode(crypto->length) &&
+           c.write_data(crypto->buffer->data(), crypto->length);
 }
 
-static const char* unpack_crypto_frame(const char* data, const char* end, struct quic_crypto* crypto){
-    crypto->buffer = nullptr;
-    data += variable_decode(data, &crypto->offset);
-    data += variable_decode(data, &crypto->length);
-    if(crypto->length > (uint64_t)(end - data)){
-        LOGE("crypto frame truncated: length: %" PRIu64", remain: %zu\n",
-             crypto->length, (size_t)(end - data));
-        return nullptr;
+//构造帧载荷Buffer：owner非空且len>0时切owner的零拷贝共享子区，否则完整拷贝
+static Buffer* frame_payload(const Buffer* owner, const cursor& c, uint64_t len){
+    if(owner && len){
+        Buffer sub = *owner; //拷贝构造仅共享底层
+        sub.reserve(c.data() - (const unsigned char*)owner->data());
+        sub.truncate(len);
+        return new Buffer(std::move(sub));
     }
-    crypto->buffer = new Buffer(crypto->length);
-    memcpy(crypto->buffer->mutable_data(), data, crypto->length);
-    crypto->buffer->truncate(crypto->length);
-    return data + crypto->length;
+    Buffer b(len);
+    if(len){
+        memcpy(b.mutable_data(), c.data(), len);
+        b.truncate(len);
+    }
+    return new Buffer(std::move(b));
+}
+
+static bool unpack_crypto_frame(const QuicCursor& c, struct quic_crypto* crypto, const Buffer* owner){
+    crypto->buffer = nullptr;
+    auto offset = c.variable_decode();
+    if(!offset){
+        LOGE("crypto frame truncated: bad offset varint\n");
+        return false;
+    }
+    crypto->offset = offset.value();
+    auto length = c.variable_decode();
+    if(!length){
+        LOGE("crypto frame truncated: bad length varint\n");
+        return false;
+    }
+    crypto->length = length.value();
+    if(crypto->length > c.length()){
+        LOGE("crypto frame truncated: length: %" PRIu64", remain: %zd\n",
+             crypto->length, c.length());
+        return false;
+    }
+    crypto->buffer = frame_payload(owner, c, crypto->length);
+    c.advance(crypto->length);
+    return true;
 }
 
 static size_t pack_ack_frame_len(uint64_t type, const struct quic_ack* ack) {
@@ -702,54 +781,81 @@ static size_t pack_ack_frame_len(uint64_t type, const struct quic_ack* ack) {
     return len;
 }
 
-static char* pack_ack_frame(uint64_t type, const struct quic_ack* ack, char* data){
-    data += variable_encode(data, ack->acknowledged);
-    data += variable_encode(data, ack->delay);
-    data += variable_encode(data, ack->range_count);
-    data += variable_encode(data, ack->first_range);
+static bool pack_ack_frame(QuicCursor& c, uint64_t type, const struct quic_ack* ack){
+    if(!c.variable_encode(ack->acknowledged) ||
+       !c.variable_encode(ack->delay) ||
+       !c.variable_encode(ack->range_count) ||
+       !c.variable_encode(ack->first_range))
+    {
+        return false;
+    }
     for(size_t i = 0; i < ack->range_count; i++){
-        data += variable_encode(data, ack->ranges[i].gap);
-        data += variable_encode(data, ack->ranges[i].length);
+        if(!c.variable_encode(ack->ranges[i].gap) ||
+           !c.variable_encode(ack->ranges[i].length))
+        {
+            return false;
+        }
     }
     if(type == QUIC_FRAME_ACK_ECN){
-        data += variable_encode(data, ack->ecn_ect0);
-        data += variable_encode(data, ack->ecn_ect1);
-        data += variable_encode(data, ack->ecn_ce);
+        return c.variable_encode(ack->ecn_ect0) &&
+               c.variable_encode(ack->ecn_ect1) &&
+               c.variable_encode(ack->ecn_ce);
     }
-    return data;
+    return true;
 }
 
-static const char* unpack_ack_frame(uint64_t type, const char* data, const char* end, struct quic_ack* ack){
+static bool unpack_ack_frame(const QuicCursor& c, uint64_t type, struct quic_ack* ack){
     assert(type == QUIC_FRAME_ACK || type == QUIC_FRAME_ACK_ECN);
     ack->ranges = nullptr;
-    data += variable_decode(data, &ack->acknowledged);
-    data += variable_decode(data, &ack->delay);
-    data += variable_decode(data, &ack->range_count);
-    data += variable_decode(data, &ack->first_range);
+    auto acknowledged = c.variable_decode();
+    auto delay = c.variable_decode();
+    auto range_count = c.variable_decode();
+    auto first_range = c.variable_decode();
+    if(!acknowledged || !delay || !range_count || !first_range){
+        LOGE("ack frame truncated\n");
+        return false;
+    }
+    ack->acknowledged = acknowledged.value();
+    ack->delay = delay.value();
+    ack->range_count = range_count.value();
+    ack->first_range = first_range.value();
     // Each ack range consumes at least 2 bytes (gap + length varints), so a
     // range_count claiming more than half the remaining bytes is malformed.
-    if(ack->range_count > (uint64_t)(end - data) / 2){
-        LOGE("ack frame range_count too large: %" PRIu64", remain: %zu\n",
-             ack->range_count, (size_t)(end - data));
-        return nullptr;
+    if(ack->range_count > c.length() / 2){
+        LOGE("ack frame range_count too large: %" PRIu64", remain: %zd\n",
+             ack->range_count, c.length());
+        return false;
     }
     if(ack->range_count){
         ack->ranges = new quic_ack_range[ack->range_count];
         for(size_t i = 0 ; i < ack->range_count; i++){
-            data += variable_decode(data, &ack->ranges[i].gap);
-            data += variable_decode(data, &ack->ranges[i].length);
+            auto gap = c.variable_decode();
+            auto length = c.variable_decode();
+            if(!gap || !length){
+                LOGE("ack frame range truncated\n");
+                return false;
+            }
+            ack->ranges[i].gap = gap.value();
+            ack->ranges[i].length = length.value();
         }
     }
     if(type == QUIC_FRAME_ACK_ECN){
-        data += variable_decode(data, &ack->ecn_ect0);
-        data += variable_decode(data, &ack->ecn_ect1);
-        data += variable_decode(data, &ack->ecn_ce);
+        auto ect0 = c.variable_decode();
+        auto ect1 = c.variable_decode();
+        auto ce = c.variable_decode();
+        if(!ect0 || !ect1 || !ce){
+            LOGE("ack ecn frame truncated\n");
+            return false;
+        }
+        ack->ecn_ect0 = ect0.value();
+        ack->ecn_ect1 = ect1.value();
+        ack->ecn_ce = ce.value();
     }else{
         ack->ecn_ect0 = 0;
         ack->ecn_ect1 = 0;
         ack->ecn_ce = 0;
     }
-    return data;
+    return true;
 }
 
 static size_t pack_close_frame_len(uint64_t type, const struct quic_close* close_frame){
@@ -762,37 +868,54 @@ static size_t pack_close_frame_len(uint64_t type, const struct quic_close* close
     return len;
 }
 
-static char* pack_close_frame(uint64_t type, const struct quic_close* close_frame, char* data){
+static bool pack_close_frame(QuicCursor& c, uint64_t type, const struct quic_close* close_frame){
     assert(type == QUIC_FRAME_CONNECTION_CLOSE || type == QUIC_FRAME_CONNECTION_CLOSE_APP);
-    data += variable_encode(data, close_frame->error);
+    if(!c.variable_encode(close_frame->error)){
+        return false;
+    }
     if(type == QUIC_FRAME_CONNECTION_CLOSE){
-        data += variable_encode(data, close_frame->frame_type);
+        if(!c.variable_encode(close_frame->frame_type)){
+            return false;
+        }
     }
-    data += variable_encode(data, close_frame->reason_len);
-    if(close_frame->reason_len > 0) {
-        memcpy(data, close_frame->reason, close_frame->reason_len);
-    }
-    return data + close_frame->reason_len;
+    return c.variable_encode(close_frame->reason_len) &&
+           c.write_data(close_frame->reason, close_frame->reason_len);
 }
 
-static const char* unpack_close_frame(uint64_t type, const char* data, const char* end, struct quic_close* close_frame){
+static bool unpack_close_frame(const QuicCursor& c, uint64_t type, struct quic_close* close_frame){
     assert(type == QUIC_FRAME_CONNECTION_CLOSE || type == QUIC_FRAME_CONNECTION_CLOSE_APP);
     close_frame->reason = nullptr;
-    data += variable_decode(data, &close_frame->error);
+    auto error = c.variable_decode();
+    if(!error){
+        LOGE("close frame truncated: bad error varint\n");
+        return false;
+    }
+    close_frame->error = error.value();
     if(type == QUIC_FRAME_CONNECTION_CLOSE_APP){
         close_frame->frame_type = QUIC_FRAME_PADDING;
     }else{
-        data += variable_decode(data, &close_frame->frame_type);
+        auto frame_type = c.variable_decode();
+        if(!frame_type){
+            LOGE("close frame truncated: bad frame_type varint\n");
+            return false;
+        }
+        close_frame->frame_type = frame_type.value();
     }
-    data += variable_decode(data, &close_frame->reason_len);
-    if(close_frame->reason_len > (uint64_t)(end - data)){
-        LOGE("close frame reason truncated: %" PRIu64", remain: %zu\n",
-             close_frame->reason_len, (size_t)(end - data));
-        return nullptr;
+    auto reason_len = c.variable_decode();
+    if(!reason_len){
+        LOGE("close frame truncated: bad reason_len varint\n");
+        return false;
+    }
+    close_frame->reason_len = reason_len.value();
+    if(close_frame->reason_len > c.length()){
+        LOGE("close frame reason truncated: %" PRIu64", remain: %zd\n",
+             close_frame->reason_len, c.length());
+        return false;
     }
     close_frame->reason = new char[close_frame->reason_len];
-    memcpy(close_frame->reason, data, close_frame->reason_len);
-    return data + close_frame->reason_len;
+    memcpy(close_frame->reason, c.data(), close_frame->reason_len);
+    c.advance(close_frame->reason_len);
+    return true;
 }
 
 static size_t pack_new_id_frame_len(const struct quic_new_id* new_id){
@@ -801,59 +924,68 @@ static size_t pack_new_id_frame_len(const struct quic_new_id* new_id){
            + 1 + new_id->length + sizeof(new_id->token);
 }
 
-static char* pack_new_id_frame(const struct quic_new_id* new_id, char* data){
-    data += variable_encode(data, new_id->seq);
-    data += variable_encode(data, new_id->retired);
-    data[0] = (char)new_id->length;
-    data ++;
-    memcpy(data, new_id->id, new_id->length);
-    data += new_id->length;
-    memcpy(data, new_id->token, sizeof(new_id->token));
-    return data + sizeof(new_id->token);
+static bool pack_new_id_frame(QuicCursor& c, const struct quic_new_id* new_id){
+    return c.variable_encode(new_id->seq) &&
+           c.variable_encode(new_id->retired) &&
+           c.write<unsigned char>(new_id->length) &&
+           c.write_data(new_id->id, new_id->length) &&
+           c.write_data(new_id->token, sizeof(new_id->token));
 }
 
-static const char* unpack_new_id_frame(const char* data, const char* end, struct quic_new_id* new_id){
+static bool unpack_new_id_frame(const QuicCursor& c, struct quic_new_id* new_id){
     new_id->id = nullptr;
-    data += variable_decode(data, &new_id->seq);
-    data += variable_decode(data, &new_id->retired);
-    if(data >= end){
-        return nullptr;
+    auto seq = c.variable_decode();
+    auto retired = c.variable_decode();
+    if(!seq || !retired){
+        LOGE("new connection id frame truncated: bad varint\n");
+        return false;
     }
-    new_id->length = data[0];
-    data ++;
-    if((uint64_t)new_id->length + sizeof(new_id->token) > (uint64_t)(end - data)){
-        LOGE("new connection id frame truncated: length: %u, remain: %zu\n",
-             new_id->length, (size_t)(end - data));
-        return nullptr;
+    new_id->seq = seq.value();
+    new_id->retired = retired.value();
+    if(c.empty()){
+        return false;
+    }
+    new_id->length = *c.data();
+    c.advance(1);
+    if((uint64_t)new_id->length + sizeof(new_id->token) > c.length()){
+        LOGE("new connection id frame truncated: length: %u, remain: %zd\n",
+             new_id->length, c.length());
+        return false;
     }
     new_id->id = new char[new_id->length];
-    memcpy(new_id->id, data, new_id->length);
-    data += new_id->length;
-    memcpy(new_id->token, data, sizeof(new_id->token));
-    return data + sizeof(new_id->token);
+    memcpy(new_id->id, c.data(), new_id->length);
+    c.advance(new_id->length);
+    memcpy(new_id->token, c.data(), sizeof(new_id->token));
+    c.advance(sizeof(new_id->token));
+    return true;
 }
 
 static size_t pack_new_token_frame_len(const quic_new_token* new_token){
     return variable_encode_len(new_token->length) + new_token->length;
 }
 
-static char* pack_new_token_frame(const quic_new_token* new_token, char* data){
-    data += variable_encode(data, new_token->length);
-    memcpy(data, new_token->token, new_token->length);
-    return data + new_token->length;
+static bool pack_new_token_frame(QuicCursor& c, const quic_new_token* new_token){
+    return c.variable_encode(new_token->length) &&
+           c.write_data(new_token->token, new_token->length);
 }
 
-static const char* unpack_new_token_frame(const char* data, const char* end, struct quic_new_token* new_token){
+static bool unpack_new_token_frame(const QuicCursor& c, struct quic_new_token* new_token){
     new_token->token = nullptr;
-    data += variable_decode(data, &new_token->length);
-    if(new_token->length > (uint64_t)(end - data)){
-        LOGE("new token frame truncated: length: %" PRIu64", remain: %zu\n",
-             new_token->length, (size_t)(end - data));
-        return nullptr;
+    auto length = c.variable_decode();
+    if(!length){
+        LOGE("new token frame truncated: bad length varint\n");
+        return false;
+    }
+    new_token->length = length.value();
+    if(new_token->length > c.length()){
+        LOGE("new token frame truncated: length: %" PRIu64", remain: %zd\n",
+             new_token->length, c.length());
+        return false;
     }
     new_token->token = new char[new_token->length];
-    memcpy(new_token->token, data, new_token->length);
-    return data + new_token->length;
+    memcpy(new_token->token, c.data(), new_token->length);
+    c.advance(new_token->length);
+    return true;
 }
 
 static size_t pack_stream_frame_len(uint64_t type, const quic_stream* stream){
@@ -867,37 +999,61 @@ static size_t pack_stream_frame_len(uint64_t type, const quic_stream* stream){
     return len;
 }
 
-static char* pack_stream_frame(uint64_t type, const quic_stream* stream, char *data){
+static bool pack_stream_frame(QuicCursor& c, uint64_t type, const quic_stream* stream){
     assert((type >= QUIC_FRAME_STREAM_START_ID)
         && (type <= QUIC_FRAME_STREAM_END_ID));
-    data += variable_encode(data, stream->id);
+    if(!c.variable_encode(stream->id)){
+        return false;
+    }
     if(type & QUIC_FRAME_STREAM_OFF_F){
-        data += variable_encode(data, stream->offset);
+        if(!c.variable_encode(stream->offset)){
+            return false;
+        }
     }
     if(type & QUIC_FRAME_STREAM_LEN_F){
-        data += variable_encode(data, stream->length);
+        if(!c.variable_encode(stream->length)){
+            return false;
+        }
     }
-    memcpy(data, stream->buffer->data(), stream->length);
-    return data + stream->length;
+    return c.write_data(stream->buffer->data(), stream->length);
 }
 
-static const char* unpack_stream_frame(uint64_t type, const char* data, const char* end, quic_stream* stream) {
-    data += variable_decode(data, &stream->id);
+static bool unpack_stream_frame(const QuicCursor& c, uint64_t type, quic_stream* stream, const Buffer* owner) {
+    auto id = c.variable_decode();
+    if(!id){
+        LOGE("stream frame truncated: bad id varint\n");
+        return false;
+    }
+    stream->id = id.value();
     if(type & QUIC_FRAME_STREAM_OFF_F){
-        data += variable_decode(data, &stream->offset);
+        auto offset = c.variable_decode();
+        if(!offset){
+            LOGE("stream frame truncated: bad offset varint\n");
+            return false;
+        }
+        stream->offset = offset.value();
     }else{
         stream->offset = 0;
     }
     if(type & QUIC_FRAME_STREAM_LEN_F){
-        data += variable_decode(data, &stream->length);
+        auto length = c.variable_decode();
+        if(!length){
+            LOGE("stream frame truncated: bad length varint\n");
+            return false;
+        }
+        stream->length = length.value();
     }else{
-        stream->length = end - data;
+        stream->length = c.length();
+    }
+    if(stream->length > c.length()){
+        LOGE("stream frame truncated: length: %" PRIu64", remain: %zd\n",
+             stream->length, c.length());
+        return false;
     }
 
-    stream->buffer = new Buffer(stream->length);
-    memcpy(stream->buffer->mutable_data(), data, stream->length);
-    stream->buffer->truncate(stream->length);
-    return data + stream->length;
+    stream->buffer = frame_payload(owner, c, stream->length);
+    c.advance(stream->length);
+    return true;
 }
 
 static size_t pack_reset_frame_len(const quic_reset* reset){
@@ -906,66 +1062,87 @@ static size_t pack_reset_frame_len(const quic_reset* reset){
     + variable_encode_len(reset->fsize);
 }
 
-static char* pack_reset_frame(const quic_reset* reset, char* data){
-    data += variable_encode(data, reset->id);
-    data += variable_encode(data, reset->error);
-    data += variable_encode(data, reset->fsize);
-    return data;
+static bool pack_reset_frame(QuicCursor& c, const quic_reset* reset){
+    return c.variable_encode(reset->id) &&
+           c.variable_encode(reset->error) &&
+           c.variable_encode(reset->fsize);
 }
 
-static const char* unpack_reset_frame(const char* data, quic_reset* reset){
-    data += variable_decode(data, &reset->id);
-    data += variable_decode(data, &reset->error);
-    data += variable_decode(data, &reset->fsize);
-    return data;
+static bool unpack_reset_frame(const QuicCursor& c, quic_reset* reset){
+    auto id = c.variable_decode();
+    auto error = c.variable_decode();
+    auto fsize = c.variable_decode();
+    if(!id || !error || !fsize){
+        LOGE("reset stream frame truncated\n");
+        return false;
+    }
+    reset->id = id.value();
+    reset->error = error.value();
+    reset->fsize = fsize.value();
+    return true;
 }
 
 static size_t pack_stop_frame_len(const quic_stop* stop) {
     return variable_encode_len(stop->id) + variable_encode_len(stop->error);
 }
 
-static char* pack_stop_frame(const quic_stop* stop, char* data){
-    data += variable_encode(data, stop->id);
-    data += variable_encode(data, stop->error);
-    return data;
+static bool pack_stop_frame(QuicCursor& c, const quic_stop* stop){
+    return c.variable_encode(stop->id) &&
+           c.variable_encode(stop->error);
 }
 
-static const char* unpack_stop_frame(const char* data, quic_stop* stop){
-    data += variable_decode(data, &stop->id);
-    data += variable_decode(data, &stop->error);
-    return data;
+static bool unpack_stop_frame(const QuicCursor& c, quic_stop* stop){
+    auto id = c.variable_decode();
+    auto error = c.variable_decode();
+    if(!id || !error){
+        LOGE("stop sending frame truncated\n");
+        return false;
+    }
+    stop->id = id.value();
+    stop->error = error.value();
+    return true;
 }
 
 static size_t pack_max_stream_data_len(const quic_max_stream_data* stream_data){
     return variable_encode_len(stream_data->id) + variable_encode_len(stream_data->max);
 }
 
-static char* pack_max_stream_data(const quic_max_stream_data* stream_data, char* data){
-    data += variable_encode(data, stream_data->id);
-    data += variable_encode(data, stream_data->max);
-    return data;
+static bool pack_max_stream_data(QuicCursor& c, const quic_max_stream_data* stream_data){
+    return c.variable_encode(stream_data->id) &&
+           c.variable_encode(stream_data->max);
 }
 
-static const char* unpack_max_stream_data(const char* data, quic_max_stream_data* stream_data){
-    data += variable_decode(data, &stream_data->id);
-    data += variable_decode(data, &stream_data->max);
-    return data;
+static bool unpack_max_stream_data(const QuicCursor& c, quic_max_stream_data* stream_data){
+    auto id = c.variable_decode();
+    auto max = c.variable_decode();
+    if(!id || !max){
+        LOGE("max stream data frame truncated\n");
+        return false;
+    }
+    stream_data->id = id.value();
+    stream_data->max = max.value();
+    return true;
 }
 
 static size_t pack_stream_blocked_len(const quic_stream_data_blocked* blocked) {
     return variable_encode_len(blocked->id) + variable_encode_len(blocked->size);
 }
 
-static char* pack_stream_blocked(const quic_stream_data_blocked* blocked, char* data){
-    data += variable_encode(data, blocked->id);
-    data += variable_encode(data, blocked->size);
-    return data;
+static bool pack_stream_blocked(QuicCursor& c, const quic_stream_data_blocked* blocked){
+    return c.variable_encode(blocked->id) &&
+           c.variable_encode(blocked->size);
 }
 
-static const char* unpack_stream_blocked(const char* data, quic_stream_data_blocked* blocked){
-    data += variable_decode(data, &blocked->id);
-    data += variable_decode(data, &blocked->size);
-    return data;
+static bool unpack_stream_blocked(const QuicCursor& c, quic_stream_data_blocked* blocked){
+    auto id = c.variable_decode();
+    auto size = c.variable_decode();
+    if(!id || !size){
+        LOGE("stream data blocked frame truncated\n");
+        return false;
+    }
+    blocked->id = id.value();
+    blocked->size = size.value();
+    return true;
 }
 
 static size_t pack_datagram_frame_len(uint64_t type, const quic_datagram* datagram){
@@ -976,46 +1153,56 @@ static size_t pack_datagram_frame_len(uint64_t type, const quic_datagram* datagr
     return len;
 }
 
-static char* pack_datagram_frame(uint64_t type, const quic_datagram* datagram, char* data){
+static bool pack_datagram_frame(QuicCursor& c, uint64_t type, const quic_datagram* datagram){
     if(type == QUIC_FRAME_DATAGRAM_LEN){
-        data += variable_encode(data, datagram->length);
+        if(!c.variable_encode(datagram->length)){
+            return false;
+        }
     }
-    memcpy(data, datagram->buffer->data(), datagram->length);
-    return data + datagram->length;
+    return c.write_data(datagram->buffer->data(), datagram->length);
 }
 
-static const char* unpack_datagram_frame(uint64_t type, const char* data, const char* end, quic_datagram* datagram){
+static bool unpack_datagram_frame(const QuicCursor& c, uint64_t type, quic_datagram* datagram, const Buffer* owner){
     if(type == QUIC_FRAME_DATAGRAM_LEN){
-        data += variable_decode(data, &datagram->length);
+        auto length = c.variable_decode();
+        if(!length){
+            LOGE("datagram frame truncated: bad length varint\n");
+            return false;
+        }
+        datagram->length = length.value();
     }else{
-        datagram->length = end - data;
+        datagram->length = c.length();
+    }
+    if(datagram->length > c.length()){
+        LOGE("datagram frame truncated: length: %" PRIu64", remain: %zd\n",
+             datagram->length, c.length());
+        return false;
     }
 
-    datagram->buffer = new Buffer(datagram->length);
-    memcpy(datagram->buffer->mutable_data(), data, datagram->length);
-    datagram->buffer->truncate(datagram->length);
-    return data + datagram->length;
+    datagram->buffer = frame_payload(owner, c, datagram->length);
+    c.advance(datagram->length);
+    return true;
 }
 
-size_t pack_frame_len(const quic_frame* frame){
-    size_t tlen = variable_encode_len(frame->type);
-    switch(frame->type){
+size_t pack_frame_len(const quic_frame& frame){
+    size_t tlen = variable_encode_len(frame.type);
+    switch(frame.type){
     case QUIC_FRAME_PADDING:
-        return frame->extra;
+        return frame.extra;
     case QUIC_FRAME_CRYPTO:
-        return tlen + pack_crypto_frame_len(&frame->crypto);
+        return tlen + pack_crypto_frame_len(&frame.crypto);
     case QUIC_FRAME_ACK:
     case QUIC_FRAME_ACK_ECN:
-        return tlen + pack_ack_frame_len(frame->type, &frame->ack);
+        return tlen + pack_ack_frame_len(frame.type, &frame.ack);
     case QUIC_FRAME_PING:
     case QUIC_FRAME_HANDSHAKE_DONE:
         return tlen;
     case QUIC_FRAME_RESET_STREAM:
-        return tlen + pack_reset_frame_len(&frame->reset);
+        return tlen + pack_reset_frame_len(&frame.reset);
     case QUIC_FRAME_STOP_SENDING:
-        return tlen + pack_stop_frame_len(&frame->stop);
+        return tlen + pack_stop_frame_len(&frame.stop);
     case QUIC_FRAME_NEW_TOKEN:
-        return tlen + pack_new_token_frame_len(&frame->new_token);
+        return tlen + pack_new_token_frame_len(&frame.new_token);
     case QUIC_FRAME_MAX_DATA:
     case QUIC_FRAME_MAX_STREAMS_BI:
     case QUIC_FRAME_MAX_STREAMS_UBI:
@@ -1023,54 +1210,63 @@ size_t pack_frame_len(const quic_frame* frame){
     case QUIC_FRAME_STREAMS_BLOCKED_BI:
     case QUIC_FRAME_STREAMS_BLOCKED_UBI:
     case QUIC_FRAME_RETIRE_CONNECTION_ID:
-        return tlen + variable_encode_len(frame->extra);
+        return tlen + variable_encode_len(frame.extra);
     case QUIC_FRAME_MAX_STREAM_DATA:
-        return tlen + pack_max_stream_data_len(&frame->max_stream_data);
+        return tlen + pack_max_stream_data_len(&frame.max_stream_data);
     case QUIC_FRAME_STREAM_DATA_BLOCKED:
-        return tlen + pack_stream_blocked_len(&frame->stream_data_blocked);
+        return tlen + pack_stream_blocked_len(&frame.stream_data_blocked);
     case QUIC_FRAME_NEW_CONNECTION_ID:
-        return tlen + pack_new_id_frame_len(&frame->new_id);
+        return tlen + pack_new_id_frame_len(&frame.new_id);
     case QUIC_FRAME_PATH_CHALLENGE:
     case QUIC_FRAME_PATH_RESPONSE:
-        return tlen + sizeof(frame->path_data);
+        return tlen + sizeof(frame.path_data);
     case QUIC_FRAME_CONNECTION_CLOSE:
     case QUIC_FRAME_CONNECTION_CLOSE_APP:
-        return tlen + pack_close_frame_len(frame->type, &frame->close);
+        return tlen + pack_close_frame_len(frame.type, &frame.close);
     case QUIC_FRAME_DATAGRAM:
     case QUIC_FRAME_DATAGRAM_LEN:
-        return tlen + pack_datagram_frame_len(frame->type, &frame->datagram);
+        return tlen + pack_datagram_frame_len(frame.type, &frame.datagram);
     default:
-        if((frame->type >= QUIC_FRAME_STREAM_START_ID)
-           &&(frame->type <= QUIC_FRAME_STREAM_END_ID))
+        if((frame.type >= QUIC_FRAME_STREAM_START_ID)
+           &&(frame.type <= QUIC_FRAME_STREAM_END_ID))
         {
-            return tlen + pack_stream_frame_len(frame->type, &frame->stream);
+            return tlen + pack_stream_frame_len(frame.type, &frame.stream);
         }else {
-            LOGE("unknown frame: 0x%x\n", (int)frame->type);
+            LOGE("unknown frame: 0x%x\n", (int)frame.type);
             return 0;
         }
     }
 }
 
-void* pack_frame(void* buff, const quic_frame* frame) {
-    size_t tlen = variable_encode(buff, frame->type);
-    switch(frame->type){
+bool QuicCursor::put_frame(const quic_frame& frame) {
+    if(!variable_encode(frame.type)){
+        return false;
+    }
+    switch(frame.type){
     case QUIC_FRAME_PADDING:
-        memset(buff, 0, frame->extra);
-        return (char*)buff + frame->extra;
+        //type字节本身为0，剩余extra-1字节补0，总长与pack_frame_len一致
+        if(frame.extra > 1){
+            if(length() < frame.extra - 1){
+                return false;
+            }
+            memset(mutable_data(), 0, frame.extra - 1);
+            advance(frame.extra - 1);
+        }
+        return true;
     case QUIC_FRAME_CRYPTO:
-        return pack_crypto_frame(&frame->crypto, (char*)buff + tlen);
+        return pack_crypto_frame(*this, &frame.crypto);
     case QUIC_FRAME_ACK:
     case QUIC_FRAME_ACK_ECN:
-        return pack_ack_frame(frame->type, &frame->ack, (char*)buff + tlen);
+        return pack_ack_frame(*this, frame.type, &frame.ack);
     case QUIC_FRAME_PING:
     case QUIC_FRAME_HANDSHAKE_DONE:
-        return (char*) buff + tlen;
+        return true;
     case QUIC_FRAME_RESET_STREAM:
-        return pack_reset_frame(&frame->reset, (char*)buff + tlen);
+        return pack_reset_frame(*this, &frame.reset);
     case QUIC_FRAME_STOP_SENDING:
-        return pack_stop_frame(&frame->stop, (char*)buff + tlen);
+        return pack_stop_frame(*this, &frame.stop);
     case QUIC_FRAME_NEW_TOKEN:
-        return pack_new_token_frame(&frame->new_token, (char*)buff + tlen);
+        return pack_new_token_frame(*this, &frame.new_token);
     case QUIC_FRAME_MAX_DATA:
     case QUIC_FRAME_MAX_STREAMS_BI:
     case QUIC_FRAME_MAX_STREAMS_UBI:
@@ -1078,190 +1274,267 @@ void* pack_frame(void* buff, const quic_frame* frame) {
     case QUIC_FRAME_STREAMS_BLOCKED_BI:
     case QUIC_FRAME_STREAMS_BLOCKED_UBI:
     case QUIC_FRAME_RETIRE_CONNECTION_ID:
-        return (char*)buff + tlen + variable_encode((char*)buff + tlen, frame->extra);
+        return variable_encode(frame.extra);
     case QUIC_FRAME_MAX_STREAM_DATA:
-        return pack_max_stream_data(&frame->max_stream_data, (char*)buff + tlen);
+        return pack_max_stream_data(*this, &frame.max_stream_data);
     case QUIC_FRAME_STREAM_DATA_BLOCKED:
-        return pack_stream_blocked(&frame->stream_data_blocked, (char*)buff + tlen);
+        return pack_stream_blocked(*this, &frame.stream_data_blocked);
     case QUIC_FRAME_NEW_CONNECTION_ID:
-        return pack_new_id_frame(&frame->new_id, (char*)buff + tlen);
+        return pack_new_id_frame(*this, &frame.new_id);
     case QUIC_FRAME_PATH_CHALLENGE:
     case QUIC_FRAME_PATH_RESPONSE:
-        memcpy((char*)buff + tlen, frame->path_data, sizeof(frame->path_data));
-        return (char*)buff + tlen + sizeof(frame->path_data);
+        return write_data(frame.path_data, sizeof(frame.path_data));
     case QUIC_FRAME_CONNECTION_CLOSE:
     case QUIC_FRAME_CONNECTION_CLOSE_APP:
-        return pack_close_frame(frame->type, &frame->close, (char*)buff + tlen);
+        return pack_close_frame(*this, frame.type, &frame.close);
     case QUIC_FRAME_DATAGRAM:
     case QUIC_FRAME_DATAGRAM_LEN:
-        return pack_datagram_frame(frame->type, &frame->datagram, (char*)buff + tlen);
+        return pack_datagram_frame(*this, frame.type, &frame.datagram);
     default:
-        if((frame->type >= QUIC_FRAME_STREAM_START_ID)
-           &&(frame->type <= QUIC_FRAME_STREAM_END_ID))
+        if((frame.type >= QUIC_FRAME_STREAM_START_ID)
+           &&(frame.type <= QUIC_FRAME_STREAM_END_ID))
         {
-            return pack_stream_frame(frame->type, &frame->stream, (char*)buff + tlen);
+            return pack_stream_frame(*this, frame.type, &frame.stream);
         }else {
-            LOGE("unknown frame: 0x%x\n", (int)frame->type);
-            return nullptr;
+            LOGE("unknown frame: 0x%x\n", (int)frame.type);
+            return false;
         }
     }
 }
 
-int unpack_meta(const void* data_, size_t len, quic_meta* meta){
-    const unsigned char* data = (const unsigned char*)data_;
-    if((data[0]&0x40) == 0){
-        LOGE("unsupported quic version: 0x%02x\n", data[0]);
-        return -1;
+//解析QUIC报文头元信息；成功返回meta且pkt推进到本包末尾(合并包循环即while(pkt.length()))
+//短包的dcid长度不在线路上携带，由dcid_len给出；长包忽略该参数
+std::optional<quic_meta> unpack_meta(const QuicCursor& pkt, size_t dcid_len){
+    const size_t len = pkt.length();
+    if(pkt.length() == 0){
+        LOGE("empty quic packet\n");
+        return std::nullopt;
     }
-    if(data[0]&0x80){
+    quic_meta meta;
+    unsigned char flags = *pkt.data();
+    meta.flags = flags;
+    if((flags & 0x40) == 0){
+        LOGE("unsupported quic version: 0x%02x\n", flags);
+        return std::nullopt;
+    }
+    if(flags & 0x80){
         //long packet
-        uint8_t raw_type = data[0] & 0x30;
-        size_t pos = 1;
-        meta->version = get32(data + pos);
-        if(meta->version != QUIC_VERSION_1 && meta->version != QUIC_VERSION_2){
-            LOGE("unsupported version: 0x%X\n", meta->version);
-            return -1;
+        if(!pkt.advance(1) || pkt.length() < 6){ //version + dcid/scid长度字节
+            LOGE("too short long packet, len: %zd\n", len);
+            return std::nullopt;
+        }
+        uint8_t raw_type = flags & 0x30;
+        meta.version = get32(pkt.data());
+        if(meta.version != QUIC_VERSION_1 && meta.version != QUIC_VERSION_2){
+            LOGE("unsupported version: 0x%X\n", meta.version);
+            return std::nullopt;
         }
 
         // Map QUICv2 packet types to standard types
-        if (meta->version == QUIC_VERSION_2) {
+        if (meta.version == QUIC_VERSION_2) {
             switch (raw_type) {
             case QUIC_V2_RETRY_RAW:
-                meta->type = QUIC_PACKET_RETRY;
+                meta.type = QUIC_PACKET_RETRY;
                 break;
             case QUIC_V2_INITIAL_RAW:
-                meta->type = QUIC_PACKET_INITIAL;
+                meta.type = QUIC_PACKET_INITIAL;
                 break;
             case QUIC_V2_0RTT_RAW:
-                meta->type = QUIC_PACKET_0RTT;
+                meta.type = QUIC_PACKET_0RTT;
                 break;
             case QUIC_V2_HANDSHAKE_RAW:
-                meta->type = QUIC_PACKET_HANDSHAKE;
+                meta.type = QUIC_PACKET_HANDSHAKE;
                 break;
             default:
                 LOGE("unknown QUICv2 packet type: 0x%02x\n", raw_type);
-                return -1;
+                return std::nullopt;
             }
         } else {
-            meta->type = raw_type;
+            meta.type = raw_type;
         }
-        pos += 4;
+        pkt.advance(4);
 
-        meta->dcid.resize(data[pos]);
-        pos += 1;
-        memcpy(&meta->dcid[0], data + pos, meta->dcid.length());
-        pos += meta->dcid.length();
+        size_t dlen = *pkt.data();
+        pkt.advance(1);
+        //dcid之后必须还有scid长度字节，否则下面的读取越界
+        if(pkt.length() < dlen + 1){
+            LOGE("too short packet for dcid, len: %zd, pos: %zd, dcid: %zd\n",
+                 len, len - pkt.length(), dlen);
+            return std::nullopt;
+        }
+        meta.dcid.assign((const char*)pkt.data(), dlen);
+        pkt.advance(dlen);
 
-        meta->scid.resize(data[pos]);
-        pos += 1;
-        memcpy(&meta->scid[0], data + pos, meta->scid.length());
-        pos += meta->scid.length();
+        size_t slen = *pkt.data();
+        pkt.advance(1);
+        if(slen > pkt.length()){
+            LOGE("too short packet for scid, len: %zd, pos: %zd, scid: %zd\n",
+                 len, len - pkt.length(), slen);
+            return std::nullopt;
+        }
+        meta.scid.assign((const char*)pkt.data(), slen);
+        pkt.advance(slen);
 
-        if(meta->type == QUIC_PACKET_INITIAL) {
-            uint64_t token_len;
-            pos += variable_decode(data + pos, &token_len);
-            if (token_len > 0) {
-                meta->token.resize(token_len);
-                memcpy(&meta->token[0], data + pos, token_len);
-                pos += token_len;
+        if(meta.type == QUIC_PACKET_INITIAL) {
+            auto token_len = pkt.variable_decode();
+            if(!token_len){
+                LOGE("too short packet for token length, len: %zd, pos: %zd\n",
+                     len, len - pkt.length());
+                return std::nullopt;
             }
+            if(token_len.value() > pkt.length()){
+                LOGE("too short packet, token: %" PRIu64", remain: %zd\n",
+                     token_len.value(), pkt.length());
+                return std::nullopt;
+            }
+            meta.token.assign((const char*)pkt.data(), token_len.value());
+            pkt.advance(token_len.value());
         }
-        if(meta->type != QUIC_PACKET_RETRY) {
-            uint64_t payload_len;
-            pos += variable_decode(data + pos, &payload_len);
-            if (pos + payload_len > len) {
+        if(meta.type != QUIC_PACKET_RETRY) {
+            auto payload_len = pkt.variable_decode();
+            if(!payload_len){
+                LOGE("too short packet for payload length, len: %zd, pos: %zd\n",
+                     len, len - pkt.length());
+                return std::nullopt;
+            }
+            if(payload_len.value() > pkt.length()){
                 LOGE("too short packet, type:%x, payload: %zd, len: %zd\n",
-                     meta->type, pos + (size_t)payload_len, len);
-                return -1;
+                     meta.type, (size_t)(len - pkt.length() + payload_len.value()), len);
+                return std::nullopt;
             }
-            return (int) pos + (int) payload_len;
+            //本包长度 = 已消费的头部 + payload；游标推进到包尾(合并包循环)
+            pkt.advance(payload_len.value());
         }else{
             //retry packet
-            int token_len = len - pos - 16;
-            if(token_len <= 0){
-                LOGE("too short retry packet, len: %zd, pos: %zd\n", len, pos);
-                return -1;
+            if(pkt.length() <= 16){
+                LOGE("too short retry packet, len: %zd, pos: %zd\n", len, len - pkt.length());
+                return std::nullopt;
             }
-            meta->token.resize(token_len);
-            memcpy(&meta->token[0], data + pos, token_len);
-            return (int)len;
+            meta.token.assign((const char*)pkt.data(), pkt.length() - 16);
+            //retry包占满剩余数据报
+            pkt.advance(pkt.length());
         }
     }else{
-        //short packet
-        meta->type = QUIC_PACKET_1RTT;
-        if(len <= meta->dcid.length() + 1){
-            LOGE("too short packet, len:%zd, id len: %zd\n", len, meta->dcid.length());
-            return -1;
+        //short packet：dcid长度不在线路上携带，由dcid_len给出
+        meta.type = QUIC_PACKET_1RTT;
+        pkt.advance(1);
+        if(pkt.length() <= dcid_len){
+            LOGE("too short packet, len:%zd, id len: %zd\n", len, dcid_len);
+            return std::nullopt;
         }
-        memcpy(&meta->dcid[0], data+1, meta->dcid.length());
-        return (int)len;
+        meta.dcid.assign((const char*)pkt.data(), dcid_len);
+        //短包总是占满剩余数据报(RFC 9000 §17.3)
+        pkt.advance(pkt.length());
     }
+    return meta;
 }
 
-const char* unpack_frame(const char* data, size_t len, quic_frame* frame){
-    const char* pos = data + variable_decode(data, &frame->type);
-    switch (frame->type) {
+std::optional<quic_frame> QuicCursor::get_frame(const Buffer* owner) const{
+    auto type = variable_decode();
+    if(!type){
+        LOGE("frame truncated: bad type varint, remain: %zd\n", length());
+        return std::nullopt;
+    }
+    quic_frame frame{type.value()};
+    switch (frame.type) {
     case QUIC_FRAME_PADDING:
-        frame->extra = 1;
-        while(pos < data + len){
-            if(*pos == 0){
-                pos++;
-                frame->extra++;
-            }else{
-                break;
-            }
+        frame.extra = 1;
+        while(length() && *data() == 0){
+            advance(1);
+            frame.extra++;
         }
-        return data + frame->extra;
+        return frame;
     case QUIC_FRAME_CRYPTO:
-        return unpack_crypto_frame(pos, data + len, &frame->crypto);
+        if(!unpack_crypto_frame(*this, &frame.crypto, owner)){
+            return std::nullopt;
+        }
+        return frame;
     case QUIC_FRAME_ACK:
     case QUIC_FRAME_ACK_ECN:
-        return unpack_ack_frame(frame->type, pos, data + len, &frame->ack);
+        if(!unpack_ack_frame(*this, frame.type, &frame.ack)){
+            return std::nullopt;
+        }
+        return frame;
     case QUIC_FRAME_PING:
     case QUIC_FRAME_HANDSHAKE_DONE:
-        return pos;
+        return frame;
     case QUIC_FRAME_RESET_STREAM:
-        return unpack_reset_frame(pos, &frame->reset);
+        if(!unpack_reset_frame(*this, &frame.reset)){
+            return std::nullopt;
+        }
+        return frame;
     case QUIC_FRAME_STOP_SENDING:
-        return unpack_stop_frame(pos, &frame->stop);
+        if(!unpack_stop_frame(*this, &frame.stop)){
+            return std::nullopt;
+        }
+        return frame;
     case QUIC_FRAME_MAX_DATA:
     case QUIC_FRAME_MAX_STREAMS_BI:
     case QUIC_FRAME_MAX_STREAMS_UBI:
     case QUIC_FRAME_DATA_BLOCKED:
     case QUIC_FRAME_STREAMS_BLOCKED_BI:
     case QUIC_FRAME_STREAMS_BLOCKED_UBI:
-    case QUIC_FRAME_RETIRE_CONNECTION_ID:
-        return pos + variable_decode(pos, &frame->extra);
+    case QUIC_FRAME_RETIRE_CONNECTION_ID: {
+        auto extra = variable_decode();
+        if(!extra){
+            LOGE("frame truncated: bad extra varint\n");
+            return std::nullopt;
+        }
+        frame.extra = extra.value();
+        return frame;
+    }
     case QUIC_FRAME_MAX_STREAM_DATA:
-        return unpack_max_stream_data(pos, &frame->max_stream_data);
+        if(!unpack_max_stream_data(*this, &frame.max_stream_data)){
+            return std::nullopt;
+        }
+        return frame;
     case QUIC_FRAME_STREAM_DATA_BLOCKED:
-        return unpack_stream_blocked(pos, &frame->stream_data_blocked);
+        if(!unpack_stream_blocked(*this, &frame.stream_data_blocked)){
+            return std::nullopt;
+        }
+        return frame;
     case QUIC_FRAME_CONNECTION_CLOSE:
     case QUIC_FRAME_CONNECTION_CLOSE_APP:
-        return unpack_close_frame(frame->type, pos, data + len, &frame->close);
+        if(!unpack_close_frame(*this, frame.type, &frame.close)){
+            return std::nullopt;
+        }
+        return frame;
     case QUIC_FRAME_NEW_CONNECTION_ID:
-        return unpack_new_id_frame(pos, data + len, &frame->new_id);
+        if(!unpack_new_id_frame(*this, &frame.new_id)){
+            return std::nullopt;
+        }
+        return frame;
     case QUIC_FRAME_NEW_TOKEN:
-        return unpack_new_token_frame(pos, data + len, &frame->new_token);
+        if(!unpack_new_token_frame(*this, &frame.new_token)){
+            return std::nullopt;
+        }
+        return frame;
     case QUIC_FRAME_PATH_CHALLENGE:
     case QUIC_FRAME_PATH_RESPONSE:
-        if(len - (pos - data) < sizeof(frame->path_data)){
-            LOGE("too short path frame, len: %zd, pos: %zd\n", len, pos - data);
-            return nullptr;
+        if(length() < sizeof(frame.path_data)){
+            LOGE("too short path frame, remain: %zd\n", length());
+            return std::nullopt;
         }
-        memcpy(frame->path_data, pos, sizeof(frame->path_data));
-        return pos + sizeof(frame->path_data);
+        memcpy(frame.path_data, data(), sizeof(frame.path_data));
+        advance(sizeof(frame.path_data));
+        return frame;
     case QUIC_FRAME_DATAGRAM:
     case QUIC_FRAME_DATAGRAM_LEN:
-        return unpack_datagram_frame(frame->type, pos, data + len, &frame->datagram);
+        if(!unpack_datagram_frame(*this, frame.type, &frame.datagram, owner)){
+            return std::nullopt;
+        }
+        return frame;
     default:
-        if((frame->type >= QUIC_FRAME_STREAM_START_ID)
-           &&(frame->type <= QUIC_FRAME_STREAM_END_ID))
+        if((frame.type >= QUIC_FRAME_STREAM_START_ID)
+           && (frame.type <= QUIC_FRAME_STREAM_END_ID))
         {
-            return unpack_stream_frame(frame->type, pos, data + len, &frame->stream);
+            if(!unpack_stream_frame(*this, frame.type, &frame.stream, owner)){
+                return std::nullopt;
+            }
+            return frame;
         }else {
-            LOGE("unknown frame: 0x%x\n", (int)frame->type);
-            return nullptr;
+            LOGE("unknown frame: 0x%x\n", (int)frame.type);
+            return std::nullopt;
         }
     }
 }
@@ -1291,107 +1564,144 @@ static uint64_t decode_pn(uint64_t expected_pn, uint64_t truncated_pn, int pn_nb
    return candidate_pn;
 }
 
-std::deque<const quic_frame*> decode_packet(const void* data_, size_t len,
-                                       quic_pkt_header* header, const quic_secret* secret){
-
-    std::deque<const quic_frame*> frames;
-    const unsigned char* data = (const unsigned char*)data_;
-    size_t pos = 0;
-    unsigned char buff[len];
-
+//去掉首字节与PN字段的头部保护并解码PN；成功时pkt推进到密文起点
+//失败即报文不可解(头畸形/采样不足)：调用方应静默丢弃
+static bool unprotect(QuicCursor& pkt, quic_pkt_header* header, const quic_secret* secret){
+    unsigned char* data = pkt.mutable_data();
+    const size_t len = pkt.length();
+    unsigned char flags = *pkt.data();
     unsigned char mask[16];
     memset(mask, 0, 16);
-    if(data[0]&0x80){
+    size_t pos = 0; //头部(含PN)长度
+    if(flags & 0x80){
         //long packet
-        pos = 7  + header->dcid.length() + header->scid.length();
-        if(header->type == QUIC_PACKET_INITIAL) {
-            uint64_t token_len;
-            pos += variable_decode(data + pos, &token_len);
-            pos += token_len;
+        auto payload = pkt.decode_long_packet(header);
+        if(!payload){
+            LOGE("QUIC long packet header truncated, len: %zd\n", len);
+            return false;
         }
-        uint64_t payload_len;
-        pos += variable_decode(data + pos, &payload_len);
-        if(len != pos + payload_len){
+        uint64_t payload_len = payload.value();
+        size_t hlen = len - pkt.length(); //头部(不含PN)长度
+        if(len != hlen + payload_len){
             LOGE("QUIC packet length mismatch: len: %zd, pos: %zd, payload_len: %" PRIu64"\n",
-                 len, pos, payload_len);
-            return frames;
+                 len, hlen, payload_len);
+            return false;
+        }
+        //payload must hold the 4-byte sample of header protection plus the
+        //16-byte AEAD tag; the exact pn_length is checked again once decoded
+        if(payload_len < 4 + 16){
+            LOGE("QUIC packet payload too small: %" PRIu64"\n", payload_len);
+            return false;
         }
 
-        if(hp_encode(secret->hcipher, (unsigned char*)secret->hp, (unsigned char*)data+pos+4, 16, mask) < 0){
+        //HP采样点固定在PN字段后4字节起的16字节
+        if(hp_encode(secret->hcipher, (const unsigned char*)secret->hp, cursor(data + hlen + 4, 16), mask) < 0){
             LOGE("hp_encode failed\n");
-            return frames;
+            return false;
         }
 
-        header->pn_length = ((data[0] ^ mask[0])&0x03) + 1;
-        memcpy(buff, data, pos + header->pn_length);
-
-        buff[0] ^= mask[0]&0x0f;
+        header->pn_length = ((flags ^ mask[0])&0x03) + 1;
+        if(payload_len < header->pn_length + 16){
+            LOGE("QUIC packet payload too small: %" PRIu64", pn_len: %zd\n",
+                 payload_len, header->pn_length);
+            return false;
+        }
+        //原地解掩码：首字节与PN字段
+        data[0] ^= mask[0]&0x0f;
+        pos = hlen;
     }else{
         //short packet
-        pos = 1 + header->dcid.length();
-
-        if(hp_encode(secret->hcipher, (unsigned char*)secret->hp, (unsigned char*)data+pos+4, 16, mask) < 0){
-            LOGE("hp_encode failed\n");
-            return frames;
+        if(!pkt.decode_short_packet(header)){
+            LOGE("QUIC short packet too small: len: %zd\n", len);
+            return false;
+        }
+        size_t hlen = len - pkt.length();
+        if(pkt.length() < 4 + 16){
+            LOGE("QUIC short packet too small: len: %zd, pos: %zd\n", len, hlen);
+            return false;
         }
 
-        header->pn_length = ((data[0] ^ mask[0])&0x03) + 1;
-        memcpy(buff, data, pos + header->pn_length);
+        if(hp_encode(secret->hcipher, (const unsigned char*)secret->hp, cursor(data + hlen + 4, 16), mask) < 0){
+            LOGE("hp_encode failed\n");
+            return false;
+        }
 
-        buff[0] ^= mask[0]&0x1f;
+        header->pn_length = ((flags ^ mask[0])&0x03) + 1;
+        if(pkt.length() < header->pn_length + 16){
+            LOGE("QUIC short packet too small: len: %zd, pos: %zd, pn_len: %zd\n",
+                 len, hlen, header->pn_length);
+            return false;
+        }
+        data[0] ^= mask[0]&0x1f;
+        pos = hlen;
     }
-
 
     uint64_t pn = 0;
     for(size_t i = 0; i < header->pn_length; i++){
-        buff[pos+i] ^= mask[i+1];
+        data[pos+i] ^= mask[i+1];
         pn <<= 8;
-        pn +=  buff[pos+i];
+        pn +=  data[pos+i];
     }
     header->pn = decode_pn(header->pn_base, pn, header->pn_length*8);
-    pos += header->pn_length;
+    pkt.advance(header->pn_length); //剩余部分即密文+tag
+    return true;
+}
 
+quic_decode_status decode_packet(Buffer pkt, quic_pkt_header* header,
+                                 const quic_secret* secret,
+                                 std::deque<quic_frame>* out){
+    if(pkt.len == 0){
+        return quic_decode_status::drop;
+    }
+    //独占时原地解密；共享时此处自动COW分裂(见misc/buffer.h)
+    unsigned char* data = (unsigned char*)pkt.mutable_data();
+    const size_t len = pkt.len;
+    QuicCursor pktc(data, len);
+
+    //第一段：去头部保护(含PN解码)；pktc推进到密文起点
+    if(!unprotect(pktc, header, secret)){
+        return quic_decode_status::drop;
+    }
+    const size_t pos = len - pktc.length() - header->pn_length; //头部(不含PN)长度
+    assert(pos + header->pn_length == (size_t)(pktc.data() - data));
+
+    //第二段：AEAD解密。AAD = 已解掩码的头部(含明文PN)，明文原地写回密文位置
     char iv[12];
     memcpy(iv, secret->iv, 12);
     for(int i = 0; i < 8; i++){
         iv[11-i] ^= (header->pn>>(i*8))&0xff;
     }
-
+    cursor aad(data, pos + header->pn_length);
+    cursor plain(data + pos + header->pn_length, len - pos - header->pn_length);
     int plaintext_len = aead_decrypt(
             secret->cipher,
-            (unsigned char*)data + pos,
-            len - pos,
-            buff,
-            pos,
+            pktc,
+            aad,
             (unsigned char*)secret->key,
             (unsigned char*)iv,
-            buff + pos);
+            plain);
     if(plaintext_len < 0){
-        LOGE("gcm_decrypt error: pn: %d, len: %zd\n", (int)header->pn, len);
-        return frames;
+        LOGE("gcm_decrypt error, pn: %d, len: %zd\n", (int)header->pn, len);
+        return quic_decode_status::drop;
     }
-    assert(plaintext_len == (int)(len - pos - 16));
-    while(pos < len - 16){
-        quic_frame* frame = new quic_frame{};
-        frame->type = QUIC_FRAME_PADDING;
-        frames.push_back(frame);
-        const char* ret = unpack_frame((const char*)buff + pos, len - pos - 16, frame);
-        if(ret == nullptr){
-            goto error;
+    assert(plaintext_len == (int)(len - pos - header->pn_length - 16));
+
+    //第三段：帧循环，载荷零拷贝共享pkt
+    QuicCursor fc(data + pos + header->pn_length, plaintext_len);
+    while(fc.length()){
+        auto frame = fc.get_frame(&pkt);
+        if(!frame){
+            //AEAD已通过：明文由对端认证，畸形帧按RFC 9000应断连而非静默丢弃
+            out->clear();
+            return quic_decode_status::conn_error;
         }
-        pos = (uchar*)ret - buff;
+        out->push_back(std::move(*frame));
     }
-    return frames;
-error:
-    for(auto frame: frames){
-        frame_release(frame);
-    }
-    frames.clear();
-    return frames;
+    return quic_decode_status::ok;
 }
 
-bool is_ack_eliciting(const quic_frame* frame){
-    switch(frame->type){
+bool is_ack_eliciting(const quic_frame& frame){
+    switch(frame.type){
     case QUIC_FRAME_ACK:
     case QUIC_FRAME_ACK_ECN:
     case QUIC_FRAME_PADDING:
@@ -1403,20 +1713,20 @@ bool is_ack_eliciting(const quic_frame* frame){
     }
 }
 
-void dumpFrame(const char* prefix, char name, const quic_frame* frame) {
-    switch (frame->type) {
+void dumpFrame(const char* prefix, char name, const quic_frame& frame) {
+    switch (frame.type) {
     case QUIC_FRAME_PADDING:
-        LOGD(DQUIC, "%s [%c] padding frame: %" PRIu64"\n", prefix, name, frame->extra);
+        LOGD(DQUIC, "%s [%c] padding frame: %" PRIu64"\n", prefix, name, frame.extra);
         return;
     case QUIC_FRAME_PING:
         LOGD(DQUIC, "%s [%c] ping frame\n", prefix, name);
         return;
     case QUIC_FRAME_ACK:
     case QUIC_FRAME_ACK_ECN: {
-        const quic_ack* ack = &frame->ack;
+        const quic_ack* ack = &frame.ack;
         uint64_t pos = ack->acknowledged - ack->first_range;
         LOGD(DQUIC, "%s [%c] ack frame %" PRIu64" - %" PRIu64", delay: %" PRIu64"\n", prefix, name,
-             pos, ack->acknowledged, frame->ack.delay);
+             pos, ack->acknowledged, frame.ack.delay);
         for(size_t i = 0; i < ack->range_count; i++){
             pos -= 2;
             LOGD(DQUIC, "\trange: %" PRIu64" - %" PRIu64"\n",
@@ -1427,155 +1737,182 @@ void dumpFrame(const char* prefix, char name, const quic_frame* frame) {
     }
     case QUIC_FRAME_RESET_STREAM:
         LOGD(DQUIC, "%s [%c] reset stream: %" PRIu64", error: %" PRIu64", finSize: %" PRIu64"\n", prefix, name,
-             frame->reset.id, frame->reset.error, frame->reset.fsize);
+             frame.reset.id, frame.reset.error, frame.reset.fsize);
         return;
     case QUIC_FRAME_STOP_SENDING:
         LOGD(DQUIC, "%s [%c] stop stream: %" PRIu64", error: %" PRIu64"\n", prefix, name,
-             frame->stop.id, frame->stop.error);
+             frame.stop.id, frame.stop.error);
         return;
     case QUIC_FRAME_CRYPTO:
         LOGD(DQUIC, "%s [%c] crypto frame: %" PRIu64" - %" PRIu64"\n", prefix, name,
-             frame->crypto.offset, frame->crypto.offset + frame->crypto.length);
+             frame.crypto.offset, frame.crypto.offset + frame.crypto.length);
         return;
     case QUIC_FRAME_NEW_TOKEN:
         LOGD(DQUIC, "%s [%c] new token: %s\n", prefix, name,
-             dumpHex(frame->new_token.token, frame->new_token.length).c_str());
+             dumpHex(frame.new_token.token, frame.new_token.length).c_str());
         return;
     /*skip stream frame here*/
     case QUIC_FRAME_MAX_DATA:
-        LOGD(DQUIC, "%s [%c] max data: %" PRIu64"\n", prefix, name, frame->extra);
+        LOGD(DQUIC, "%s [%c] max data: %" PRIu64"\n", prefix, name, frame.extra);
         return;
     case QUIC_FRAME_MAX_STREAM_DATA:
         LOGD(DQUIC, "%s [%c] max stream data: %" PRIu64", size: %" PRIu64"\n", prefix, name,
-             frame->max_stream_data.id, frame->max_stream_data.max);
+             frame.max_stream_data.id, frame.max_stream_data.max);
         return;
     case QUIC_FRAME_MAX_STREAMS_BI:
-        LOGD(DQUIC, "%s [%c] max stream_bi: %" PRIu64"\n", prefix, name, frame->extra);
+        LOGD(DQUIC, "%s [%c] max stream_bi: %" PRIu64"\n", prefix, name, frame.extra);
         return;
     case QUIC_FRAME_MAX_STREAMS_UBI:
-        LOGD(DQUIC, "%s [%c] max stream_ubi: %" PRIu64"\n", prefix, name, frame->extra);
+        LOGD(DQUIC, "%s [%c] max stream_ubi: %" PRIu64"\n", prefix, name, frame.extra);
         return;
     case QUIC_FRAME_DATA_BLOCKED:
-        LOGD(DQUIC, "%s [%c] blocked data size: %" PRIu64"\n", prefix, name, frame->extra);
+        LOGD(DQUIC, "%s [%c] blocked data size: %" PRIu64"\n", prefix, name, frame.extra);
         return;
     case QUIC_FRAME_STREAM_DATA_BLOCKED:
         LOGD(DQUIC, "%s [%c] blocked stream data: %" PRIu64", size: %" PRIu64"\n", prefix, name,
-             frame->stream_data_blocked.id, frame->stream_data_blocked.size);
+             frame.stream_data_blocked.id, frame.stream_data_blocked.size);
         return;
     case QUIC_FRAME_STREAMS_BLOCKED_BI:
-        LOGD(DQUIC, "%s [%c] blocked stream_bi: %" PRIu64"\n", prefix, name, frame->extra);
+        LOGD(DQUIC, "%s [%c] blocked stream_bi: %" PRIu64"\n", prefix, name, frame.extra);
         return;
     case QUIC_FRAME_STREAMS_BLOCKED_UBI:
-        LOGD(DQUIC, "%s [%c] blocked stream_ubi: %" PRIu64"\n", prefix, name, frame->extra);
+        LOGD(DQUIC, "%s [%c] blocked stream_ubi: %" PRIu64"\n", prefix, name, frame.extra);
         return;
     case QUIC_FRAME_NEW_CONNECTION_ID:
         LOGD(DQUIC, "%s [%c] new connection id seq:%" PRIu64", retired:%" PRIu64", id:%s, token:%s\n", prefix, name,
-             frame->new_id.seq, frame->new_id.retired,
-             dumpHex(frame->new_id.id, frame->new_id.length).c_str(),
-             dumpHex(frame->new_id.token, 16).c_str());
+             frame.new_id.seq, frame.new_id.retired,
+             dumpHex(frame.new_id.id, frame.new_id.length).c_str(),
+             dumpHex(frame.new_id.token, 16).c_str());
         return;
     case QUIC_FRAME_RETIRE_CONNECTION_ID:
-        LOGD(DQUIC, "%s [%c] retire connection id: %" PRIu64"\n", prefix, name, frame->extra);
+        LOGD(DQUIC, "%s [%c] retire connection id: %" PRIu64"\n", prefix, name, frame.extra);
         return;
     case QUIC_FRAME_PATH_CHALLENGE:
         LOGD(DQUIC, "%s [%c] path challenge: %s\n", prefix, name,
-             dumpHex(frame->path_data, sizeof(frame->path_data)).c_str());
+             dumpHex(frame.path_data, sizeof(frame.path_data)).c_str());
         return;
     case QUIC_FRAME_PATH_RESPONSE:
         LOGD(DQUIC, "%s [%c] path response: %s\n", prefix, name,
-            dumpHex(frame->path_data, sizeof(frame->path_data)).c_str());
+            dumpHex(frame.path_data, sizeof(frame.path_data)).c_str());
         return;
     case QUIC_FRAME_CONNECTION_CLOSE:
     case QUIC_FRAME_CONNECTION_CLOSE_APP:
         LOGD(DQUIC, "%s [%c] close frame: %" PRIu64 ": %.*s\n", prefix, name,
-             frame->close.error, (int)frame->close.reason_len, frame->close.reason);
+             frame.close.error, (int)frame.close.reason_len, frame.close.reason);
         return;
     case QUIC_FRAME_HANDSHAKE_DONE:
         LOGD(DQUIC, "%s [%c] handshake_done frame\n", prefix, name);
         return;
     case QUIC_FRAME_DATAGRAM:
     case QUIC_FRAME_DATAGRAM_LEN:
-        LOGD(DQUIC, "%s [%c] datagram frame: %" PRIu64" bytes\n", prefix, name, frame->datagram.length);
+        LOGD(DQUIC, "%s [%c] datagram frame: %" PRIu64" bytes\n", prefix, name, frame.datagram.length);
         return;
     default:
-        if (frame->type >= QUIC_FRAME_STREAM_START_ID && frame->type <= QUIC_FRAME_STREAM_END_ID) {
+        if (frame.type >= QUIC_FRAME_STREAM_START_ID && frame.type <= QUIC_FRAME_STREAM_END_ID) {
             LOGD(DQUIC, "%s [%c] data [%" PRIu64"]: %" PRIu64" - %" PRIu64"\n", prefix, name,
-                 frame->stream.id, frame->stream.offset, frame->stream.offset + frame->stream.length);
+                 frame.stream.id, frame.stream.offset, frame.stream.offset + frame.stream.length);
             return;
         } else {
-            LOGD(DQUIC, "%s [%c] ignore frame: 0x%02x\n", prefix, name, (int) frame->type);
+            LOGD(DQUIC, "%s [%c] ignore frame: 0x%02x\n", prefix, name, (int) frame.type);
         }
         return;
     }
 }
 
-size_t frame_size(const quic_frame* frame) {
+size_t frame_size(const quic_frame& frame) {
     size_t usage = sizeof(quic_frame);
-    switch(frame->type){
+    switch(frame.type){
     case QUIC_FRAME_ACK:
     case QUIC_FRAME_ACK_ECN:
-        usage +=  sizeof(quic_ack_range) * frame->ack.range_count;
+        usage +=  sizeof(quic_ack_range) * frame.ack.range_count;
         break;
     case QUIC_FRAME_CRYPTO:
-        usage += frame->crypto.length;
+        usage += frame.crypto.length;
         break;
     case QUIC_FRAME_CONNECTION_CLOSE:
     case QUIC_FRAME_CONNECTION_CLOSE_APP:
-        usage += frame->close.reason_len;
+        usage += frame.close.reason_len;
         break;
     case QUIC_FRAME_NEW_CONNECTION_ID:
-        usage += frame->new_id.length;
+        usage += frame.new_id.length;
         break;
     case QUIC_FRAME_NEW_TOKEN:
-        usage += frame->new_token.length;
+        usage += frame.new_token.length;
         break;
     case QUIC_FRAME_DATAGRAM:
     case QUIC_FRAME_DATAGRAM_LEN:
-        usage += frame->datagram.length;
+        usage += frame.datagram.length;
         break;
     default:
-        if((frame->type >= QUIC_FRAME_STREAM_START_ID)
-           &&(frame->type <= QUIC_FRAME_STREAM_END_ID))
+        if((frame.type >= QUIC_FRAME_STREAM_START_ID)
+           &&(frame.type <= QUIC_FRAME_STREAM_END_ID))
         {
-            usage += frame->stream.length;
+            usage += frame.stream.length;
         }
         break;
     }
     return usage;
 }
 
-void frame_release(const quic_frame* frame){
-    switch(frame->type) {
+quic_frame::quic_frame() {
+    //全零即type=QUIC_FRAME_PADDING(0)，不持有任何指针
+    memset(this, 0, sizeof(*this));
+}
+
+quic_frame::quic_frame(uint64_t t) {
+    memset(this, 0, sizeof(*this));
+    type = t;
+}
+
+quic_frame::quic_frame(quic_frame&& o) noexcept {
+    memcpy(this, &o, sizeof(*this));
+    memset(&o, 0, sizeof(o));
+}
+
+quic_frame& quic_frame::operator=(quic_frame&& o) noexcept {
+    if(this != &o){
+        release();
+        memcpy(this, &o, sizeof(*this));
+        memset(&o, 0, sizeof(o));
+    }
+    return *this;
+}
+
+quic_frame::~quic_frame(){
+    release();
+}
+
+void quic_frame::release() noexcept {
+    switch(type) {
     case QUIC_FRAME_ACK:
     case QUIC_FRAME_ACK_ECN:
-        delete []frame->ack.ranges;
+        delete []ack.ranges;
         break;
     case QUIC_FRAME_CRYPTO:
-        delete frame->crypto.buffer;
+        delete crypto.buffer;
         break;
     case QUIC_FRAME_CONNECTION_CLOSE:
     case QUIC_FRAME_CONNECTION_CLOSE_APP:
-        delete []frame->close.reason;
+        delete []close.reason;
         break;
     case QUIC_FRAME_NEW_CONNECTION_ID:
-        delete []frame->new_id.id;
+        delete []new_id.id;
         break;
     case QUIC_FRAME_NEW_TOKEN:
-        delete []frame->new_token.token;
+        delete []new_token.token;
         break;
     case QUIC_FRAME_DATAGRAM:
     case QUIC_FRAME_DATAGRAM_LEN:
-        delete frame->datagram.buffer;
+        delete datagram.buffer;
         break;
     default:
-        if((frame->type >= QUIC_FRAME_STREAM_START_ID)
-           &&(frame->type <= QUIC_FRAME_STREAM_END_ID))
+        if((type >= QUIC_FRAME_STREAM_START_ID) && (type <= QUIC_FRAME_STREAM_END_ID))
         {
-            delete frame->stream.buffer;
+            delete stream.buffer;
         }
         break;
     }
-    delete frame;
+    memset(this, 0, sizeof(*this));
 }
 
 std::string dumpHex(const void* data, size_t len){
@@ -1630,43 +1967,33 @@ std::string sign_cid(const std::string& id) {
 
 
 static int retry_aead_encrypt_decrypt(const char* key, const char* nonce,
-                                     const char* aad, size_t aad_len,
-                                     const char* input, size_t input_len,
-                                     char* output, bool encrypt) {
+                                     const cursor& aad,
+                                     const cursor& input,
+                                     cursor& output, bool encrypt) {
 #ifdef USE_BORINGSSL
     const EVP_AEAD* aead = EVP_aead_aes_128_gcm();
+    if (encrypt) {
+        return aead_encrypt(aead, input, aad,
+                           (const unsigned char*)key,
+                           (const unsigned char*)nonce,
+                           output);
+    }
+    return aead_decrypt(aead, input, aad,
+                       (unsigned char*)key,
+                       (unsigned char*)nonce,
+                       output);
 #else
     const EVP_CIPHER* cipher = EVP_aes_128_gcm();
-#endif
-
-#ifdef USE_BORINGSSL
     if (encrypt) {
-        return aead_encrypt(aead, (const unsigned char*)input, input_len,
-                           (const unsigned char*)aad, aad_len,
+        return aead_encrypt(cipher, input, aad,
                            (const unsigned char*)key,
                            (const unsigned char*)nonce,
-                           (unsigned char*)output);
-    } else {
-        return aead_decrypt(aead, (unsigned char*)input, input_len,
-                           (unsigned char*)aad, aad_len,
-                           (unsigned char*)key,
-                           (unsigned char*)nonce,
-                           (unsigned char*)output);
+                           output);
     }
-#else
-    if (encrypt) {
-        return aead_encrypt(cipher, (const unsigned char*)input, input_len,
-                           (const unsigned char*)aad, aad_len,
-                           (const unsigned char*)key,
-                           (const unsigned char*)nonce,
-                           (unsigned char*)output);
-    } else {
-        return aead_decrypt(cipher, (unsigned char*)input, input_len,
-                           (unsigned char*)aad, aad_len,
-                           (unsigned char*)key,
-                           (unsigned char*)nonce,
-                           (unsigned char*)output);
-    }
+    return aead_decrypt(cipher, input, aad,
+                       (unsigned char*)key,
+                       (unsigned char*)nonce,
+                       output);
 #endif
 }
 
@@ -1692,8 +2019,10 @@ bool verify_retry_integrity_tag(const void* retry_packet, size_t packet_len,
 
     // Try to decrypt the tag (which should be all zeros)
     char plaintext[16];
-    int result = retry_aead_encrypt_decrypt(key, nonce, aad, aad_len,
-                                          tag, 16, plaintext, false);
+    cursor aad_c(aad, aad_len);
+    cursor tag_c(tag, 16);
+    cursor plain_c(plaintext, sizeof(plaintext));
+    int result = retry_aead_encrypt_decrypt(key, nonce, aad_c, tag_c, plain_c, false);
 
     delete[] aad;
 
@@ -1716,8 +2045,10 @@ size_t add_retry_integrity_tag(void* retry_packet, size_t packet_len,
     // empty plaintext with the Retry Pseudo-Packet as AAD (RFC 9000 §17.2.5.3).
     char tag[16];
     char empty = 0;
-    int tag_len = retry_aead_encrypt_decrypt(key, nonce, aad, aad_len,
-                                           &empty, 0, tag, true);
+    cursor aad_c(aad, aad_len);
+    cursor empty_c(&empty, 0);
+    cursor tag_c(tag, sizeof(tag));
+    int tag_len = retry_aead_encrypt_decrypt(key, nonce, aad_c, empty_c, tag_c, true);
 
     delete[] aad;
 

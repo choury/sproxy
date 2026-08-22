@@ -2,10 +2,13 @@
 #define QUIC_PACK_H__
 
 #include "common/common.h"
+#include "misc/buffer.h"
+#include "misc/cursor.h"
 
 #include <string>
 #include <deque>
 #include <set>
+#include <optional>
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -166,10 +169,8 @@ Type Value	Frame Type Name         Definition  	Pkts	Spec
 #define quic_grease_quic_bit                          0x2ab2 //rfc9287
 
 
-size_t variable_encode(void* data_, uint64_t value);
+//varint长度预计算：仅供打包前估算缓冲大小；varint的编解码一律走QuicCursor
 size_t variable_encode_len(uint64_t value);
-size_t variable_decode(const void* data, uint64_t* value);
-size_t variable_decode_len(const void* data);
 
 class Buffer;
 struct quic_secret{
@@ -280,6 +281,18 @@ struct quic_frame{
         char     path_data[8];
         uint64_t extra;
     };
+
+    //帧独占crypto/ack/close/new_id/new_token/stream/datagram里的指针：
+    //禁止拷贝，析构按type释放；移动后源帧归零为PADDING
+    quic_frame();
+    explicit quic_frame(uint64_t t);
+    quic_frame(const quic_frame&) = delete;
+    quic_frame& operator=(const quic_frame&) = delete;
+    quic_frame(quic_frame&& o) noexcept;
+    quic_frame& operator=(quic_frame&& o) noexcept;
+    ~quic_frame();
+    //释放当前持有的指针并归零为PADDING(用于复用帧对象)
+    void release() noexcept;
 };
 
 
@@ -327,26 +340,60 @@ struct quic_packet_meta{
 
 struct quic_packet_pn{
     quic_packet_meta meta;
-    std::deque<quic_frame*> frames;
+    std::deque<quic_frame> frames;
 };
 
 
-int unpack_meta(const void* data, size_t len, quic_meta* meta);
-std::deque<const quic_frame*> decode_packet(const void* data, size_t len,
-                                       quic_pkt_header* header, const quic_secret* secret);
+//QUIC线路格式游标：封装QUIC原语——varint、帧、报文头(RFC 9000)
+class QuicCursor: public cursor{
+public:
+    using cursor::cursor;
+    //解码一个varint并推进游标；截断返回nullopt
+    std::optional<uint64_t> variable_decode() const;
+    //编码一个varint并推进游标；空间不足或值超过2^62-1返回false
+    bool variable_encode(uint64_t value);
+    //解码一个帧并推进游标；截断或空间不足返回false/nullopt
+    //owner非空时，载荷Buffer零拷贝共享owner对应区段(要求游标位于owner数据区内)，否则拷贝
+    std::optional<quic_frame> get_frame(const Buffer* owner = nullptr) const;
+    bool put_frame(const quic_frame& frame);
+    //解码：跳过长包头(Initial含token)至PN字段，返回payload长度；截断返回nullopt
+    std::optional<uint64_t> decode_long_packet(const quic_pkt_header* header) const;
+    //解码：跳过短包头至PN字段；截断返回false
+    bool decode_short_packet(const quic_pkt_header* header) const;
+    //编码：写长包头，payload_len为密文总长(不含PN)；空间不足返回false
+    bool encode_long_packet(const quic_pkt_header* header, size_t payload_len);
+    //编码：写短包头(1RTT)；空间不足返回false
+    bool encode_short_packet(const quic_pkt_header* header);
+private:
+    bool put_pn(const quic_pkt_header* header);
+};
 
 
-size_t pack_frame_len(const quic_frame* frame);
-void* pack_frame(void* buff, const quic_frame* frame);
-size_t encode_packet(const void* data, size_t len,
-                  const quic_pkt_header* header, const quic_secret* secret,
-                  char* body);
+//解析报文头元信息；成功返回meta且pkt推进到本包末尾(合并包循环即while(pkt.length()))
+//短包的dcid长度不在线路上携带，由dcid_len给出；长包忽略该参数
+std::optional<quic_meta> unpack_meta(const QuicCursor& pkt, size_t dcid_len);
+
+enum class quic_decode_status{
+    ok,          //帧列表有效
+    drop,        //认证前失败(头畸形/HP/AEAD失败)：静默丢弃
+    conn_error,  //认证后帧畸形：调用方应回FRAME_ENCODING_ERROR断连
+};
+
+//解密并解帧(三段：去头部保护→AEAD→帧循环), 失败时out为空
+quic_decode_status decode_packet(Buffer pkt, quic_pkt_header* header,
+                                 const quic_secret* secret,
+                                 std::deque<quic_frame>* out);
+
+
+size_t pack_frame_len(const quic_frame& frame);
+//明文加密后连同报文头写入out；返回报文总长，空间不足返回0
+size_t encode_packet(cursor plaintext, const quic_pkt_header* header,
+                     const quic_secret* secret, QuicCursor& out);
 
 std::string dumpHex(const void* data, size_t len);
-bool is_ack_eliciting(const quic_frame* frame);
-void dumpFrame(const char* prefix, char name, const quic_frame* frame);
-size_t frame_size(const quic_frame* frame);
-void frame_release(const quic_frame* frame);
+bool is_ack_eliciting(const quic_frame& frame);
+void dumpFrame(const char* prefix, char name, const quic_frame& frame);
+size_t frame_size(const quic_frame& frame);
 
 void generate_reset_secret();
 std::string sign_cid(const std::string& id);

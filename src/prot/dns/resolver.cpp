@@ -96,7 +96,7 @@ int RawResolver::query(const char *host, int type, std::function<void(const char
     }
     cb = std::move(rawcb);
     char buf[BUF_SIZE];
-    write(getFd(), buf, Dns_Query(host, type, id_cur++).build((unsigned char*)buf));
+    write(getFd(), buf, Dns_Query(host, type, id_cur++).build((unsigned char*)buf, sizeof(buf)));
     setEvents(RW_EVENT::READ);
     reply = AddJob([this]{cb(nullptr, 0);}, dnsConfig.timeout * 1000, 0);
     return 0;
@@ -186,7 +186,7 @@ int HttpResolver::query(const void *data, size_t len, std::function<void(const c
 int HttpResolver::query(const char* host, int type, std::function<void(const char *, size_t)> cb) {
     dnscb = std::move(cb);
     char buf[BUF_SIZE];
-    int len = Dns_Query(host, type, id_cur++).build((unsigned char*)buf);
+    int len = Dns_Query(host, type, id_cur++).build((unsigned char*)buf, sizeof(buf));
     status.req->set("content-length", len);
     status.rw->push_data({buf, (size_t)len});
     status.rw->push_data({nullptr});
@@ -220,10 +220,13 @@ int HostResolver::query(const char *host, std::function<void(int)> addrcb) {
             return cb(result.error);
         }
         if(server) server->rtt = (getutime() - ASendTime) / 1000.0;
-        assert(result.type == ns_t_a);
+        //a hostile/misbehaving upstream may answer A queries with other RR types,
+        //keep only records actually matching the query
         flags |= GETARES;
         for(auto i: result.addrs){
-            assert(i.ss_family == AF_INET);
+            if(i.ss_family != AF_INET){
+                continue;
+            }
             rcd.addrs.emplace_back(i);
         }
         if(rcd.get_time + rcd.ttl > now + result.ttl) {
@@ -251,10 +254,13 @@ int HostResolver::query(const char *host, std::function<void(int)> addrcb) {
                 return cb(result.error);
             }
             if(server) server->rtt = (getutime() - AAAASendTime) / 1000.0;
-            assert(result.type == ns_t_aaaa);
+            //a hostile/misbehaving upstream may answer AAAA queries with other RR types,
+            //keep only records actually matching the query
             flags |= GETAAAARES;
-            for(const auto& addr : result.addrs){
-                assert(addr.ss_family == AF_INET6);
+            for(const auto& addr: result.addrs){
+                if(addr.ss_family != AF_INET6){
+                    continue;
+                }
                 if(opt.ipv6_prefer) {
                     rcd.addrs.emplace_front(addr);
                 }else{

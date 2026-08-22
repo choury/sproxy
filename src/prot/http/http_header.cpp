@@ -93,6 +93,22 @@ size_t HttpHeader::mem_usage() {
     return usage;
 }
 
+std::shared_ptr<HttpReqHeader> HttpReqHeader::create(HeaderMap&& headers) {
+    std::string cl;
+    for(const auto& i: headers){
+        if(strcasecmp(i.first.c_str(), "content-length") != 0) continue;
+        //RFC 9110 §8.6:CL必须符合1*DIGIT；重复值不一致必须按invalid拒绝
+        if(i.second.empty() || i.second.find_first_not_of("0123456789") != std::string::npos
+           || (!cl.empty() && cl != i.second))
+        {
+            LOGE("wrong content-length: %s\n", i.second.c_str());
+            return nullptr;
+        }
+        cl = i.second;
+    }
+    return std::make_shared<HttpReqHeader>(std::move(headers));
+}
+
 HttpReqHeader::HttpReqHeader(HeaderMap&& headers) {
     tracker.reserve(10);
     tracker.emplace_back("create", getmtime());

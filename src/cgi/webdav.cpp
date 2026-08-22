@@ -294,10 +294,11 @@ public:
                 return respondStatus(S409);
             }
             put_existed = fs::exists(target);
-            put_fd = ::open(fs_path.c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0644);
+            //O_NOFOLLOW:拒绝符号链接目标，防止PUT经链接写出webdav_root之外(如与rootdir重叠时上传.so)
+            put_fd = ::open(fs_path.c_str(), O_CREAT | O_WRONLY | O_TRUNC | O_NOFOLLOW, 0644);
             if (put_fd < 0) {
                 LOGE("[webdav] open %s failed: %s\n", fs_path.c_str(), strerror(errno));
-                return respondStatus(S500);
+                return respondStatus(errno == ELOOP ? S403 : S500);
             }
         }
         if (header->type == CGI_DATA) {

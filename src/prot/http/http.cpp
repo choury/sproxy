@@ -5,6 +5,7 @@
 
 #include <string.h>
 #include <stdlib.h>
+#include <stdarg.h>
 #include <assert.h>
 
 #include <list>
@@ -265,7 +266,34 @@ std::shared_ptr<HttpReqHeader> UnpackHttpReq(const void* header, size_t len){
             headers.emplace("Sec-WebSocket-Key", key);
         }
     }
-    return std::make_shared<HttpReqHeader>(std::move(headers));
+    if(auto te = headers.find("transfer-encoding"); te != headers.end()){
+        //请求的TE必须是chunked(允许重复)
+        std::string value;
+        for(const auto& i: headers){
+            if(strcasecmp(i.first.c_str(), "transfer-encoding") != 0) continue;
+            if(!value.empty()) value += ",";
+            value += i.second;
+        }
+        bool valid = !value.empty();
+        size_t start = 0;
+        while(valid && start <= value.size()){
+            size_t pos = value.find(',', start);
+            std::string token = value.substr(start, pos == std::string::npos ? std::string::npos : pos - start);
+            size_t b = token.find_first_not_of(" \t");
+            size_t e = token.find_last_not_of(" \t");
+            if(b == std::string::npos || strcasecmp(token.substr(b, e - b + 1).c_str(), "chunked") != 0){
+                valid = false;
+                break;
+            }
+            if(pos == std::string::npos) break;
+            start = pos + 1;
+        }
+        if(!valid){
+            LOGE("wrong transfer-encoding: %s\n", value.c_str());
+            return nullptr;
+        }
+    }
+    return HttpReqHeader::create(std::move(headers));
 }
 
 std::shared_ptr<HttpResHeader> UnpackHttpRes(const void* header, size_t len) {
@@ -312,6 +340,27 @@ static std::string toUpHeader(const std::string &s){
     return str;
 }
 
+// snprintf 返回的是应写长度，直接累加会使 size-len 下溢导致越界写，这里逐段检查
+static bool append_header(char* buff, size_t size, size_t* len, const char* fmt, ...) {
+    if (*len >= size) {
+        return false;
+    }
+    va_list ap;
+    va_start(ap, fmt);
+    int ret = vsnprintf(buff + *len, size - *len, fmt, ap);
+    va_end(ap);
+    if (ret < 0 || (size_t)ret >= size - *len) {
+        return false;
+    }
+    *len += (size_t)ret;
+    return true;
+}
+
+#define APPEND_HEADER(...) do{ \
+    if(!append_header(buff, size, &len, __VA_ARGS__)) \
+        return 0; \
+}while(0)
+
 size_t PackHttpReq(std::shared_ptr<const HttpReqHeader> req, void* data, size_t size){
     char *buff = (char*) data;
     std::list<std::string> AppendHeaders;
@@ -325,27 +374,27 @@ size_t PackHttpReq(std::shared_ptr<const HttpReqHeader> req, void* data, size_t 
     size_t len = 0;
     if (strcmp(method, "CONNECT") == 0){
         assert(req->chain_proxy);
-        len += snprintf(buff, size, "%s %s:%d HTTP/1.1" CRLF, method, req->Dest.hostname, req->Dest.port);
+        APPEND_HEADER("%s %s:%d HTTP/1.1" CRLF, method, req->Dest.hostname, req->Dest.port);
     }else if(req->chain_proxy){
-        len += snprintf(buff, size, "%s %s HTTP/1.1" CRLF, method, req->geturl().c_str());
+        APPEND_HEADER("%s %s HTTP/1.1" CRLF, method, req->geturl().c_str());
     }else{
-        len += snprintf(buff, size, "%s %s HTTP/1.1" CRLF, method, req->path);
+        APPEND_HEADER("%s %s HTTP/1.1" CRLF, method, req->path);
     }
 
     if(!req->has("Host") && req->Dest.hostname[0]){
-        len += snprintf(buff + len, size-len, "Host: %s" CRLF, dumpAuthority(&req->Dest));
+        APPEND_HEADER("Host: %s" CRLF, dumpAuthority(&req->Dest));
     }
     if(req->chain_proxy) {
-        len += snprintf(buff + len, size - len, "Protocol: %s" CRLF, req->Dest.protocol);
+        APPEND_HEADER("Protocol: %s" CRLF, req->Dest.protocol);
     }
     for (const auto& i : req->getall()) {
         if (i.first == "proxy-connection" || i.first == "connection" || i.first == "upgrade"){
             continue;
         }
-        len += snprintf(buff + len, size-len, "%s: %s" CRLF, toUpHeader(i.first).c_str(), i.second.c_str());
+        APPEND_HEADER("%s: %s" CRLF, toUpHeader(i.first).c_str(), i.second.c_str());
     }
     if(strcmp(req->Dest.protocol, "websocket") == 0){
-        len += snprintf(buff + len, size-len, "Upgrade: websocket" CRLF "Connection: Upgrade" CRLF);
+        APPEND_HEADER("Upgrade: websocket" CRLF "Connection: Upgrade" CRLF);
         if(!req->has("Sec-WebSocket-Key")) {
             //从http2/http3 转过来的websocket请求没有 Sec-WebSocket-Key，但是http1 要求有
             char nonce[16];
@@ -354,7 +403,7 @@ size_t PackHttpReq(std::shared_ptr<const HttpReqHeader> req, void* data, size_t 
             }
             char key[25];
             Base64Encode(nonce, 16, key);
-            len += snprintf(buff + len, size-len, "Sec-WebSocket-Key: %24s" CRLF, key);
+            APPEND_HEADER("Sec-WebSocket-Key: %24s" CRLF, key);
         }
     }
     if(!req->cookies.empty()){
@@ -363,15 +412,14 @@ size_t PackHttpReq(std::shared_ptr<const HttpReqHeader> req, void* data, size_t 
             cookie_str += "; ";
             cookie_str += i;
         }
-        len += snprintf(buff + len, size-len, "Cookie: %s" CRLF, cookie_str.substr(2).c_str());
+        APPEND_HEADER("Cookie: %s" CRLF, cookie_str.substr(2).c_str());
     }
 
     for(const auto& i: AppendHeaders){
-        len += snprintf(buff + len, size-len, "%s" CRLF, i.c_str());
+        APPEND_HEADER("%s" CRLF, i.c_str());
     }
 
-    len += snprintf(buff + len, size-len, CRLF);
-    assert(len < size);
+    APPEND_HEADER(CRLF);
     return len;
 }
 
@@ -414,11 +462,11 @@ size_t PackHttpRes(std::shared_ptr<const HttpResHeader> res, void* data, size_t 
     if(res->has("Content-Length") || res->has("Transfer-Encoding")
         || res->no_body() || res->has("Upgrade"))
     {
-        len += snprintf(buff, size, "HTTP/1.1 %s" CRLF, status);
-        len += snprintf(buff + len, size-len, "Connection: keep-alive" CRLF);
+        APPEND_HEADER("HTTP/1.1 %s" CRLF, status);
+        APPEND_HEADER("Connection: keep-alive" CRLF);
     }else {
-        len += snprintf(buff, size, "HTTP/1.0 %s" CRLF, status);
-        len += snprintf(buff + len, size-len, "Connection: close" CRLF);
+        APPEND_HEADER("HTTP/1.0 %s" CRLF, status);
+        APPEND_HEADER("Connection: close" CRLF);
     }
     for (const auto& i : res->getall()) {
         if(i.first == "upgrade" || i.first == "connection") {
@@ -427,7 +475,7 @@ size_t PackHttpRes(std::shared_ptr<const HttpResHeader> res, void* data, size_t 
         if(res->isTunnel && i.first == "transfer-encoding") {
             continue;
         }
-        len += snprintf(buff + len, size-len, "%s: %s" CRLF, toUpHeader(i.first).c_str(), i.second.c_str());
+        APPEND_HEADER("%s: %s" CRLF, toUpHeader(i.first).c_str(), i.second.c_str());
     }
     if(res->isWebsocket && memcmp(res->status, "101", 3) == 0) {
         if(!res->has("Sec-WebSocket-Accept")) {
@@ -437,15 +485,14 @@ size_t PackHttpRes(std::shared_ptr<const HttpResHeader> res, void* data, size_t 
             SHA1((const unsigned char*)key.c_str(), key.length(), (unsigned char*)sha1);
             char accept[30];
             Base64Encode(sha1, 20, accept);
-            len += snprintf(buff + len, size-len, "Sec-WebSocket-Accept: %s" CRLF, accept);
+            APPEND_HEADER("Sec-WebSocket-Accept: %s" CRLF, accept);
         }
-        len += snprintf(buff + len, size-len, "Upgrade: websocket" CRLF "Connection: Upgrade" CRLF);
+        APPEND_HEADER("Upgrade: websocket" CRLF "Connection: Upgrade" CRLF);
     }
     for (const auto& i : res->cookies) {
-        len += snprintf(buff + len, size-len, "Set-Cookie: %s" CRLF, i.c_str());
+        APPEND_HEADER("Set-Cookie: %s" CRLF, i.c_str());
     }
 
-    len += snprintf(buff + len, size-len, CRLF);
-    assert(len < size);
+    APPEND_HEADER(CRLF);
     return len;
 }
