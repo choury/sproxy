@@ -1856,24 +1856,30 @@ size_t frame_size(const quic_frame& frame) {
 
 quic_frame::quic_frame() {
     //全零即type=QUIC_FRAME_PADDING(0)，不持有任何指针
-    memset(this, 0, sizeof(*this));
+    type = 0;
+    //规避-Wclass-memaccess,依赖type为首个成员且其后无填充
+    memset(&extra, 0, sizeof(*this) - sizeof(type));
 }
 
 quic_frame::quic_frame(uint64_t t) {
-    memset(this, 0, sizeof(*this));
     type = t;
+    memset(&extra, 0, sizeof(*this) - sizeof(type));
 }
 
 quic_frame::quic_frame(quic_frame&& o) noexcept {
-    memcpy(this, &o, sizeof(*this));
-    memset(&o, 0, sizeof(o));
+    type = o.type;
+    memcpy(&extra, &o.extra, sizeof(*this) - sizeof(type));
+    o.type = 0;
+    memset(&o.extra, 0, sizeof(o) - sizeof(o.type));
 }
 
 quic_frame& quic_frame::operator=(quic_frame&& o) noexcept {
     if(this != &o){
         release();
-        memcpy(this, &o, sizeof(*this));
-        memset(&o, 0, sizeof(o));
+        type = o.type;
+        memcpy(&extra, &o.extra, sizeof(*this) - sizeof(type));
+        o.type = 0;
+        memset(&o.extra, 0, sizeof(o) - sizeof(o.type));
     }
     return *this;
 }
@@ -1912,7 +1918,8 @@ void quic_frame::release() noexcept {
         }
         break;
     }
-    memset(this, 0, sizeof(*this));
+    type = 0;
+    memset(&extra, 0, sizeof(*this) - sizeof(type));
 }
 
 std::string dumpHex(const void* data, size_t len){

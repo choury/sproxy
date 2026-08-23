@@ -976,10 +976,18 @@ void postConfig(){
     setvbuf(stdout, NULL, _IOLBF, BUFSIZ);
 #ifndef __ANDROID__
     if (opt.daemon_mode) {
+#ifdef __APPLE__
+        //macOS标记daemon()为deprecated，但行为可用，无等价替代
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#endif
         if(daemon(1, 0) < 0) {
             LOGE("start daemon error:%s\n", strerror(errno));
             exit(1);
         }
+#ifdef __APPLE__
+#pragma clang diagnostic pop
+#endif
         openlog(basename(main_argv[0]), LOG_PID | LOG_PERROR, LOG_LOCAL0);
     }
     if (opt.pidfile) {

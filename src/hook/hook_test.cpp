@@ -74,6 +74,9 @@ void test_vector_map_serialize() {
     r = set_tuple_field(names, "srv.config[missing].nested", kv_new, t, std::index_sequence_for<Server&>{});
     assert(r == -ENOENT && srv.config.size() == config_size && srv.config.count("missing") == 0);
     std::cout << "  set srv.config[missing].nested: correctly rejected with ENOENT" << std::endl;
+    //r/config_size只在assert里使用，NDEBUG构建下消除unused告警
+    (void)r;
+    (void)config_size;
 
     // Test write-back: vector out-of-bounds should fail with EINVAL
     r = set_tuple_field(names, "srv.ips[99]", kv_ip, t, std::index_sequence_for<Server&>{});

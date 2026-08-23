@@ -8,6 +8,9 @@
 #include <sys/socket.h>
 #include <string.h>
 #include <unistd.h>
+//recvmsg_x/sendmsg_x无公开API，只能经syscall调用，macOS将其标记为deprecated
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
 
 /*
  * Extended version for sendmsg_x() and recvmsg_x() calls
@@ -120,6 +123,7 @@ ssize_t writem(int fd, const struct iovec *iov, int iovcnt) {
     return syscall(SYS_sendmsg_x, fd, msgp, iovcnt, 0);
 }
 
+#pragma clang diagnostic pop
 #endif
 
 #ifdef __linux__

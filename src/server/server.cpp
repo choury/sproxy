@@ -119,7 +119,8 @@ int main(int argc, char **argv) {
 #ifdef HAVE_QUIC
     generate_reset_secret();
 #endif
-    bool has_tproxy = false;
+    //仅在__linux__下赋值、HAVE_BPF下使用，其余组合会触发unused告警
+    [[maybe_unused]] bool has_tproxy = false;
     for(struct bind_list* node = opt.listen_list; node; node = node->next) {
         const struct BindInfo& info = node->info;
         int fd[2] = {-1, -1};

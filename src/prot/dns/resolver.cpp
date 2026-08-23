@@ -96,7 +96,9 @@ int RawResolver::query(const char *host, int type, std::function<void(const char
     }
     cb = std::move(rawcb);
     char buf[BUF_SIZE];
-    write(getFd(), buf, Dns_Query(host, type, id_cur++).build((unsigned char*)buf, sizeof(buf)));
+    if(write(getFd(), buf, Dns_Query(host, type, id_cur++).build((unsigned char*)buf, sizeof(buf))) < 0) {
+        LOGE("write dns query failed: %s\n", strerror(errno));
+    }
     setEvents(RW_EVENT::READ);
     reply = AddJob([this]{cb(nullptr, 0);}, dnsConfig.timeout * 1000, 0);
     return 0;
@@ -107,7 +109,9 @@ int RawResolver::query(const void *data, size_t len, std::function<void(const ch
         return -1;
     }
     cb = std::move(rawcb);
-    write(getFd(), data, len);
+    if(write(getFd(), data, len) < 0) {
+        LOGE("write raw dns query failed: %s\n", strerror(errno));
+    }
     setEvents(RW_EVENT::READ);
     reply = AddJob([this]{cb(nullptr, 0);}, dnsConfig.timeout * 1000, 0);
     return 0;
