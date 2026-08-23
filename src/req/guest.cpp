@@ -231,7 +231,7 @@ ssize_t Guest::DataProc(Buffer& bb) {
     assert((status.flags & HTTP_REQ_COMPLETED) == 0);
     int cap = status.rw->bufsize();
     if (cap <= 0) {
-        LOGE("[%" PRIu64 "]: <guest> the host's buff is full (%s)\n",
+        LOGD(DHTTP, "[%" PRIu64 "]: <guest> the host's buff is full (%s)\n",
             status.req->request_id, status.req->geturl().c_str());
         rwer->delEvents(RW_EVENT::READ);
         return -1;
@@ -378,7 +378,7 @@ size_t Guest::Recv(Buffer&& bb) {
     }
     if (cap <= 10) {
         //reserve for chunked encoding
-        LOGE("[%" PRIu64 "]: <guest> the RWer write buff is full (%s)\n",
+        LOGD(DHTTP, "[%" PRIu64 "]: <guest> the RWer write buff is full (%s)\n",
             status.req->request_id, status.req->geturl().c_str());
         return 0;
     }

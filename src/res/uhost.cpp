@@ -26,7 +26,7 @@ Uhost::Uhost(const Destination& dest, const Destination& target): port(dest.port
         size_t len = bb.len;
         int cap = status.rw->cap(bb.id);
         if (cap < (int)bb.len) {
-            LOGE("[%" PRIu64 "]: <uhost> the res buff is full (%d vs %d) [%s], drop it\n",
+            LOGD(DHTTP, "[%" PRIu64 "]: <uhost> the res buff is full (%d vs %d) [%s], drop it\n",
                  status.req->request_id, cap, (int)bb.len,
                  status.req->geturl().c_str());
             rx_dropped += bb.len;

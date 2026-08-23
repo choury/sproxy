@@ -207,7 +207,7 @@ void Host::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> 
             status.req->request_id, bb.len, cap, tx_bytes, http_flag);
 
         if (cap <= 0) {
-            LOGE("[%" PRIu64 "]: <host> the RWer write buff is full (%s)\n",
+            LOGD(DHTTP, "[%" PRIu64 "]: <host> the RWer write buff is full (%s)\n",
                 status.req->request_id, status.req->geturl().c_str());
             return 0;
         }
@@ -266,7 +266,7 @@ ssize_t Host::DataProc(Buffer& bb) {
     }
     int cap = status.rw->cap(bb.id);
     if (cap <= 0) {
-        LOGE("[%" PRIu64 "]: <host> the guest's write buff is full (%s)\n",
+        LOGD(DHTTP, "[%" PRIu64 "]: <host> the guest's write buff is full (%s)\n",
             status.req->request_id,
             status.req->geturl().c_str());
         rwer->delEvents(RW_EVENT::READ);

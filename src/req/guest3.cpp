@@ -191,7 +191,7 @@ ssize_t Guest3::DataProc(Buffer& bb) {
         }
         size_t cap = status.rw->bufsize();
         if(cap == 0){
-            LOGE("[%" PRIu64 "]: <guest3> (%" PRIu64") the host's buff is full (%s)\n",
+            LOGD(DHTTP3, "[%" PRIu64 "]: <guest3> (%" PRIu64") the host's buff is full (%s)\n",
                  status.req->request_id, bb.id, status.req->geturl().c_str());
             return -1;
         }

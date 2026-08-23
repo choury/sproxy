@@ -88,7 +88,7 @@ ssize_t Proxy3::DataProc(Buffer& bb){
         }
         int cap = status.rw->cap(bb.id);
         if(cap <= 0){
-            LOGE("[%" PRIu64 "]: <proxy3> (%" PRIu64") the guest's write buff is full (%s) %zd vs %zd\n",
+            LOGD(DHTTP3, "[%" PRIu64 "]: <proxy3> (%" PRIu64") the guest's write buff is full (%s) %zd vs %zd\n",
                  status.req->request_id, bb.id, status.req->geturl().c_str(), status.rw->cap(bb.id), bb.len);
             return -1;
         }

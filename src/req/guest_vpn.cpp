@@ -52,10 +52,10 @@ Guest_vpn::Guest_vpn(int fd, bool enable_offload, bool is_tap): Requester(nullpt
         auto len = bb.len;
         if(status.rw->bufsize() < len) {
             if(status.req){
-                LOG("[%" PRIu64 "]: <guest_vpn> the host's buff is full, skip packet [%zd] (%s)\n",
+                LOGD(DVPN, "[%" PRIu64 "]: <guest_vpn> the host's buff is full, skip packet [%zd] (%s)\n",
                     status.req->request_id, len, status.req->geturl().c_str());
             }else{
-                LOG("[%" PRIu64 "]: <guest_vpn> the guest's buff is full, skip packet [%zd]: %s\n",
+                LOGD(DVPN, "[%" PRIu64 "]: <guest_vpn> the guest's buff is full, skip packet [%zd]: %s\n",
                     bb.id, len, status.host.c_str());
             }
             return 0;
