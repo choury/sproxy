@@ -91,6 +91,7 @@ protected:
     SSL_CTX* ctx = nullptr;  // server will be null
     SSL *ssl = nullptr;
     bool isClosing = false;
+    bool migrating = false;
     bool hasParam = false;
 
     std::unique_ptr<QuicQos> qos;
@@ -139,7 +140,7 @@ protected:
     std::deque<Buffer*> datagrams;
 
     uint64_t max_idle_timeout = 120000;
-    uint64_t his_max_payload_size = 1200;
+    size_t his_max_payload_size = 1200;
     uint64_t his_max_data = 0;
     uint64_t his_max_stream_data_bidi_local = 0;
     uint64_t his_max_stream_data_bidi_remote = 0;
@@ -155,7 +156,7 @@ protected:
     uint64_t my_received_data_total = 0;
     uint64_t my_received_max_bidistream_id = 0;
     uint64_t my_received_max_unistream_id = 0;
-    uint64_t my_max_payload_size = 1400;
+    size_t my_max_payload_size = 1400;
     uint64_t my_max_data = MAX_BUF_LEN;
     uint64_t my_max_stream_data_bidi_local = BUF_LEN;
     uint64_t my_max_stream_data_bidi_remote = BUF_LEN;
@@ -357,6 +358,9 @@ public:
     bool sendFrameDirectly(const quic_frame& frame, const sockaddr_storage* remote_addr);
     // Trigger immediate connection migration
     bool triggerMigration();
+    void resolveForMigration();
+    static void MigrationDnscallback(std::shared_ptr<void> param, int error,
+                                      const std::list<sockaddr_storage>& addrs, int ttl);
 
     virtual void dump_status(Dumper dp, void* param) override;
     virtual size_t mem_usage() override;

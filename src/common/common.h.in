@@ -275,6 +275,7 @@ do {\
 #define CLI_KILLED          94U
 #define RPROXY_DUP          95U
 #define TPROXY_HOST_ERR     96U
+#define PATH_LOST_ERR       97U
 #define ERROR_MASK          0xff
 
 typedef unsigned char uchar;

@@ -11,6 +11,7 @@
 #include "misc/config.h"
 #include "prot/tls.h"
 #include "prot/multimsg.h"
+#include "prot/dns/resolver.h"
 #include <openssl/err.h>
 #include <unistd.h>
 #include <assert.h>
@@ -192,15 +193,19 @@ std::list<quic_packet_pn> QuicBase::send(OSSL_ENCRYPTION_LEVEL level,
                                          uint64_t pn, uint64_t ack,
                                          std::list<quic_frame>& pend_frames, size_t window)
 {
-    size_t envLen = envelopLen(level, pn, ack, std::min((size_t)his_max_payload_size, window));
+    if(migrating){
+        //路径迁移中:旧socket已失效，跳过打包，待triggerMigration成功后恢复
+        return {};
+    }
+    size_t envLen = envelopLen(level, pn, ack, std::min(his_max_payload_size, window));
     assert(window > envLen);
 
     size_t bufleft = getWritableSize();
     if(his_max_payload_size > bufleft){
-        LOGD(DQUIC, "bufleft is too small: %zd vs %zd\n", bufleft, (size_t)his_max_payload_size);
+        LOGD(DQUIC, "bufleft is too small: %zd vs %zd\n", bufleft, his_max_payload_size);
         return {};
     }
-    size_t max_iov = std::min((size_t)100, bufleft/(size_t)his_max_payload_size);
+    size_t max_iov = std::min((size_t)100, bufleft/his_max_payload_size);
     std::list<quic_packet_pn> sent_packets;
     sent_packets.emplace_back(quic_packet_pn{{pn++, envLen}, {}});
     do {
@@ -230,7 +235,7 @@ std::list<quic_packet_pn> QuicBase::send(OSSL_ENCRYPTION_LEVEL level,
                 frame.type &= ~QUIC_FRAME_STREAM_FIN_F;
                 pend_frames.insert(std::next(pend_frames.begin()), std::move(fframe));
             } else if(packet.frames.empty() && (frame.type == QUIC_FRAME_DATAGRAM || frame.type == QUIC_FRAME_DATAGRAM_LEN)){
-                LOGD(DQUIC, "drop too large datagram frame: %zd vs %" PRIu64"\n", pack_frame_len(frame), his_max_payload_size);
+                LOGD(DQUIC, "drop too large datagram frame: %zd vs %zd\n", pack_frame_len(frame), his_max_payload_size);
                 pend_frames.pop_front();
                 break;
             } else if(window < packet.meta.sent_bytes) {
@@ -250,7 +255,7 @@ std::list<quic_packet_pn> QuicBase::send(OSSL_ENCRYPTION_LEVEL level,
         packet.meta.sent_bytes += pack_frame_len(frame);
         packet.frames.push_back(std::move(frame));
         pend_frames.pop_front();
-        assert(packet.meta.sent_bytes <= (size_t)his_max_payload_size);
+        assert(packet.meta.sent_bytes <= his_max_payload_size);
     }while(!pend_frames.empty() && sent_packets.size() < max_iov);
     Block blk(sent_packets.size() * his_max_payload_size);
     char* start = (char*)blk.data();
@@ -288,8 +293,15 @@ std::list<quic_packet_pn> QuicBase::send(OSSL_ENCRYPTION_LEVEL level,
 
     int ret = writem(iov.data(), iov.size());
     if (ret < 0) {
+        int werr = errno;
         ret = 0;
-        LOGE("QUIC writem failed: %s\n", strerror(errno));
+        LOGE("QUIC writem failed: %s\n", strerror(werr));
+        //同步路由错误不会产生EPOLLERR，必须在此上报，否则会落入拥塞重试死循环
+        if(werr == ENETUNREACH || werr == ENETDOWN || werr == EHOSTUNREACH ||
+           werr == EADDRNOTAVAIL || werr == ENETRESET)
+        {
+            onError(PROTOCOL_ERR, PATH_LOST_ERR);
+        }
     }
     if((size_t)ret < iov.size()) {
         // 把没有发送成功的包的帧放回pend_frames头部，以便下次优先发送
@@ -2095,7 +2107,15 @@ int QuicRWer::handleRetryPacket(const quic_pkt_header *header) {
 }
 
 void QuicRWer::onError(int type, int code) {
-    if (type == PROTOCOL_ERR && code == QUIC_CONNECTION_CLOSED) {
+    if (type == PROTOCOL_ERR && code == PATH_LOST_ERR) {
+        if(!server && !isClosing && !migrating){
+            migrating = true;
+            LOG("QUIC path lost, migrating connection [%d]\n", getFd());
+            setNone();
+            triggerMigration();
+        }
+        return;
+    } else if (type == PROTOCOL_ERR && code == QUIC_CONNECTION_CLOSED) {
         if(auto cb = callback.lock(); cb) {
             cb->closeCB();
         }
@@ -2258,8 +2278,7 @@ success:
 #endif
     } else if(type == SOCKET_ERR) {
         LOG("get socket error for quic [%d]: %s\n", getFd(), strerror(code));
-        setNone();
-        triggerMigration();
+        onError(PROTOCOL_ERR, PATH_LOST_ERR);
     } else {
         RWer::ErrorHE(type, code);
     }
@@ -2435,12 +2454,16 @@ bool QuicRWer::triggerMigration() {
         LOGD(DQUIC, "server-side migration not supported\n");
         return false;
     }
+    if (flags & RWER_CLOSING) {
+        return false;
+    }
 
     LOGD(DQUIC, "triggering client-side connection migration\n");
     // Use the resolved address from SocketRWer's addrs queue
     if (addrs.empty()) {
-        LOGE("No resolved addresses available for migration\n");
-        return false;
+        //地址耗尽:不同网络的解析结果不同，重新解析
+        resolveForMigration();
+        return true;
     }
 
     auto& server_addr = addrs.front();
@@ -2449,6 +2472,8 @@ bool QuicRWer::triggerMigration() {
     if (new_fd < 0) {
         //忽略所有socket相关的错误，依赖keepalive定时重试，超时后释放
         LOGE("Failed to create new socket for migration: %s\n", strerror(errno));
+        //淘汰失败地址，轮换到下一个；队列轮空后由入口触发重解析
+        addrs.pop();
         keepAlive_timer = UpdateJob(std::move(keepAlive_timer), [this]{triggerMigration();}, 2000);
         return true;
     }
@@ -2456,6 +2481,7 @@ bool QuicRWer::triggerMigration() {
     SetUdpOptions(new_fd, &server_addr);
     setFd(new_fd);
     setEvents(RW_EVENT::READ);
+    migrating = false;
 
     // Send ping immediately after migration to test the new path
     quic_frame ping{QUIC_FRAME_PING};
@@ -2463,7 +2489,45 @@ bool QuicRWer::triggerMigration() {
 
     LOGD(DQUIC, "Client migration successful to %s\n", storage_ntoa(&server_addr));
     qos->Migrated();
+    //迁移重试占用了keepAlive_timer，重臂探测新路径；若新路径仍不可达会再次触发迁移
+    //握手期没有应用层密钥(keepAlive_action会assert)，跳过，待首个1-RTT包正常重臂
+    if(sslStats == SslStats::Established) {
+        keepAlive_timer = UpdateJob(std::move(keepAlive_timer), [this]{keepAlive_action();}, 2000);
+    }
     return true;
+}
+
+void QuicRWer::resolveForMigration() {
+    LOGD(DQUIC, "re-resolving %s for migration\n", hostname);
+    query_host(hostname, MigrationDnscallback, shared_from_this());
+}
+
+void QuicRWer::MigrationDnscallback(std::shared_ptr<void> param, int error,
+                                    const std::list<sockaddr_storage>& addrs, int /*ttl*/)
+{
+    //param经shared_ptr<void>传递，多重继承下需先回SocketRWer(偏移0)再动态下转
+    std::shared_ptr<QuicRWer> rwer = std::dynamic_pointer_cast<QuicRWer>(
+        std::static_pointer_cast<SocketRWer>(param));
+    if(rwer->flags & RWER_CLOSING){
+        return;
+    }
+    QuicRWer* rw = rwer.get();
+    if (error || addrs.empty()) {
+        LOGE("migration dns resolve failed: %d\n", error);
+        rwer->keepAlive_timer = UpdateJob(std::move(rwer->keepAlive_timer),
+                                          [rw]{rw->resolveForMigration();}, 5000);
+        return;
+    }
+    //用当前网络的解析结果整体替换旧地址
+    std::queue<sockaddr_storage> empty;
+    rwer->addrs.swap(empty);
+    for(const auto& i: addrs){
+        sockaddr_storage addr = i;
+        ((sockaddr_in6*)&addr)->sin6_port = htons(rwer->port);
+        rwer->addrs.push(addr);
+    }
+    rwer->keepAlive_timer = UpdateJob(std::move(rwer->keepAlive_timer),
+                                      [rw]{rw->triggerMigration();}, 0);
 }
 
 QuicRWer::~QuicRWer() {

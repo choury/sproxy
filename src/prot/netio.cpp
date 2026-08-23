@@ -233,6 +233,10 @@ void SocketRWer::connected(const sockaddr_storage& addr) {
 
 void SocketRWer::SetCallback(std::shared_ptr<IRWerCallback> cb) {
     RWer::SetCallback(std::move(cb));
+    if(addrs.empty()) {
+        //quic 迁移期间地址队列可能暂时为空
+        return;
+    }
     if(auto sockcb = std::dynamic_pointer_cast<ISocketCallback>(callback.lock()); sockcb && IsConnected()) {
         sockcb->connectCB(addrs.front(), resolved_time);
     }

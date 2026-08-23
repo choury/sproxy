@@ -740,12 +740,12 @@ std::optional<std::string> HttpCursor::literal_decode(int prefix) const {
     std::optional<std::string> result;
     if(flag & (1<<prefix)) {
         //huffman数据只有len个字节，用子游标限制解码范围
-        HttpCursor huffman{data(), len.value()};
+        HttpCursor huffman{data(), static_cast<size_t>(len.value())};
         result = huffman.hfm_decode();
-        advance(len.value());
+        advance(static_cast<size_t>(len.value()));
     } else {
-        result = std::string((const char*)data(), len.value());
-        advance(len.value());
+        result = std::string((const char*)data(), static_cast<size_t>(len.value()));
+        advance(static_cast<size_t>(len.value()));
     }
     if(result && result.value().find_first_of("\r\n") != std::string::npos) {
         return std::nullopt;
