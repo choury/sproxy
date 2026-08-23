@@ -15,6 +15,12 @@ std::shared_ptr<HttpReqHeader> HttpReqHeader::create(HeaderMap&& headers) {
     g_headers = std::move(headers);
     return nullptr;
 }
+//Apple clang在-O0下引用HttpReqHeader的typeinfo，桩出全部非inline虚函数，
+//使vtable/typeinfo随关键函数(Normalize)在本测试TU内发射；测试本身不调用它们
+bool HttpReqHeader::no_body() const { return true; }
+bool HttpReqHeader::no_end() const { return false; }
+std::multimap<std::string, std::string> HttpReqHeader::Normalize() const { return {}; }
+size_t HttpReqHeader::mem_usage() { return 0; }
 HttpHeader::HttpHeader() {}
 size_t HttpHeader::mem_usage() { return 0; }
 std::multimap<std::string, std::string> HttpResHeader::Normalize() const { return {}; }
