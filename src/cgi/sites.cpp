@@ -44,7 +44,7 @@ class handler: public CgiHandler{
             char site[DOMAINLIMIT];
             char strategy[20];
             char ext[256];
-            int parsed = sscanf(item.c_str(), "%s %s %s", site, strategy, ext);
+            int parsed = sscanf(item.c_str(), "%255s %19s %255s", site, strategy, ext);
 
             // Skip malformed entries (need at least site and strategy)
             if(parsed < 2) {
@@ -206,9 +206,17 @@ class handler: public CgiHandler{
         for(const auto& item: slist) {
             char site[DOMAINLIMIT];
             char strategy[20];
-            sscanf(item.c_str(), "%s %s", site, strategy);
+            char ext[1024];
+            int parsed = sscanf(item.c_str(), "%255s %19s %1023s", site, strategy, ext);
+            if(parsed < 2) {
+                continue;
+            }
             json_object *jsite = json_object_new_object();
-            json_object_object_add(jsite, site, json_object_new_string(strategy));
+            json_object_object_add(jsite, "site", json_object_new_string(site));
+            json_object_object_add(jsite, "strategy", json_object_new_string(strategy));
+            // GENERATED 是系统自动生成条目的内部标记，不展示
+            json_object_object_add(jsite, "ext",
+                json_object_new_string(parsed >= 3 && strcmp(ext, GEN_TIP) != 0 ? ext : ""));
             json_object_array_add(jsites, jsite);
         }
         std::shared_ptr<HttpResHeader> res = HttpResHeader::create(S200, sizeof(S200), req->request_id);
@@ -260,7 +268,12 @@ class handler: public CgiHandler{
         if(params.count("site") == 0 || params.count("strategy") == 0) {
             return BadRequest();
         }
-        if(!c->AddStrategy(params["site"], params["strategy"], "").get_future().get()){
+        std::string ext = params.count("ext") ? params["ext"] : "";
+        // sites.list 以空白分隔三列，ext 含空白会破坏格式
+        if(ext.find_first_of(" \t\r\n") != std::string::npos) {
+            return BadRequest();
+        }
+        if(!c->AddStrategy(params["site"], params["strategy"], ext).get_future().get()){
             return BadRequest();
         }
         std::shared_ptr<HttpResHeader> res = HttpResHeader::create(S303, sizeof(S303), req->request_id);

@@ -607,11 +607,13 @@ std::map<string, string> getparamsmap(const char* param) {
 
 std::map<string, string> getparamsmap(const char *param, size_t len) {
     std::map<string, string> params;
-    if(len == 0) {
+    if(len == 0 || len >= URLLIMIT) {
         return params;
     }
     char paramsbuff[URLLIMIT];
-    URLDecode(paramsbuff, param, len);
+    memcpy(paramsbuff, param, len);
+    paramsbuff[len] = 0;
+    char decoded[URLLIMIT];
     char *p=paramsbuff;
     if(*p) {
         for (; ; p = nullptr) {
@@ -621,9 +623,15 @@ std::map<string, string> getparamsmap(const char *param, size_t len) {
 
             char* sp = strpbrk(q, "=");
             if (sp) {
-                params[string(q, sp - q)] = sp + 1;
+                *sp = 0;
+                // 先切分再解码，保证值里经 %26 编码的 & 不会被误当成分隔符
+                int klen = URLDecode(decoded, q, strlen(q));
+                std::string key(decoded, klen);
+                int vlen = URLDecode(decoded, sp + 1, strlen(sp + 1));
+                params[std::move(key)] = std::string(decoded, vlen);
             } else {
-                params[q] = "";
+                int klen = URLDecode(decoded, q, strlen(q));
+                params[std::string(decoded, klen)] = "";
             }
         }
     }

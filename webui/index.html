@@ -25,24 +25,53 @@
                 <tr>
                     <th>站点</th>
                     <th>策略</th>
+                    <th>扩展(ext)</th>
                     <th>操作</th>
                 </tr>
                 <tr>
                     <form id="form1" action='/cgi/libsites.do' method='post'><input type="hidden" name="method" value="put" /></form>
                     <td><input form="form1" type="text" name="site" id="tdw"/></td>
-                    <td><select name="strategy" form="form1">
+                    <td><select name="strategy" form="form1" id="strategy_sel">
                             <option value="proxy">proxy</option>
                             <option value="block">block</option>
                             <option value="direct">direct</option>
                             <option value="local">local</option>
+                            <option value="forward">forward</option>
+                            <option value="rewrite">rewrite</option>
+                            <option value="alias">alias</option>
                         </select>
                     </td>
+                    <td><input form="form1" type="text" name="ext" id="tdext" placeholder="代理地址/路径正则等"/></td>
                     <td><input form="form1" type='submit' value='添加'></td>
                 </tr>
             </table>
         </div>
         <script>
         var table = document.getElementById("list");
+        function escapeHtml(s){
+            return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+                .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+        }
+        function fillForm(item){
+            document.getElementById('tdw').value = item.site;
+            var sel = document.getElementById('strategy_sel');
+            var found = false;
+            for(var j=0;j<sel.options.length;j++){
+                if(sel.options[j].value == item.strategy){
+                    sel.selectedIndex = j;
+                    found = true;
+                    break;
+                }
+            }
+            if(!found){
+                var opt = document.createElement('option');
+                opt.value = item.strategy;
+                opt.text = item.strategy;
+                sel.appendChild(opt);
+                sel.selectedIndex = sel.options.length - 1;
+            }
+            document.getElementById('tdext').value = item.ext || '';
+        }
         fetch('/cgi/libsites.do').then(
             function(response) {
                 if(response.status == 403) {
@@ -57,28 +86,43 @@
                 // Examine the text in the response
                 response.json().then(function(data) {
                     for(var i=0,l=data.length;i<l;i++){
-                        for(var key in data[i]){
-                            //原来的行数    比如：此处获得表格的行数是5，则每一行对应的index是0~4，所以下面在insertRow时，使用的是表格的当前行数
-                            var currentRows = table.tBodies[0].rows.length;
-                            var insertTr = table.insertRow(currentRows);
-                            if(i%2==0){
-                                insertTr.style.background='#FFF'
-                            }
-                            var insertTd = insertTr.insertCell(0);
-                            insertTd.style.textAlign="center";
-                            insertTd.innerHTML =key;
-
-                            insertTd = insertTr.insertCell(1);
-                            insertTd.style.textAlign="center";
-                            var strategy = data[i][key];
-                            insertTd.innerHTML = "<span class='strategy-tag strategy-" + strategy + "'>" + strategy + "</span>";
-
-                            insertTd = insertTr.insertCell(2);
-                            insertTd.style.textAlign="center";
-                            insertTd.className='delate';
-                            insertTd.innerHTML = "<form action='/cgi/libsites.do?site="+key+"' method='post'><input type='hidden' name='method' value='delete'><input type='submit' value='删除'></form>";
-
+                        var item = data[i];
+                        //原来的行数    比如：此处获得表格的行数是5，则每一行对应的index是0~4，所以下面在insertRow时，使用的是表格的当前行数
+                        var currentRows = table.tBodies[0].rows.length;
+                        var insertTr = table.insertRow(currentRows);
+                        if(i%2==0){
+                            insertTr.style.background='#FFF'
                         }
+                        var insertTd = insertTr.insertCell(0);
+                        insertTd.style.textAlign="center";
+                        insertTd.innerHTML = escapeHtml(item.site);
+
+                        insertTd = insertTr.insertCell(1);
+                        insertTd.style.textAlign="center";
+                        insertTd.innerHTML = "<span class='strategy-tag strategy-" + escapeHtml(item.strategy) + "'>" + escapeHtml(item.strategy) + "</span>";
+
+                        insertTd = insertTr.insertCell(2);
+                        insertTd.style.textAlign="center";
+                        insertTd.title = escapeHtml(item.ext || '');
+                        insertTd.innerHTML = escapeHtml(item.ext || '');
+
+                        insertTd = insertTr.insertCell(3);
+                        insertTd.style.textAlign="center";
+                        insertTd.className='delate';
+                        insertTd.innerHTML = "<form action='/cgi/libsites.do?site="+encodeURIComponent(item.site)+"' method='post'><input type='hidden' name='method' value='delete'><input type='submit' value='删除'></form>";
+                        // 先写 innerHTML 再 append 按钮，避免 innerHTML += 重建 DOM 丢失事件
+                        var editBtn = document.createElement('input');
+                        editBtn.type = 'button';
+                        editBtn.value = '编辑';
+                        editBtn.onclick = (function(row){
+                            return function(){
+                                fillForm(row);
+                                document.getElementById('tdw').focus();
+                            };
+                        })(item);
+                        insertTd.insertBefore(editBtn, insertTd.firstChild);
+                        insertTd.insertBefore(document.createElement('br'), insertTd.childNodes[1]);
+
                     }
                 });
             })
