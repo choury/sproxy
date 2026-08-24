@@ -200,9 +200,9 @@ size_t Http2Base::DefaultProc(Buffer& bb) {
             ErrProc(HTTP2_ERR_COMPRESSION_ERROR);
             return 0;
         }
-        if (header_buffer->len + length > HTTP2_HEADER_LIMIT) {
+        if (header_buffer->len + length > HTTP_HEADER_LIMIT) {
             //CONTINUATION 无限累积会吃满内存
-            LOGE("ERROR header block too large: %zu/%d\n", header_buffer->len + length, HTTP2_HEADER_LIMIT);
+            LOGE("ERROR header block too large: %zu/%d\n", header_buffer->len + length, HTTP_HEADER_LIMIT);
             ErrProc(HTTP2_ERR_ENHANCE_YOUR_CALM);
             return 0;
         }

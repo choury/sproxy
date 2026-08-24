@@ -72,7 +72,7 @@ public:
     //for read buffer
     virtual size_t rlength(uint64_t id) override;
     virtual size_t mem_usage() override {
-        return sizeof(*this) + (rb.cap() + rb.length()) + wbuff.length();
+        return sizeof(*this) + rb.mem_usage() + wbuff.mem_usage();
     }
     void reflect(IVisitor& v) override {
         SocketRWer::reflect(v);

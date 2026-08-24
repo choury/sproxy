@@ -447,7 +447,7 @@ void StreamRWer::ReadData() {
         LOGD(DRWER, "stream read %d: len: %zd, ret: %zd, cb: %ld\n", getFd(), left, ret, callback.use_count());
         if (ret > 0) {
             bb.truncate(ret);
-            rb.put(std::move(bb));
+            rb.emplace(std::move(bb));
             //ConsumeRData(0);
             continue;
         } else if (ret == 0) {

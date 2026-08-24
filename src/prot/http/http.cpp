@@ -152,6 +152,10 @@ bool HttpResponser::HeaderProc(Buffer& bb) {
         bb.reserve(headerlen);
         return true;
     } else {
+        if(bb.len > HTTP_HEADER_LIMIT){
+            LOGE("ERROR http request header too large: %zu/%d\n", bb.len, HTTP_HEADER_LIMIT);
+            ErrProc(bb.id);
+        }
         return false;
     }
 }
@@ -198,6 +202,10 @@ bool HttpRequester::HeaderProc(Buffer& bb) {
         bb.reserve(headerlen);
         return true;
     } else {
+        if(bb.len > HTTP_HEADER_LIMIT){
+            LOGE("ERROR http response header too large: %zu/%d\n", bb.len, HTTP_HEADER_LIMIT);
+            ErrProc(bb.id);
+        }
         return false;
     }
 }

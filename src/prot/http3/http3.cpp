@@ -173,6 +173,12 @@ size_t Http3Base::Http3_Proc(Buffer& bb) {
             return len - bb.len;
         }
         if(length.value() > bb.len - header_len){
+            //HEADERS帧必须收齐才能解码，先于流控窗口判断头部超限，避免慢速滴灌攒大块
+            if(stream.value() == HTTP3_STREAM_HEADERS && length.value() > HTTP_HEADER_LIMIT){
+                LOGE("ERROR http3 header frame too large: %" PRIu64 "/%d\n", length.value(), HTTP_HEADER_LIMIT);
+                ErrProc(HTTP3_ERR_FRAME_ERROR);
+                return 0;
+            }
             return 0;
         }
         bb.reserve((int)header_len);

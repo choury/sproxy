@@ -91,6 +91,9 @@ public:
     size_t truncate(size_t left);
     [[nodiscard]] const void* data() const;
     void* mutable_data();
+    // 返回末尾数据之后的位置，可写；共享时COW(保留cap，否则没有可写空间)
+    // 剩余可写空间小于need时返回nullptr
+    void* end(size_t need);
     size_t refs();
     void reflect(IVisitor& v) {
         reflect_named("data", std::span<const std::byte>((const std::byte*)data(), len));
@@ -104,11 +107,15 @@ class CBuffer {
     size_t total_len = 0;
 public:
     ssize_t put(Buffer&& bb);
+    // 末尾Buffer有足够可写空间时把数据并入，否则入队
+    ssize_t emplace(Buffer&& bb);
 
     //for get
     [[nodiscard]] size_t length() const;
     [[nodiscard]] size_t cap() const;
     [[nodiscard]] bool empty() const;
+    //真实已分配字节数(各Buffer的cap之和,不含deque节点开销)
+    [[nodiscard]] size_t mem_usage() const;
     Buffer get();
     const std::deque<Buffer>& data() const;
     std::set<uint64_t> consume(size_t l);

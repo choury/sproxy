@@ -317,6 +317,102 @@ void test_cbuffer_class() {
     std::cout << "✓ CBuffer class tests passed\n";
 }
 
+// Tests for CBuffer::emplace and Buffer::end
+void test_cbuffer_emplace() {
+    std::cout << "Testing CBuffer emplace...\n";
+
+    // 模拟ReadData的慢速滴灌: 每次分配大块、只写入少量数据后truncate
+    CBuffer cbuf;
+    const char* chunk = "0123456789";
+    for (int i = 0; i < 100; i++) {
+        Buffer bb{1024};
+        memcpy(bb.mutable_data(), chunk, 10);
+        bb.truncate(10);
+        cbuf.emplace(std::move(bb));
+    }
+    // 100次小数据应持续并入末尾块, 块数远小于次数(每个块可容纳~102个)
+    assert(cbuf.data().size() <= 2);
+    assert(cbuf.length() == 1000);
+    // 真实已分配字节数: 每个Buffer的cap(数据长度+PRIOR_HEAD)之和
+    assert(cbuf.mem_usage() == cbuf.data().size() * (1024 + PRIOR_HEAD));
+    Buffer merged = cbuf.get();
+    assert(merged.len == 1000);
+    for (size_t i = 0; i < 1000; i += 10) {
+        assert(memcmp((const char*)merged.data() + i, chunk, 10) == 0);
+    }
+
+    // room耗尽时新入队
+    Buffer big{1024};
+    memset(big.mutable_data(), 'Z', 1024);
+    big.truncate(1024);
+    cbuf.emplace(std::move(big));
+    assert(cbuf.data().size() == 2);
+    assert(cbuf.length() == 1000 + 1024);
+    Buffer tail = cbuf.data().back();
+    assert(tail.len == 1024);
+
+    // 消费后get按同id合并, 内容顺序正确
+    cbuf.consume(1000);
+    Buffer rest = cbuf.get();
+    assert(rest.len == 1024);
+
+    // 空CBuffer上emplace等价于put
+    CBuffer fresh;
+    Buffer first{"first", 5, 9};
+    fresh.emplace(std::move(first));
+    assert(fresh.data().size() == 1);
+    assert(fresh.length() == 5);
+
+    // 零长Buffer不并入, 作为EOF标记入队
+    Buffer eof_buf{nullptr, 9};
+    fresh.emplace(std::move(eof_buf));
+    assert(fresh.data().size() == 2);
+    assert(fresh.length() == 5);
+
+    // id不同不并入, 即使空间足够
+    Buffer other_id{"xx", 2, 88};
+    fresh.emplace(std::move(other_id));
+    assert(fresh.data().size() == 3);
+    assert(fresh.length() == 7);
+
+    // Buffer::end: 剩余空间足够时返回可写指针
+    Buffer eb{128};
+    memcpy(eb.mutable_data(), "abcd", 4);
+    eb.truncate(4);
+    void* room = eb.end(100);
+    assert(room != nullptr);
+    memcpy(room, "abcd", 4);
+    eb.len += 4;
+    assert(eb.len == 8);
+    assert(memcmp(eb.data(), "abcdabcd", 8) == 0);
+
+    // 剩余空间不足时返回nullptr
+    assert(eb.end(128 * 1024) == nullptr);
+
+    // 共享时end触发COW, 保留cap且不影响原持有者
+    Buffer shared_src{1024};
+    memcpy(shared_src.mutable_data(), "12345678", 8);
+    shared_src.truncate(8);
+    Buffer copy = shared_src;  // 共享底层内存
+    void* cow_room = copy.end(100);
+    assert(cow_room != nullptr);
+    memcpy(cow_room, "XY", 2);
+    copy.len += 2;
+    assert(memcmp(shared_src.data(), "12345678", 8) == 0);  // 原数据不受影响
+    assert(memcmp(copy.data(), "12345678XY", 10) == 0);
+    assert(copy.refs() == 1);
+
+    // 空Buffer(EOF标记)的end返回nullptr
+    Buffer null_buf{nullptr, 1};
+    assert(null_buf.end(1) == nullptr);
+
+    // 空CBuffer的mem_usage为0
+    CBuffer mem_empty;
+    assert(mem_empty.mem_usage() == 0);
+
+    std::cout << "✓ CBuffer emplace tests passed\n";
+}
+
 // Test for CBuffer with moved buffers
 void test_cbuffer_move_semantics() {
     std::cout << "Testing CBuffer move semantics...\n";
@@ -769,6 +865,7 @@ int main() {
         test_block_class();
         test_buffer_class();
         test_cbuffer_class();
+        test_cbuffer_emplace();
         test_cbuffer_move_semantics();
         test_ebuffer_class();
 

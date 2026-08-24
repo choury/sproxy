@@ -13,6 +13,9 @@
 
 #define CRLF      "\r\n"
 
+//单个请求/响应头部块的大小上限，超限断连，防慢速头部攻击
+#define HTTP_HEADER_LIMIT (64*1024)
+
 
 #define HTTP_STATUS_MAP(X) \
     X(101, "Switching Protocols") \

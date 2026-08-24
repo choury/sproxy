@@ -125,6 +125,21 @@ void* Buffer::mutable_data() {
     return (char*)ptr.get() + off;
 }
 
+void* Buffer::end(size_t need) {
+    if(ptr == nullptr) {
+        return nullptr;
+    }
+    if((size_t)off + len + need > cap) {
+        return nullptr;
+    }
+    if(ptr.use_count() > 1) {
+        auto new_ptr = std::shared_ptr<void>(malloc(cap), free);
+        memcpy(new_ptr.get(), ptr.get(), off + len);
+        ptr = new_ptr;
+    }
+    return (char*)ptr.get() + off + len;
+}
+
 size_t Buffer::refs() {
     if(ptr) {
         return ptr.use_count();
@@ -140,6 +155,14 @@ size_t CBuffer::cap() const{
     return MAX_BUF_LEN - total_len;
 }
 
+size_t CBuffer::mem_usage() const{
+    size_t usage = 0;
+    for(const auto& buf : buffers){
+        usage += buf.cap;
+    }
+    return usage;
+}
+
 bool CBuffer::empty() const{
     return buffers.empty();
 }
@@ -147,6 +170,28 @@ bool CBuffer::empty() const{
 ssize_t CBuffer::put(Buffer&& bb) {
     if(total_len + bb.len > MAX_BUF_LEN){
         abort();
+    }
+
+    total_len += bb.len;
+    buffers.push_back(std::move(bb));
+    return (ssize_t)total_len;
+}
+
+ssize_t CBuffer::emplace(Buffer&& bb) {
+    if(total_len + bb.len > MAX_BUF_LEN){
+        abort();
+    }
+
+    if(bb.len > 0 && !buffers.empty()){
+        Buffer& back = buffers.back();
+        if(back.id == bb.id){
+            if(void* room = back.end(bb.len)){
+                memcpy(room, bb.data(), bb.len);
+                back.len += bb.len;
+                total_len += bb.len;
+                return (ssize_t)total_len;
+            }
+        }
     }
 
     total_len += bb.len;
