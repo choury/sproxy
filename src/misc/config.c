@@ -127,6 +127,12 @@ struct options opt = {
         .hostname   = {0},
         .port       = 0,
     },
+    .rproxy_server  = {
+        .scheme     = {0},
+        .protocol   = {0},
+        .hostname   = {0},
+        .port       = 0,
+    },
     .rewrite_auth   = {0},
     .ipv6_mode      = Auto,
     .mitm_mode      = Auto,
@@ -286,7 +292,7 @@ static struct option_detail option_detail[] = {
     {"restrict-local", "check method and dst port for local strategy", option_bool, &opt.restrict_local, (void*)true},
     {"rewrite-auth", "[DEPRECATED]", option_base64, opt.rewrite_auth, NULL},
     {"root-dir", "The work dir (current dir if not set)", option_string, &opt.rootdir, NULL},
-    {"rproxy", "name for rproxy mode (via http2/http3)", option_string, &opt.rproxy_name, (void*)true},
+    {"rproxy", "name for rproxy mode with optional server ([server/]name)", option_string, &opt.rproxy_name, (void*)true},
     {"rproxy-dg-auth", "delegate rproxy auth to remote backend", option_bool, &opt.rproxy_delegate_auth, (void*)true},
     {"rproxy-kp", "keep the source of rproxy request (via IP[V6]_TRANSPARENT)", option_bool, &opt.rproxy_keep_src, (void*)true},
     {"secret", "Set user and passwd for proxy (user:password), default is none.", option_list, &secrets, NULL},
@@ -462,8 +468,12 @@ static void parseArgs(const char* name, const char* args){
 }
 
 int parseDest(const char* proxy, struct Destination* server){
+    return parseDestPath(proxy, server, NULL);
+}
+
+int parseDestPath(const char* proxy, struct Destination* server, char* path){
     memset(server, 0, sizeof(struct Destination));
-    if(spliturl(proxy, server, NULL)){
+    if(spliturl(proxy, server, path)){
         return -1;
     }
     const char* scheme = server->scheme;
@@ -797,11 +807,35 @@ void postConfig(){
     LOG("server %s\n", dumpDest(&opt.Server));
 
     if(opt.rproxy_name) {
+        // --rproxy 支持 [server/]name 格式，server 格式与位置参数指定的 server 相同，
+        // authority 之后的 path 部分即 name；不含 "://" 时视为纯名字，沿用默认 server
+        if(strstr(opt.rproxy_name, "://")) {
+            char path[URLLIMIT];
+            if(parseDestPath(opt.rproxy_name, &opt.rproxy_server, path)) {
+                LOGE("wrong rproxy format: %s\n", opt.rproxy_name);
+                exit(1);
+            }
+            if(path[0] != '/') {
+                LOGE("rproxy with server require a name: %s\n", opt.rproxy_name);
+                exit(1);
+            }
+            char* new_name = strdup(path + 1);
+            free((void*)opt.rproxy_name);
+            opt.rproxy_name = new_name;
+        }
+        if(opt.rproxy_server.hostname[0] == '\0') {
+            opt.rproxy_server = opt.Server;
+        }
+        LOG("rproxy server: %s\n", dumpDest(&opt.rproxy_server));
         if(opt.rproxy_name[0] == '\0' || strlen(opt.rproxy_name) >= 100) {
             LOGE("length of rproxy name should between 1 and 100\n");
             exit(1);
         }
-        if(opt.Server.hostname[0] == '\0') {
+        if(strchr(opt.rproxy_name, '/')) {
+            LOGE("rproxy name should not contain '/'\n");
+            exit(1);
+        }
+        if(opt.rproxy_server.hostname[0] == '\0') {
             LOGE("rproxy mode require server name\n");
             exit(1);
         }

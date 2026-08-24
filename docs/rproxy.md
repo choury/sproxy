@@ -11,10 +11,11 @@
 1. 在需要作为出口的远端节点上：
 
    ```bash
-   ./sproxy --server=<远端监听地址> --rproxy=<name>
+   ./sproxy --rproxy=<远端监听地址>/<name>
    ```
 
    - `--rproxy` 会启用专用模式，仅保留远端到本地的桥接功能。
+   - `[server/]` 前缀的格式与位置参数指定的 server 一致，但必须带 scheme（如 `https://example.com:443`、`quic://example.com`、`https://user:pass@example.com:443`）；未指定时沿用默认的 `server`。不含 `://` 的参数一律视为纯 `<name>`（以 `/` 开头会报错）。
    - 名称 `<name>` 会出现在路径 `/rproxy/<name>/…` 中，用来区分多个远端。
 
 2. 在本地节点上保持常规 `sproxy` 运行并开放静态文件目录，远端注册成功后，即可通过浏览器或工具访问：

@@ -118,6 +118,7 @@ struct options{
     uint64_t fwmark;
     uint64_t bpf_fwmark;
     struct Destination Server;
+    struct Destination rproxy_server;
     char rewrite_auth[DOMAINLIMIT];
     enum auto_mode ipv6_mode;
     enum auto_mode mitm_mode;
@@ -138,6 +139,7 @@ int parseConfigFile(const char* config_file);
 void parseConfig(int argc, char **argv);
 void postConfig();
 int parseDest(const char* proxy, struct Destination* server);
+int parseDestPath(const char* proxy, struct Destination* server, char* path);
 bool debugon(const char* module, bool enable);
 bool is_http_listen_port(uint16_t port);
 void append_bind_list(struct bind_list*** tail, const struct BindInfo* info);

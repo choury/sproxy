@@ -2,6 +2,8 @@
 #include "misc/strategy.h"
 #include "misc/config.h"
 #include "req/guest_vpn.h"
+#include "req/rguest2.h"
+#include "req/rguest3.h"
 #include "req/cli.h"
 
 #include <unistd.h>
@@ -91,6 +93,19 @@ static int vpn_start(){
             return -1;
         }
         cli = std::make_shared<Cli_server>(svsk_cli);
+    }
+    if(opt.rproxy_name) {
+#ifdef HAVE_QUIC
+        // 根据协议选择rguest2还是rguest3
+        if(strcmp(opt.rproxy_server.protocol, "quic") == 0) {
+            LOG("Starting rproxy3 client to %s\n", dumpDest(opt.rproxy_server).c_str());
+            new Rguest3(opt.rproxy_server, opt.rproxy_name);
+        } else
+#endif
+        {
+            LOG("Starting rproxy2 client to %s\n", dumpDest(opt.rproxy_server).c_str());
+            new Rguest2(opt.rproxy_server, opt.rproxy_name);
+        }
     }
     new Guest_vpn(opt.tun_fd, false);
     LOG("Accepting connections ...\n");
