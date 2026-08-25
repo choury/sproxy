@@ -2146,7 +2146,6 @@ void QuicRWer::ReadData() {
     }
     if (ret < 0) {
         LOG("ignore socket error for quic [%d]: %s", getFd(), strerror(errno));
-        delEvents(RW_EVENT::READ);
         return;
     }
     //readm把每个数据报的实际长度回填到iov_len；数据报按槽位排布在块内

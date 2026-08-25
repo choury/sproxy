@@ -15,6 +15,10 @@
 #include <sys/ioctl.h>
 #include <sys/un.h>
 
+#if defined(MSG_ERRQUEUE)
+#include <linux/errqueue.h>
+#endif
+
 int Checksocket(int fd, const char *msg){
     int       error = 0;
     socklen_t errlen = sizeof(error);
@@ -25,6 +29,21 @@ int Checksocket(int fd, const char *msg){
     }else if(error){
         LOGE("%s:sock error [%d]: %s\n", msg, fd, strerror(error));
     }
+#if defined(MSG_ERRQUEUE)
+    //开启IP_RECVERR/IPV6_RECVERR后，ICMP错误会进入socket错误队列，getsockopt(SO_ERROR)只消费sk_err；
+    //错误队列不排空的话epoll会持续上报EPOLLERR，事件循环空转。TCP/netlink等无错误队列的fd此处只会得到EAGAIN
+    char buf[1];
+    char control[CMSG_SPACE(sizeof(struct sock_extended_err))];
+    struct iovec iov = {buf, sizeof(buf)};
+    struct msghdr msg_hdr;
+    do {
+        memset(&msg_hdr, 0, sizeof(msg_hdr));
+        msg_hdr.msg_iov = &iov;
+        msg_hdr.msg_iovlen = 1;
+        msg_hdr.msg_control = control;
+        msg_hdr.msg_controllen = sizeof(control);
+    } while (recvmsg(fd, &msg_hdr, MSG_ERRQUEUE) >= 0);
+#endif
     return error;
 }
 
@@ -52,11 +71,11 @@ void SetTcpOptions(int fd, const struct sockaddr_storage* ignore){
     if(setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, (void *)&keepAlive, sizeof(keepAlive)) <0)
         LOGE("SO_KEEPALIVE:%s\n", strerror(errno));
 #ifdef __APPLE__
-   int secs = 30;
+   int secs = 300;
    if(setsockopt(fd, IPPROTO_TCP, TCP_KEEPALIVE, &secs, sizeof(secs)) < 0)
         LOGE("TCP_KEEPALIVE:%s\n", strerror(errno));
 #else
-    int idle = 60; //一分种没有交互就进行探测
+    int idle = 300; //五分种没有交互就进行探测
     if(setsockopt(fd, SOL_TCP, TCP_KEEPIDLE, &idle, sizeof(idle))<0)
         LOGE("TCP_KEEPIDLE:%s\n", strerror(errno));
     int intvl = 10; //每10秒探测一次
