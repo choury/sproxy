@@ -10,6 +10,7 @@
 #include "../include/auxv.h"
 #include <cstring>
 #include <cmath>
+#include <algorithm>
 
 #if defined(__x86_64__)
 #include "jit/jit_compiler.h"
@@ -22,7 +23,7 @@ using JitCompilerImpl = JitCompiler<AArch64Emitter>;
 #else
 class StubJitCompiler : public JitCompilerBase {
 public:
-    JitFunction* compile(vm*, uint64_t) override { return nullptr; }
+    JitEntry* compile(vm*, uint64_t) override { return nullptr; }
 };
 using JitCompilerImpl = StubJitCompiler;
 #endif
@@ -215,11 +216,14 @@ std::shared_ptr<vm> vm::create() {
     return std::make_shared<vm>(Token{});
 }
 
-ElfLoadInfo vm::load_elf(const char* elf_file_path, const std::map<std::string, std::string>& envp) {
-    auto info = ::load_elf(elf_file_path, [this](memmap&& m) { addmem(std::move(m)); }, envp);
-    // 记录当前加载的镜像信息（entry/load_base/exe）。elf_file_path 是 host 视角路径
+ElfLoadInfo vm::load_elf(int fd, const char* elf_file_path, const std::map<std::string, std::string>& envp) {
+    auto info = ::load_elf(fd, elf_file_path, [this](memmap&& m) { addmem(std::move(m)); }, envp);
+    // fd 所有权交接见 elf_loader.h（借用）与 vmImage::fd（析构关）：成功构造 image 存入，
+    // 失败立即关（exec 流程的 fresh 不跑 run()，不关就泄漏）。
     if(info.entry != 0) {
-        vmImage = {info.entry, info.app_load_base, elf_file_path};
+        set_image(std::make_shared<vmImage>(info.entry, info.app_load_base, elf_file_path, fd));
+    } else {
+        close(fd);
     }
     return info;
 }
@@ -310,7 +314,7 @@ bool vm::deliver_signal() {
         return false;
     }
     // 信号帧的返回地址。无待决重启时用当前 pc（被中断处）；有待决 ERESTARTSYS 时
-    // 按 SA_RESTART 决定：置 SA_RESTART → 返回 syscall 指令（重启）；否则返回 syscall
+    // 按 SA_RESTART 决定：置 SA_RESTART -> 返回 syscall 指令（重启）；否则返回 syscall
     // 的下一条指令，并填 r(0) = -EINTR（语义同 Linux：未带 SA_RESTART 的信号打断
     // 可重启 syscall 后向用户态返回 -EINTR）。
     uint64_t ret_addr = pc_;
@@ -524,6 +528,45 @@ bool vm::do_softfp(uint32_t call) {
     case BPF_FP_FABS_F: r(0) = (uint64_t)f_out(std::fabs(f_in(a_bits))); return true;
     case BPF_FP_COPYSIGN_D: r(0) = d_out(std::copysign(d_in(a_bits), d_in(b_bits))); return true;
     case BPF_FP_COPYSIGN_F: r(0) = (uint64_t)f_out(std::copysign(f_in(a_bits), f_in(b_bits))); return true;
+    // 整数宽乘取高半：r0 = (a*b) >> 64。
+    case BPF_FP_UMULH:
+        r(0) = (uint64_t)(__uint128_t(a_bits) * b_bits >> 64);
+        return true;
+    // 128 位整数除法/取模：入参 r1=out_hi(ptr) r2=aLo r3=aHi r4=bLo r5=bHi，
+    // 低半返回 r0，高半写入 r1 指向的 8 字节。用宿主 __int128 算；除零返回 0（LLVM
+    // 语义 sdiv/udiv X,0 是 poison，宿主 __int128/0 会 SIGFPE 崩溃 host，故显式拦截）。
+    // 有符号变体用 __int128（C 的 / 和 % 对有符号截断向零，与 LLVM sdiv/srem 一致）。
+    case BPF_FP_UDIV128: case BPF_FP_UREM128:
+    case BPF_FP_SDIV128: case BPF_FP_SREM128: {
+        uint64_t aLo = r(2), aHi = r(3), bLo = r(4), bHi = r(5);
+        uint64_t resLo, resHi;
+        if (bLo == 0 && bHi == 0) {     // 除零：返回 0
+            resLo = 0; resHi = 0;
+        } else if (op == BPF_FP_UDIV128 || op == BPF_FP_UREM128) {
+            __uint128_t a = ((__uint128_t)aHi << 64) | aLo;
+            __uint128_t b = ((__uint128_t)bHi << 64) | bLo;
+            __uint128_t res = (op == BPF_FP_UDIV128) ? a / b : a % b;
+            resLo = (uint64_t)res;
+            resHi = (uint64_t)(res >> 64);
+        } else {
+            // 有符号：高半需符号扩展，先转 int64_t 再扩到 __int128。
+            // 用 int64_t（stdint.h）而非 __int64_t（宿主内部 typedef，BPF 交叉
+            // 编译时未定义，insn.cpp 也编进 bpfvm.bpf）。
+            __int128 a = ((__int128)(int64_t)aHi << 64) | (__uint128_t)aLo;
+            __int128 b = ((__int128)(int64_t)bHi << 64) | (__uint128_t)bLo;
+            __int128 res = (op == BPF_FP_SDIV128) ? a / b : a % b;
+            resLo = (uint64_t)res;
+            resHi = (uint64_t)((__uint128_t)res >> 64);
+        }
+        // 高半写入 guest 内存（out_hi = r1），低半回 r0。
+        if (uint64_t *out = (uint64_t*)mmu_w(r(1), 8)) {
+            *out = resHi;
+        } else {
+            return false;
+        }
+        r(0) = resLo;
+        return true;
+    }
     default:
         r(0) = -ENOSYS;
         return true;
@@ -746,9 +789,12 @@ void vm::log_mem_violation(const char* type, uint64_t addr) {
         std::cerr << "  Start: 0x" << std::hex << map.paddr
                   << " End: 0x" << (map.paddr + map.size)
                   << " Size: 0x" << map.size
-                  << " Flags: " << perm << std::dec 
+                  << " Flags: " << perm << std::dec
                   << " Path: " << map.path << std::endl;
     }
+    // 内存违例一律视为致命：置 VM_KILLED，把退出码翻成 128+SIGKILL。
+    flags.fetch_or(VM_KILLED, std::memory_order_release);
+    r(0) = 128 + SIGKILL;
 }
 
 int vm::wait_for(const struct timespec* timeout) {
@@ -1122,6 +1168,8 @@ bool vm::alu(const bpf_insn* cur) {
 
 
 bool vm::safepoint() {
+    // 清 JIT 中止标志：已回到 step/解释器，标志使命完成。
+    flags.fetch_and(~VM_JIT_ABORT, std::memory_order_release);
     // 仅在非信号上下文中处理新信号，避免信号处理嵌套
     if(signal_depth == 0) {
         if(!deliver_signal()) {
@@ -1267,31 +1315,42 @@ void* vm::mmu(uint64_t addr, size_t size) {
     uint64_t end = addr + size;
     if(end < addr) return nullptr; // overflow
     // TLB fast path (1MB granularity)
-    auto& entry = tlb[(addr >> 20) & (TLB_SIZE - 1)];
+    auto& entry = tlb[tlb_index(addr)];
     if(addr >= entry.guest_base && end <= entry.guest_end) {
         return entry.host_base + (addr - entry.guest_base);
     }
     return mmu_slow(addr, size);
 }
 
-void* vm::mmu_slow(uint64_t addr, size_t size) {
+// 二分查找包含 [addr, addr+size) 的段。调用方须持 maps_mutex。maps 须按 paddr 升序。
+std::vector<memmap>::iterator vm::find_map_locked(uint64_t addr, size_t size) {
     uint64_t end = addr + size;
-    auto& entry = tlb[(addr >> 20) & (TLB_SIZE - 1)];
-    std::lock_guard<std::mutex> lock(*maps_mutex);
-    for(const auto& map: *maps) {
-        if(addr >= map.paddr && end <= map.paddr + map.size) {
-            entry = {map.paddr, map.paddr + map.size, map.data.get(), map.flags, !!map.cow_data};
-            return map.data.get() + (addr - map.paddr);
-        }
+    // upper_bound 找第一个 paddr > addr 的段，--it 得到 paddr <= addr 的最大段。
+    auto it = std::upper_bound(maps->begin(), maps->end(), addr,
+        [](uint64_t a, const memmap& m) { return a < m.paddr; });
+    if(it == maps->begin()) return maps->end();  // 所有段 paddr > addr
+    --it;
+    if(end <= it->paddr + it->size) {            // 含 addr..end（addr>=paddr 已由二分保证）
+        return it;
     }
-    return nullptr;
+    return maps->end();
+}
+
+void* vm::mmu_slow(uint64_t addr, size_t size) {
+    auto& entry = tlb[tlb_index(addr)];
+    std::lock_guard<std::mutex> lock(*maps_mutex);
+    auto it = find_map_locked(addr, size);
+    if(it == maps->end()) return nullptr;
+    const auto& map = *it;
+    entry = {map.paddr, map.paddr + map.size, map.data.get(), map.flags, !!map.cow_data};
+    return map.data.get() + (addr - map.paddr);
 }
 
 void* vm::mmu_w(uint64_t addr, size_t size) {
     uint64_t end = addr + size;
     if(end < addr) return nullptr; // overflow
     // TLB fast path (1MB granularity, only when writable and no CoW pending)
-    auto& entry = tlb[(addr >> 20) & (TLB_SIZE - 1)];
+    auto& entry = tlb[tlb_index(addr)];
     if(addr >= entry.guest_base && end <= entry.guest_end
        && (entry.flags & PF_W) && !entry.cow) {
         return entry.host_base + (addr - entry.guest_base);
@@ -1300,36 +1359,48 @@ void* vm::mmu_w(uint64_t addr, size_t size) {
 }
 
 void* vm::mmu_w_slow(uint64_t addr, size_t size) {
-    uint64_t end = addr + size;
-    auto& entry = tlb[(addr >> 20) & (TLB_SIZE - 1)];
+    auto& entry = tlb[tlb_index(addr)];
     std::lock_guard<std::mutex> lock(*maps_mutex);
-    for(auto& map: *maps) {
-        if(addr >= map.paddr && end <= map.paddr + map.size) {
-            if(!(map.flags & PF_W)) return nullptr;
-            if(map.cow_data) { // CoW triggered: copy on write
-                if(map.cow_data.use_count() == 1) {
-                    // 唯一引用，直接偷：解除 cow_data 的所有权，unique_ptr 接管
-                    std::get_deleter<DataDeleter>(map.cow_data)->owned = false;
-                    map.cow_data.reset();
-                    map.data.get_deleter().owned = true;
-                } else {
-                    int prot = PROT_READ | PROT_WRITE;
-                    if(map.flags & PF_X) prot |= PROT_EXEC;
-                    auto* p = (unsigned char*)mmap(nullptr, map.size, prot,
-                                                   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-                    if(p == MAP_FAILED) return nullptr;
-                    memcpy(p, map.data.get(), map.size);
-                    map.cow_data.reset();
-                    map.set_data(p, map.size);
-                }
-                flush_tlb();
+    auto it = find_map_locked(addr, size);
+    if(it == maps->end()) return nullptr;
+    auto& map = *it;
+    if(!(map.flags & PF_W)) return nullptr;
+    if(map.cow_data) { // CoW triggered: copy on write
+        if(map.cow_data.use_count() == 1) {
+            // 唯一引用，直接偷：解除 cow_data 的所有权，unique_ptr 接管
+            std::get_deleter<DataDeleter>(map.cow_data)->owned = false;
+            map.cow_data.reset();
+            map.data.get_deleter().owned = true;
+        } else {
+            int prot = PROT_READ | PROT_WRITE;
+            if(map.flags & PF_X) prot |= PROT_EXEC;
+            auto* p = (unsigned char*)mmap(nullptr, map.size, prot,
+                                           MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+            if(p == MAP_FAILED) return nullptr;
+            // 容错：map.data 指向的 host 页可能因 do_mprotect 切分后 host 权限未同步
+            // 而处于 PROT_NONE（musl mallocng 先 mmap(PROT_NONE) 再 mprotect(RW)，
+            // 切分后未改权限的子段 host 页仍 PROT_NONE）。直接 memcpy 会 host SIGSEGV。
+            // 临时开读权限拷贝，然后恢复成与 guest flags 一致的 host 权限。
+            // mprotect 失败则源页不可读，无法拷贝 —— 释放新页并返回 nullptr（让调用方
+            // 报 EFAULT），绝不把未初始化的 p 当 CoW 结果交出去（否则静默数据损坏）。
+            if (mprotect(map.data.get(), map.size, PROT_READ) != 0) {
+                munmap(p, map.size);
+                return nullptr;
             }
-            // Fill TLB after CoW is resolved
-            entry = {map.paddr, map.paddr + map.size, map.data.get(), map.flags, !!map.cow_data};
-            return map.data.get() + (addr - map.paddr);
+            memcpy(p, map.data.get(), map.size);
+            int orig_prot = PROT_NONE;
+            if (map.flags & PF_R) orig_prot |= PROT_READ;
+            if (map.flags & PF_W) orig_prot |= PROT_WRITE;
+            if (map.flags & PF_X) orig_prot |= PROT_EXEC;
+            mprotect(map.data.get(), map.size, orig_prot);
+            map.cow_data.reset();
+            map.set_data(p, map.size);
         }
+        flush_tlb();
     }
-    return nullptr;
+    // Fill TLB after CoW is resolved
+    entry = {map.paddr, map.paddr + map.size, map.data.get(), map.flags, !!map.cow_data};
+    return map.data.get() + (addr - map.paddr);
 }
 
 void vm::dump_stats() const {
@@ -1360,6 +1431,9 @@ uint64_t vm::run() {
     }
     flags.fetch_or(VM_EXITED, std::memory_order_release);
     pthread_cond_broadcast(&wait_cv);
+    // 释放本 vm 的镜像引用：僵尸态发布（run 已退、vm 仍活）——ExeLinkGen 判空报
+    // ENOENT；共享该 image 的 fork 子 vm 不受影响（引用计数，对齐 exe_file）。
+    set_image(nullptr);
     return r(0);
 }
 
@@ -1367,16 +1441,18 @@ uint64_t vm::run(const vmOptions* options, const ElfLoadInfo& info) {
     this->options = *options;
     insn_count = 0;
     interp_insns = 0;
+    uint64_t entry = 0;
+    if(auto img = image()) entry = img->entry;
     if(options->verbose) {
-        printf("entry: 0x%lx\n", (unsigned long)vmImage.entry);
+        printf("entry: 0x%lx\n", (unsigned long)entry);
     }
 
-    // setup_stack 接收 map（key→value），内部拼成 "KEY=VALUE" 写入栈。
+    // setup_stack 接收 map（key->value），内部拼成 "KEY=VALUE" 写入栈。
     if(!setup_stack(options->argv, options->envp, info)) {
         return 0;
     }
     flags.fetch_and(~(VM_EXITED | VM_KILLED), std::memory_order_release);
-    pc_ = vmImage.entry;
+    pc_ = entry;
     if(!mmu(pc_)) {
         std::cerr << "[run] pc is null after mmu(entry)\n";
         return 0;
@@ -1459,7 +1535,7 @@ bool vm::setup_stack(const std::vector<std::string>& argv,
     //   NULL
     //   envp[0..envc-1] 指针
     //   NULL
-    //   auxv[]  （每个条目 2×uint64，以 {AT_NULL,0} 结尾）
+    //   auxv[]  （每个条目 2 x uint64，以 {AT_NULL,0} 结尾）
     //   argv/env 字符串
     //   "bpf\0" 平台串
     //   16 字节随机数据（AT_RANDOM）

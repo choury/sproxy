@@ -36,22 +36,36 @@ struct AbortPatchInfo {
 // Context for inline TLB memory access
 // ---------------------------------------------------------------------------
 struct MemAccessContext {
-    std::vector<size_t> miss_jumps;   // TLB miss Jcc offsets → .slow
-    std::vector<size_t> abort_jumps;  // null-pointer Jcc offsets → .vm_exit
+    std::vector<size_t> miss_jumps;   // TLB miss Jcc offsets -> .slow
+    std::vector<size_t> abort_jumps;  // null-pointer Jcc offsets -> .vm_exit
     size_t slow_start = 0;            // offset of .slow label
     size_t done_offset = 0;           // offset of .done label (after load/store code)
     size_t done_jmp = 0;              // offset of JMP .done (fast path) — needs patching
 };
 
 // ---------------------------------------------------------------------------
-// JitFunction: one compiled BPF function
+// JitEntry: one compiled BPF function + 编译状态/热点计数。
 // ---------------------------------------------------------------------------
-struct JitFunction {
+enum class JitEntryKind : uint8_t {
+    Counting,   // 仅在计数（未编译、未判定失败）
+    Failed,     // 编译失败，永久返回 nullptr
+    Compiled,   // 已编译
+};
+
+struct JitEntry {
+    JitEntryKind kind = JitEntryKind::Counting;
+    uint32_t count = 0;              // 热点计数（编译成功后不再重置，不再被读取）
+
     void* code = nullptr;             // executable entry point
     int insn_count = 0;               // total BPF instructions compiled
     size_t code_size = 0;             // mmap'd allocation size
     uint64_t gpa = 0;                  // first BPF instruction (guest address)
-    std::vector<uint32_t> pc_offsets; // BPF index → x86 code offset
+    std::vector<uint32_t> pc_offsets; // BPF index -> code offset
+    // 跨函数直跳第二入口（跳过 entry safepoint），offset from code。
+    size_t entry_fast_offset = 0;
+    // inline cache：每个 BPF->BPF call 站点一槽，缓存 callee 的 entry_fast 入口（0=未缓存）。
+    // compile() 在 e.data()（RW）patch 占位为 &call_cache[idx]，再固化 RX，无运行时 patch。
+    std::vector<uint64_t> call_cache;
 };
 
 // ---------------------------------------------------------------------------
@@ -78,6 +92,9 @@ struct HelperTable {
     void* return_to_caller = nullptr;
     void* mmu = nullptr;
     void* mmu_w = nullptr;
+    // (vm*, callee_gpa, uint64_t* slot) -> void*: inline cache miss 慢路径。查 callee；
+    //   命中则 *slot=target 返回 target，未编译则 v->pc_=callee_gpa 返回 nullptr。
+    void* resolve_and_cache = nullptr;
 };
 
 // ---------------------------------------------------------------------------
@@ -86,8 +103,10 @@ struct HelperTable {
 class JitCompilerBase {
 public:
     virtual ~JitCompilerBase() = default;
-    virtual JitFunction* compile(vm* v, uint64_t gpa) = 0;
-    virtual void clear() {}  // 失效所有已编译的 JIT 缓存（execve 等替换地址空间后必须调用）
+    virtual JitEntry* compile(vm* v, uint64_t gpa) = 0;
+    virtual void clear() {}  // 失效所有已编译的 JIT 缓存（execve 替换地址空间后调用）
+    // 查 callee：已编译返回其 entry_fast 入口，否则 nullptr。
+    virtual void* resolve_call(vm* v, uint64_t callee_gpa) { (void)v; (void)callee_gpa; return nullptr; }
     JitStats stats;
 };
 

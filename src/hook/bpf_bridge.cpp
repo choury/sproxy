@@ -2,7 +2,9 @@
 #include "common/common.h"
 #include "include/bpf_syscall.h"
 
+#include <cerrno>
 #include <cstring>
+#include <fcntl.h>
 
 class BpfSyscallHandler : public SyscallHandler {
     BpfCallArgs* bpf_args;
@@ -105,7 +107,13 @@ BpfCallback::BpfCallback(const std::string& elf_path, std::string& msg)
     msg.clear();
 
     v = vm::create();
-    info = v->load_elf(elf_path.c_str(), {});
+    int fd = open(elf_path.c_str(), O_RDONLY);
+    if (fd < 0) {
+        msg = "Failed to open BPF ELF: " + elf_path + ": " + strerror(errno);
+        return;
+    }
+    // fd 所有权交给 vm：加载成功由 vmImage 持有，失败由 load_elf 关闭
+    info = v->load_elf(fd, elf_path.c_str(), {});
     if (info.entry == 0) {
         msg = "Failed to load BPF ELF: " + elf_path;
     }

@@ -1,8 +1,8 @@
 //
 // bpf_fp.h — 虚拟浮点指令编号（src_reg=2）
 //
-//   编码：BpfSoftFp pass（把浮点 IR 改成对 extern __ksym __bpf_fp_<ID> 的调用）→
-//         bpfvm-ld（识别符号、改写 src_reg=2、imm=<ID>）→
+//   编码：BpfSoftFp pass（把浮点 IR 改成对 extern __ksym __bpf_fp_<ID> 的调用）->
+//         bpfvm-ld（识别符号、改写 src_reg=2、imm=<ID>）->
 //   执行：do_softfp（解释器 / JIT 回退）、emit_call_softfp（JIT 原生）。
 //
 
@@ -57,5 +57,16 @@
 #define BPF_FP_FABS_D      36   // double fabs
 #define BPF_FP_COPYSIGN_F  37   // float  copysign（二元）
 #define BPF_FP_COPYSIGN_D  38   // double copysign
+// int128 运算
+// 整数宽乘取高半
+// r0 = (a*b) >> 64。低半由调用方用原生 mul i64 另算。
+#define BPF_FP_UMULH       39   // (i64 a, i64 b) -> r0 = (a*b) >> 64
+// 低半经 r0 返回，高半经 sret 指针：i64 __bpf_fp_<ID>(ptr out_hi, i64 aLo, i64 aHi,
+// i64 bLo, i64 bHi)。除法频率极低（libc++ filesystem 时间
+// 换算），高半的一次 load 可接受。JIT 无原生 lowering，回退解释器 do_softfp。
+#define BPF_FP_UDIV128     40   // 无符号 a / b，r0=lo *out_hi=hi
+#define BPF_FP_SDIV128     41   // 有符号 a / b，r0=lo *out_hi=hi
+#define BPF_FP_UREM128     42   // 无符号 a % b，r0=lo *out_hi=hi
+#define BPF_FP_SREM128     43   // 有符号 a % b，r0=lo *out_hi=hi
 
 #endif //BPF_FP_H

@@ -3,7 +3,7 @@
 //
 // ld_main（构建期 -l 解析）和 VM（运行期加载 ELF）共用。
 //
-// 搜索顺序：命令行 -L 目录 → LD_LIBRARY_PATH → 内置默认（lib, .；chroot --root 模式额外补搜 root/lib64, root/lib, root）
+// 搜索顺序：命令行 -L 目录 -> LD_LIBRARY_PATH -> 内置默认（lib, .；chroot --root 模式额外补搜 root/lib64, root/lib, root）
 //
 // load_elf 通过 std::function 回调把映射好的 memmap 交给调用方，
 //
@@ -43,7 +43,7 @@ struct memmap {
     std::string path;
     memmap() = default;
     memmap(memmap&&) = default;
-    ~memmap() = default;
+    memmap& operator=(memmap&&) = default;
     void set_data(unsigned char* p, size_t sz, bool own = true) {
         data = std::unique_ptr<unsigned char, DataDeleter>(p, DataDeleter{sz, own});
     }
@@ -54,16 +54,21 @@ struct memmap {
 // name 若是绝对路径或当前目录可直接访问的文件，原样返回。找不到返回空串。
 std::string find_library(const std::vector<std::string>& extra_dirs, const std::string& name);
 
-// 从 envp（key→value）里解析 LD_LIBRARY_PATH，按 ':' 拆成目录列表。
+// 从 envp（key->value）里解析 LD_LIBRARY_PATH，按 ':' 拆成目录列表。
 // elf_loader 不再读宿主 getenv；调用方（VM 运行时）传入 guest 的 envp（-e 注入或
 // execve 的 envp），由本函数取出影响库搜索的变量。当前仅 LD_LIBRARY_PATH，便于
 // 将来扩展（LD_PRELOAD 等）。
 std::vector<std::string> lib_search_dirs_from_envp(const std::map<std::string, std::string>& envp);
 
 // 设定运行期 loader 的 chroot 根目录（--root）。非空时 find_library 的默认搜索路径
-// 与 load_elf_ldso 的 ldso 查找会在 root 内（root/lib、root/lib64 …）补搜，使动态主程序
+// 与 load_elf_ldso 的 ldso 查找会在 root 内（root/lib、root/lib64 ...）补搜，使动态主程序
 // 的 PT_INTERP（/lib/ld-bpf.so）在 rootfs 内可被定位。仅 bpfvm 运行时调用；bpfvm-ld 不调。
 void set_loader_root(const std::string& root);
+
+// 把宿主路径转回 guest 视角路径（剥掉 --root 前缀），用于诊断输出：chroot 模式下诊断
+// 信息会进入 guest 可见 stderr，不能泄漏 root 的宿主绝对路径（如 /home/.../root/bin/ls）。
+// 非 chroot 模式或非 root 前缀开头的路径（如宿主搜索到的 .so）原样返回。
+std::string guest_view(const std::string& host_path);
 
 // 主程序加载结果：除入口地址外，还带 auxv 启动所需的信息（musl/glibc 的
 // __init_tls 靠 AT_PHDR/AT_PHENT/AT_PHNUM/AT_ENTRY 定位 program headers 与 TLS）。
@@ -93,7 +98,11 @@ struct ElfLoadInfo {
 // 加载 ELF：有 PT_INTERP 走 ldso 模式（只 mmap 主程序+ldso，依赖加载/重定位由 guest
 // ldso 完成）；否则静态路径（mmap 段，链接期已重定位）。为每个 PT_LOAD 段构造 memmap
 // 并通过 add 回调交给调用方（如 vm::addmem）。返回加载信息（entry 为 0 表失败）。
-ElfLoadInfo load_elf(const char* path, std::function<void(memmap&&)> add,
+// main_fd 为已打开的宿主 fd，借用语义——本函数不关闭它，生命周期归调用方（可安全传
+// VM fd 表内仍在使用的 fd，无须 dup）。加载过程中自行打开的 fd（ldso 等）仍由本函数
+// 关闭。path 不会被打开，仅作诊断输出与 memmap/ElfFile 的路径记录（guest 视角）——
+// 支持路径不可达但 fd 存活的场景（已删文件、经 /proc/self/fd/N 重开的 fd 等）。
+ElfLoadInfo load_elf(int main_fd, const char* path, std::function<void(memmap&&)> add,
                      const std::map<std::string, std::string>& envp);
 
 #endif // ELF_LOADER_H

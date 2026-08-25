@@ -47,11 +47,7 @@ void set_loader_root(const std::string& root) {
     }
 }
 
-// 把宿主路径（load_elf 实际打开的、拼了 root 前缀的路径）转回 guest 视角路径，用于诊断输出。
-// chroot 模式下诊断信息会进入 guest 可见的 stderr，不能泄漏 root 的宿主绝对路径
-// （如 /home/user/.../root/bin/ls）——剥掉 g_loader_root 前缀后只显示 guest 看到的 /bin/ls。
-// 非 chroot 模式原样返回。非 root 前缀开头的路径（如宿主搜索到的 .so）也原样返回。
-static std::string guest_view(const std::string& host_path) {
+std::string guest_view(const std::string& host_path) {
     if (g_loader_root.empty()) return host_path;
     if (host_path == g_loader_root) return "/";
     const std::string prefix = g_loader_root + "/";
@@ -76,7 +72,7 @@ static std::vector<std::string> default_lib_search_dirs() {
     return dirs;
 }
 
-// 从 envp（key→value）解析 LD_LIBRARY_PATH，按 ':' 拆成目录列表。
+// 从 envp（key->value）解析 LD_LIBRARY_PATH，按 ':' 拆成目录列表。
 // elf_loader 不再读宿主 getenv；VM 运行时把 guest 的 envp 传入，由本函数提取库搜索路径。
 std::vector<std::string> lib_search_dirs_from_envp(const std::map<std::string, std::string>& envp) {
     std::vector<std::string> dirs;
@@ -275,7 +271,7 @@ ElfLoadInfo load_elf_ldso(ElfFile& main_ef, const char* interp_path,
                            std::function<void(memmap&&)>& add,
                            std::vector<std::pair<int, int>>& opened,
                            const std::map<std::string, std::string>& envp) {
-    // 定位 ldso 文件：PT_INTERP 路径（如 /lib/ld-bpf.so）→ 在库搜索路径找。
+    // 定位 ldso 文件：PT_INTERP 路径（如 /lib/ld-bpf.so）-> 在库搜索路径找。
     // 搜索路径由 guest envp 里的 LD_LIBRARY_PATH 决定（POSIX 语义）。
     std::string interp_name = interp_path;
     size_t slash = interp_name.find_last_of('/');
@@ -284,7 +280,7 @@ ElfLoadInfo load_elf_ldso(ElfFile& main_ef, const char* interp_path,
     if (ldso_path.empty()) {
         std::cerr << "[load_elf] ldso not found: " << interp_path
                   << " (searched LD_LIBRARY_PATH + default dirs for " << interp_name << ")\n";
-        // interp（动态链接器）找不到：对 guest 而言是程序所需的解释器不存在 → ENOENT。
+        // interp（动态链接器）找不到：对 guest 而言是程序所需的解释器不存在 -> ENOENT。
         return fail(ENOENT);
     }
     // open ldso + 读 ehdr（手写解析，等价原 elf_begin + gelf_getehdr）。
@@ -301,7 +297,8 @@ ElfLoadInfo load_elf_ldso(ElfFile& main_ef, const char* interp_path,
         close(ldso_fd);
         return fail(ENOEXEC);
     }
-    // opened 存 fd（由 load_elf 的 defer_close 统一关闭）；首元素 = 占位（main fd 由 load_elf 关）。
+    // opened 存 loader 自己打开的 fd（ldso 等），由 load_elf 的 defer_close 统一关闭；
+    // main_fd 是调用方的，不入此表。
     opened.push_back({ldso_fd, ldso_fd});
 
     // 地址分配 + 段布局：主程序（elves[0]）+ ldso（elves[1]），都按 ET_DYN PIE 分配。
@@ -337,7 +334,7 @@ ElfLoadInfo load_elf_ldso(ElfFile& main_ef, const char* interp_path,
     uint64_t entry = ldso_base + ldso_ehdr.e_entry;  // VM 执行入口 = ldso 的 _dlstart
     // 主程序入口（auxv AT_ENTRY 用）：ldso 完成动态链接后 CRTJMP(aux[AT_ENTRY]) 跳到这里
     // 移交控制权。必须是主程序的 e_entry（运行时 = load_base[0] + e_entry），而非 ldso 的
-    // _dlstart——否则 CRTJMP 跳回 _dlstart → _dlstart_c → __dls2/3 → CRTJMP 无限递归 → 栈溢出。
+    // _dlstart——否则 CRTJMP 跳回 _dlstart -> _dlstart_c -> __dls2/3 -> CRTJMP 无限递归 -> 栈溢出。
     uint64_t app_entry = load_base[0] + main_ef.ehdr.e_entry;
     // 主程序 phdr 运行时地址（auxv AT_PHDR 用）。
     uint64_t phdr_addr = 0;
@@ -350,34 +347,28 @@ ElfLoadInfo load_elf_ldso(ElfFile& main_ef, const char* interp_path,
     return ElfLoadInfo{entry, phdr_addr, main_ef.ehdr.e_phentsize, main_ef.ehdr.e_phnum, ldso_base, app_entry, load_base[0]};
 }
 
-ElfLoadInfo load_elf(const char* path, std::function<void(memmap&&)> add,
+// fd 入参：借用语义（声明处注释见 elf_loader.h）。
+ElfLoadInfo load_elf(int main_fd, const char* path, std::function<void(memmap&&)> add,
                      const std::map<std::string, std::string>& envp) {
     // 加载 ET_EXEC（静态，固定地址）或 ET_DYN（PIE 主程序 / .so，运行时分配地址）。
     // 运行时处理 .rela.dyn（数据/lddw 重定位）和 .rela.plt（GOT 槽）。
-    int main_fd = open(path, O_RDONLY);
-    if (main_fd < 0) {
-        std::cerr << "Failed to open: " << guest_view(path) << ": " << strerror(errno) << std::endl;
-        // 文件不存在/无权限等：传真实 errno（ENOENT/EACCES...），让 execve 报准。
-        return fail(errno);
-    }
     Elf64_Ehdr ehdr;
     const char* err_reason = nullptr;
     if (!read_ehdr(main_fd, ehdr, err_reason)) {
         std::cerr << "Failed to open ELF file: " << guest_view(path)
                   << " (" << err_reason << ")" << std::endl;
-        close(main_fd);
         return fail(ENOEXEC);
     }
-    // opened：存待关闭的 fd，Defer 统一关闭。
-    std::vector<std::pair<int, int>> opened = {{main_fd, main_fd}};
+    // opened：存本函数（含 ldso 路径）打开的待关闭 fd，Defer 统一关闭；main_fd 不在内。
+    std::vector<std::pair<int, int>> opened;
     Defer defer_close([&]() {
         for (auto& [_, fd] : opened) { if (fd >= 0) close(fd); }
     });
 
     if (!validate_ehdr(ehdr, path)) return fail(ENOEXEC);
 
-    // 动态链接检测：主程序有 PT_INTERP → ldso 模式（VM 只 mmap 主程序+ldso，依赖加载/
-    // 重定位/TLS/init_array 全由 guest ldso 在 VM 内完成）。无 PT_INTERP → 静态，走原路径。
+    // 动态链接检测：主程序有 PT_INTERP -> ldso 模式（VM 只 mmap 主程序+ldso，依赖加载/
+    // 重定位/TLS/init_array 全由 guest ldso 在 VM 内完成）。无 PT_INTERP -> 静态，走原路径。
     for (size_t i = 0; i < ehdr.e_phnum; i++) {
         Elf64_Phdr ph;
         if (!read_phdr(main_fd, ehdr, i, ph)) break;
@@ -419,7 +410,7 @@ ElfLoadInfo load_elf(const char* path, std::function<void(memmap&&)> add,
         add(std::move(m));
     }
 
-    // 入口地址：ET_DYN（PIE）→ 主程序加载基址 + e_entry；ET_EXEC → e_entry（绝对）
+    // 入口地址：ET_DYN（PIE）-> 主程序加载基址 + e_entry；ET_EXEC -> e_entry（绝对）
     const uint64_t entry = (ehdr.e_type == ET_DYN) ? (load_base[0] + ehdr.e_entry) : ehdr.e_entry;
 
     // program header table 的运行时地址（供 auxv AT_PHDR，musl __init_tls 用）：

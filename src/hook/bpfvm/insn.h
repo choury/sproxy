@@ -22,6 +22,7 @@
 #include <string>
 #include <unordered_set>
 #include <vector>
+#include <unistd.h>
 #include <sys/mman.h>
 
 extern std::mutex log_mutex;
@@ -183,10 +184,19 @@ public:
 //   entry：程序入口
 //   load_base：主程序 PIE 加载基址。静态/ET_EXEC 为 0；
 //   exe：host 视角绝对路径（= load_elf 的入参）。
+//   fd：exe 的宿主 fd，由 ~vmImage 关闭（唯一关闭点）。对象经 shared_ptr 引用计数
+//       管理：vm 持有一份，fork 的子 vm 共享同一对象（对齐 Linux exe_file 引用计数），
+//       exec 整体替换新对象（旧 fd 随引用归零关闭）。发布后字段不可变，跨线程读经
+//       vm::image() 原子快照——持快照期间 fd 被钉住，不会被告方关闭（procfs 魔法链接
+//       直连依赖此保证）。路径已删/不可达时仍可从 fd 读内容。
 struct vmImage {
     uint64_t entry = 0;
     uint64_t load_base = 0;
     std::string exe;
+    int fd = -1;
+    vmImage(uint64_t entry_, uint64_t base_, std::string exe_, int fd_)
+        : entry(entry_), load_base(base_), exe(std::move(exe_)), fd(fd_) {}
+    ~vmImage() { if(fd >= 0) close(fd); }
 };
 
 struct vmOptions {
@@ -215,8 +225,17 @@ struct TlbEntry {
     uint32_t flags;
     bool cow;
 };
-constexpr size_t TLB_SIZE = 16;
+constexpr size_t TLB_SIZE = 2048;
 static_assert((TLB_SIZE & (TLB_SIZE - 1)) == 0, "TLB_SIZE must be power of 2");
+
+// TLB 索引：以 4KB 页号（addr>>12）为基底，再把高位（addr>>20）异或折叠回低位。
+// 单纯 `(addr>>12) & (N-1)` 只用低 log2(N) 位，在 musl mallocng 这类同 1MB 页内
+// 产生大量 4KB 堆碎片的场景下区分度不够（高位相同的地址全落同一槽，互相驱逐）。
+// 折叠 ^ (addr>>20) 把高位差异混入低位，提高分散度。4KB 粒度让同 1MB 页内的
+// 相邻 4KB 碎片能落到不同槽（此前 1MB 粒度下它们必然冲突）。
+constexpr size_t tlb_index(uint64_t addr) {
+    return ((addr >> 12) ^ (addr >> 20)) & (TLB_SIZE - 1);
+}
 
 // 本仓库的 BPF-on-BPF 自举 target（cmake/bpfvm-bpf-toolchain.cmake）用 libc++ LLVM 19，
 // 其 std::atomic<shared_ptr<T>> 至今未实现（__cpp_lib_atomic_shared_ptr 未定义、实例化即报
@@ -304,18 +323,23 @@ private:
 
 class vm: public std::enable_shared_from_this<vm> {
 private:
-    TlbEntry tlb[TLB_SIZE]{};
+    // -- JIT-critical fields (must be before TLB so offsets fit in AArch64 STR/LDR 12-bit immediate) --
     vmOptions options;
-    struct vmImage vmImage;
     uint64_t pc_;
     uint64_t reg[11];
-    std::shared_ptr<std::list<memmap>> maps = std::make_shared<std::list<memmap>>();
+    std::atomic<uint32_t> flags{0};
+    // 内联 push_frame 时暂存 frame_base：write-probe 的内联 TLB 踩掉全部 scratch 寄存器，
+    //   frame_base 无处安放；压栈会在 abort 跳 .flush_and_exit 时栈失衡。存这里安全。
+    uint64_t jit_scratch = 0;
+    uint64_t insn_count = 0;              // 已执行指令计数（JIT+解释器共用，单线程访问）
+    TlbEntry tlb[TLB_SIZE]{};
+    // -- other fields --
+    AtomicSharedPtr<const vmImage> image_;
+    std::shared_ptr<std::vector<memmap>> maps = std::make_shared<std::vector<memmap>>();
     std::shared_ptr<std::mutex> maps_mutex = std::make_shared<std::mutex>();
     pthread_mutex_t wait_mutex;
     pthread_cond_t wait_cv;
-    std::atomic<uint32_t> flags{0};
     size_t signal_depth = 0;
-    uint64_t insn_count = 0;              // 已执行指令计数（JIT+解释器共用，单线程访问）
     uint64_t interp_insns = 0;            // 解释器执行的指令数
     uint64_t tp_ = 0;                     // thread pointer（BPF_SYS_SET_TLS 设置；单线程 TLS 模拟）
 
@@ -385,6 +409,7 @@ public:
     static constexpr uint32_t VM_BLOCKED = 0x20; //内部暂停，在wait_for等待
     static constexpr uint32_t VM_DEBUG_ATTACHED = 0x40;   //GDB 已 attach：JIT 跳过、解释器每步经 breakpoint 钩子判定
     static constexpr uint32_t VM_DEBUG_STOP = 0x80;       //GDB 请求停：钩子/事件回调/request_stop 设，debug_park 消费，continue 清；wait_for mask 含之以打断阻塞
+    static constexpr uint32_t VM_JIT_ABORT = 0x100; //longjmp 等改 pc 时置之，让 JIT 调用链各层 .cont vm_exit 回 step。safepoint() 清之
 
     vm(Token);
     ~vm();
@@ -395,6 +420,9 @@ public:
     // Slow path: linear scan maps + fill TLB (no TLB lookup).  Called by JIT on miss.
     void* mmu_slow(uint64_t addr, size_t size);
     void* mmu_w_slow(uint64_t addr, size_t size);
+    // 二分查找包含 [addr, addr+size) 的段。maps 须按 paddr 升序（调用方持 maps_mutex）。
+    // 命中返回指向该段的迭代器；未命中（addr 落在所有段之前，或不在任何段区间内）返回 nullptr。
+    std::vector<memmap>::iterator find_map_locked(uint64_t addr, size_t size);
     bool setup_stack(const std::vector<std::string>& argv,
                      const std::map<std::string, std::string>& envp,
                      const ElfLoadInfo& info);
@@ -411,7 +439,9 @@ public:
     // clear_blocked=true：清 VM_BLOCKED，wait_for 返回 0（正常唤醒，如 futex_wake / IO 完成）。
     // clear_blocked=false：保留 VM_BLOCKED，仅 broadcast 让 waiter 重判信号 flag 而返回 -EINTR
     void wakeup(bool clear_blocked);
-    ElfLoadInfo load_elf(const char* elf_file_path, const std::map<std::string, std::string>& envp);
+    // fd 所有权交 vm：成功构造 vmImage 存入（fd 由 ~vmImage 关），失败立即 close。
+    // elf_file_path 仅作诊断与 image()->exe 记录，不会被打开。
+    ElfLoadInfo load_elf(int fd, const char* elf_file_path, const std::map<std::string, std::string>& envp);
     void addmem(memmap&& memmap);
     bool unmap(uint64_t addr);
     void flush_tlb();
@@ -425,8 +455,14 @@ public:
     std::shared_ptr<SyscallHandler> sys() {
         return options.sys;
     }
-    struct vmImage& image() {
-        return vmImage;
+    // 镜像快照：原子取当前引用（可能为空）。持快照期间对象存活、字段不变、fd 被钉住，
+    // 跨线程读安全。判空即僵尸态（run() 退出时清空，procfs ExeLinkGen 据此报 ENOENT）。
+    std::shared_ptr<const vmImage> image() const {
+        return image_.load();
+    }
+    // 整体替换镜像（exec 加载完成 / fork 共享父引用）。旧 image 引用归零时关旧 fd。
+    void set_image(std::shared_ptr<const vmImage> img) {
+        image_.store(std::move(img));
     }
 
     uint32_t get_flags() const { return flags.load(std::memory_order_acquire); }

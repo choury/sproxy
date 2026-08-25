@@ -84,7 +84,7 @@ namespace ARM {
 }
 
 
-// BPF register → AArch64 register mapping
+// BPF register -> AArch64 register mapping
 constexpr uint8_t BPF_REG_MAP[11] = {
     ARM::X9,  ARM::X10, ARM::X11, ARM::X12, ARM::X13, ARM::X14,
     ARM::X19, ARM::X20, ARM::X21, ARM::X22, ARM::X23,
@@ -127,9 +127,11 @@ public:
     bool emit_call_softfp(const bpf_insn* insn);
     void emit_call_softfp_slow(const bpf_insn* insn, int current_index,
                                uint64_t entry_gpa);
-    void emit_call_bpf(uint64_t ret_gpa, uint64_t callee_gpa);
+    void emit_call_bpf(uint64_t ret_gpa, uint64_t callee_gpa,
+                       std::vector<AbortPatchInfo>& abort_patches, int bpf_index,
+                       std::vector<size_t>& call_cache_offs);
     void emit_call_indirect(const bpf_insn* insn, uint64_t ret_gpa);
-    void emit_exit();
+    void emit_exit(std::vector<AbortPatchInfo>& abort_patches, int bpf_index);
 
     // --- Patching (AArch64-specific: B.cond imm19, B imm26) ---
     void patch_branch_cond(size_t inst_offset, size_t target_offset);
@@ -154,6 +156,7 @@ private:
     void orr_reg(uint8_t dst, uint8_t src1, uint8_t src2, bool is_64 = true);
     void eor_reg(uint8_t dst, uint8_t src1, uint8_t src2, bool is_64 = true);
     void mul_reg(uint8_t dst, uint8_t src1, uint8_t src2, bool is_64 = true);
+    void umulh_reg(uint8_t dst, uint8_t src1, uint8_t src2);  // 64x64->128 高半（仅 64 位）
     void msub_reg(uint8_t dst, uint8_t src1, uint8_t src2, uint8_t acc, bool is_64 = true);
     void sdiv_reg(uint8_t dst, uint8_t src1, uint8_t src2, bool is_64 = true);
     void udiv_reg(uint8_t dst, uint8_t src1, uint8_t src2, bool is_64 = true);
@@ -188,7 +191,7 @@ private:
     // Load/Store
     void ldr_imm(uint8_t dst, uint8_t base, int32_t offset, bool is_64 = true);
     void str_imm(uint8_t src, uint8_t base, int32_t offset, bool is_64 = true);
-    void ldrsw(uint8_t dst, uint8_t base, int32_t offset);  // LDR W signed word→X
+    void ldrsw(uint8_t dst, uint8_t base, int32_t offset);  // LDR W signed word->X
     void ldrsh(uint8_t dst, uint8_t base, int32_t offset, bool is_64 = true);
     void ldrsb(uint8_t dst, uint8_t base, int32_t offset, bool is_64 = true);
     void ldrh(uint8_t dst, uint8_t base, int32_t offset);
@@ -218,7 +221,7 @@ private:
     // --- 标量浮点原语（虚拟 FP 指令的 JIT 实现所需）---
     //   V 寄存器编码与 X 寄存器共用 0..31（取低 5 位）。
     //   类型由指令自身的 ftype 字段决定（00=single,01=double）。
-    //   GPR↔FPR 位搬运：FMOV Dx,Xn / FMOV Xd,Dx / FMOV Sn,Wn / FMOV Wd,Sn
+    //   GPR<->FPR 位搬运：FMOV Dx,Xn / FMOV Xd,Dx / FMOV Sn,Wn / FMOV Wd,Sn
     void fmov_v_from_x(uint8_t vd, uint8_t rn, bool is_double);  // Vd <- Xn 位模式
     void fmov_x_from_v(uint8_t rd, uint8_t vn, bool is_double);  // Xd <- Vn 位模式
     // 标量算术：FADD/FSUB/FMUL/FDIV  (ftype 0F 00..0C Rm Ra Rd)
@@ -229,7 +232,7 @@ private:
     void fp_sqrt(uint8_t rd, uint8_t rn, bool is_double);
     // 类型转换：FCVT S/D 互转  (0001 1110 0110 0x11 10000 Rn Rd)
     void fp_cvt_sd(uint8_t rd, uint8_t rn, bool to_double);  // to_double: f->d, 否则 d->f
-    // 整型↔FP：SCVTF/UCVTF（有/无符号整型→FP），FCVTZS/FCVTZU（FP→有/无符号整型，向0截断）
+    // 整型<->FP：SCVTF/UCVTF（有/无符号整型->FP），FCVTZS/FCVTZU（FP->有/无符号整型，向0截断）
     void scvtf(uint8_t rd, uint8_t rn, bool is_double, bool src64);
     void ucvtf(uint8_t rd, uint8_t rn, bool is_double, bool src64);
     void fcvtzs(uint8_t rd, uint8_t rn, bool is_double, bool dst64);
