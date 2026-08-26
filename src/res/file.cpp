@@ -272,7 +272,9 @@ void File::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> 
         status.rw->Send(Buffer{nullptr, req->request_id});
         return deleteLater(NOERROR);
     }
-    status.cb = IRWerCallback::create()->onError([this](int, int){
+    status.cb = IRWerCallback::create()->onWrite([this](uint64_t id){
+        rwer->Unblock(id);
+    })->onError([this](int, int){
         deleteLater(PEER_LOST_ERR);
     });
     status.rw->SetCallback(status.cb);

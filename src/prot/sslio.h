@@ -68,6 +68,10 @@ protected:
     virtual size_t rlength(uint64_t id) override {
         return SSL_pending(ssl) + BIO_ctrl_pending(in_bio) + StreamRWer::rlength(id);
     }
+    virtual ssize_t cap(uint64_t id) override {
+        ssize_t cap = StreamRWer::cap(id) - (ssize_t)BIO_ctrl_pending(out_bio);
+        return cap > 0 ? cap : 0;
+    }
     virtual void waitconnectHE(RW_EVENT events) override;
     virtual void ConsumeRData(uint64_t id) override {
         if(sslStats != SslStats::Established && sslStats != SslStats::SslEOF) {
@@ -116,6 +120,10 @@ protected:
     }
     virtual size_t wbufsize() override {
         return wbuff.cap();
+    }
+    virtual ssize_t cap(uint64_t id) override {
+        ssize_t cap = MemRWer::cap(id) - (ssize_t)BIO_ctrl_pending(out_bio);
+        return cap > 0 ? cap : 0;
     }
     virtual void write(Buffer&& bb) override;
     virtual void onRead(Buffer&& bb) override;

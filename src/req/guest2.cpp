@@ -80,10 +80,11 @@ size_t Guest2::Recv(Buffer&& bb){
     }
     LOGD(DHTTP2, "<guest2> %" PRIu64 " recv data [%d]: %zu/%d\n",
             status.req->request_id, (int)bb.id, bb.len, status.remotewinsize);
-    if(status.remotewinsize <= 0 || remotewinsize <= 0) {
+    ssize_t netcap = rwer->cap(bb.id);
+    if(status.remotewinsize <= 0 || remotewinsize <= 0 || netcap <= 0) {
         return 0;
     }
-    auto len = std::min({bb.len, (size_t)status.remotewinsize, (size_t)remotewinsize});
+    auto len = std::min({bb.len, (size_t)status.remotewinsize, (size_t)remotewinsize, (size_t)netcap});
     if(std::dynamic_pointer_cast<PMemRWer>(status.rw) && len < bb.len) {
         //packet can't be truncated, so drop it.
         return 0;
@@ -282,7 +283,8 @@ std::shared_ptr<IMemRWerCallback> Guest2::response(uint64_t id) {
         }
     })->onCap([this, id]() -> ssize_t{
         ReqStatus& status = statusmap.at(id);
-        return std::min(status.remotewinsize, this->remotewinsize);
+        //h2窗口之外还要受底层连接缓冲容量的限制，避免数据被无限制加密进out_bio
+        return std::min<ssize_t>({status.remotewinsize, this->remotewinsize, rwer->cap(id)});
     });
 }
 

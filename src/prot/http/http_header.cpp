@@ -577,6 +577,8 @@ bool HttpReqHeader::getrange() {
             } else if(isdigit(*range_str)) {
                 end = 0;
                 status = Status::second;
+            } else {
+                return false;
             }
             break;
         case Status::second:

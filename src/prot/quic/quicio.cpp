@@ -792,7 +792,23 @@ int QuicBase::doSslConnect(const char* hostname) {
     return 0;
 }
 
+//构造CONNECTION_CLOSE帧：无reason
+static quic_frame make_close_frame(uint64_t error, uint64_t frame_type){
+    quic_frame frame{QUIC_FRAME_CONNECTION_CLOSE};
+    frame.close.error = error;
+    frame.close.frame_type = frame_type;
+    return frame;
+}
+
 QuicBase::FrameResult QuicBase::handleCryptoFrame(quic_context* context, const quic_crypto* crypto){
+    //RFC 9000 §7.5: 限制CRYPTO重排缓冲的大小，防止恶意offset触发大内存分配
+    if(crypto->offset + crypto->length > context->crypto_rb.Offset() + QUIC_CRYPTO_MAX_LEN) {
+        LOGE("(%s): quic crypto frame offset %" PRIu64 " exceed limit %d\n",
+             dumpHex(hisids[hisid_idx].data(), hisids[hisid_idx].length()).c_str(), crypto->offset, QUIC_CRYPTO_MAX_LEN);
+        onError(PROTOCOL_ERR, QUIC_CRYPTO_BUFFER_EXCEEDED);
+        qos->PushFrame(context->level, make_close_frame(QUIC_CRYPTO_BUFFER_EXCEEDED, QUIC_FRAME_CRYPTO));
+        return FrameResult::error;
+    }
     context->crypto_rb.put_at(crypto->offset, crypto->buffer->data(), crypto->length);
     auto bb = context->crypto_rb.get();
     if(bb.len == 0) {
@@ -912,14 +928,6 @@ void QuicBase::cleanStream(uint64_t id) {
     }
 }
 
-
-//构造CONNECTION_CLOSE帧：无reason
-static quic_frame make_close_frame(uint64_t error, uint64_t frame_type){
-    quic_frame frame{QUIC_FRAME_CONNECTION_CLOSE};
-    frame.close.error = error;
-    frame.close.frame_type = frame_type;
-    return frame;
-}
 
 QuicBase::FrameResult QuicBase::handleStreamFrame(uint64_t type, const quic_stream *stream) {
     auto id = stream->id;

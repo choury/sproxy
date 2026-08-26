@@ -17,6 +17,7 @@
 #define QUIC_VERSION_1 0x00000001
 #define QUIC_VERSION_2 0x6b3343cf
 #define QUIC_INITIAL_LIMIT 1200
+#define QUIC_CRYPTO_MAX_LEN (64 * 1024)
 #define QUIC_TOKEN_LEN   16
 /*
 Long Header Packet Types
