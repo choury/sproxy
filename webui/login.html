@@ -1,46 +1,55 @@
 <!doctype html>
-<html>
-	<head>
-		<meta charset="UTF-8" />
-		<title>Login</title>
-        <link rel="stylesheet" href="style.css">
-	</head>
-	<body>
-	  <div id="div2">
-		<h3>&nbsp honey,l love you forever!</h3>
-		<img src="52001.jpg">
-	  </div>
-	  <form id="login-form" onsubmit="return login()">
-		<label for="username">User:</label><br>
-		<input type="text" id="username" name="username" required><br>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>sproxy · Login</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header id="logo">
+        <span class="mascot">🍡</span>
+        <span class="title">sproxy</span>
+        <span class="subtitle">Proxy Manager</span>
+    </header>
 
-		<label for="password">Password:</label><br>
-		<input type="password" id="password" name="password" required><br>
+    <div id="div2">
+        <h3>💗 honey, I love you forever!</h3>
+        <img src="52001.jpg" alt="us">
+    </div>
 
-		<input type="submit" value="Login">
-	  </form>
+    <form id="login-form" onsubmit="return login()">
+        <label for="username">User</label>
+        <input type="text" id="username" name="username" required autocomplete="username">
+
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" required autocomplete="current-password">
+
+        <input type="submit" value="Login">
+    </form>
+
+    <script>
+    function login(){
+        var user = document.getElementById("username").value;
+        var password = document.getElementById("password").value;
+        var key = btoa(user+":"+password);
+        fetch("/cgi/liblogin.do", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/x-www-form-urlencoded"
+            },
+            body: "key="+key
+        }).then(function(res) {
+            if(res.ok){
+                window.location="./index.html";
+            }else{
+                alert("Oops! You are not authorized.");
+            }
+        }, function(e) {
+            alert("Error submitting form!");
+        });
+        return false;
+    }
+    </script>
 </body>
-	<script>
-	function login(){
-		var user = document.getElementById("username").value;
-		var password = document.getElementById("password").value;
-		var key = btoa(user+":"+password);
-		fetch("/cgi/liblogin.do", {
-			method: "POST",
-			headers: {
-				"Content-Type": "application/x-www-form-urlencoded"
-			},
-			body: "key="+key
-		}).then(function(res) {
-			if(res.ok){
-				window.location="./index.html";
-			}else{
-				alert("Oops! You are not authorized.");
-			}
-		}, function(e) {
-			alert("Error submitting form!");
-		});
-		return false;
-	}
-	</script>
 </html>

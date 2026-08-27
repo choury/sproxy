@@ -1,36 +1,50 @@
 <!DOCTYPE html>
-<html>
-    <head>
-        <meta charset="UTF-8" />
-        <title>Proxy Manager</title>
-        <link rel="stylesheet" href="style.css">
-    </head>
-    <body>
-        <div id="logo"> </div>
-        <div id="content">
-            <label class='left'>Proxy: </label>
-            <p id='current_proxy' class='left'>
-            <form action='/cgi/libproxy.do' method='post' class='right'>
-                <input type="text" name="proxy">
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>sproxy · Proxy Manager</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header id="logo">
+        <span class="mascot">🍡</span>
+        <span class="title">sproxy</span>
+        <span class="subtitle">Proxy Manager</span>
+    </header>
+
+    <div id="content">
+        <div class="card-title">服务器状态</div>
+        <div id="proxy-bar">
+            <span class="left">Proxy:</span>
+            <span id="current_proxy">加载中…</span>
+            <form action='/cgi/libproxy.do' method='post'>
+                <input type="text" name="proxy" placeholder="host:port">
                 <input type="submit" value="修改" onclick='setproxy(this.form.proxy.value)'>
             </form>
+        </div>
+    </div>
 
-            <br>
-            <div id='search'>
-                <label for="KeyWorld">keyWorld: </label>
-                <input type="text" id="keyWorld">
-                <input type="button" value="搜索" id="btn1">
-            </div>
-            <table id ="list" border="1">
+    <div id="content">
+        <div class="card-title">分流规则</div>
+        <div id='search'>
+            <input type="text" id="keyWorld" placeholder="输入关键字过滤站点…">
+            <input type="button" value="搜索" id="btn1">
+        </div>
+        <div class="table-wrap">
+        <table id="list">
+            <thead>
                 <tr>
                     <th>站点</th>
                     <th>策略</th>
-                    <th>扩展(ext)</th>
+                    <th>扩展 (ext)</th>
                     <th>操作</th>
                 </tr>
-                <tr>
+            </thead>
+            <tbody>
+                <tr class="add-row">
                     <form id="form1" action='/cgi/libsites.do' method='post'><input type="hidden" name="method" value="put" /></form>
-                    <td><input form="form1" type="text" name="site" id="tdw"/></td>
+                    <td class="site-cell"><input form="form1" type="text" name="site" id="tdw" placeholder="example.com" /></td>
                     <td><select name="strategy" form="form1" id="strategy_sel">
                             <option value="proxy">proxy</option>
                             <option value="block">block</option>
@@ -41,111 +55,129 @@
                             <option value="alias">alias</option>
                         </select>
                     </td>
-                    <td><input form="form1" type="text" name="ext" id="tdext" placeholder="代理地址/路径正则等"/></td>
-                    <td><input form="form1" type='submit' value='添加'></td>
+                    <td class="ext-cell"><input form="form1" type="text" name="ext" id="tdext" placeholder="代理地址/路径正则等" /></td>
+                    <td class="action-cell"><input form="form1" type='submit' value='添加'></td>
                 </tr>
-            </table>
+            </tbody>
+        </table>
         </div>
-        <script>
-        var table = document.getElementById("list");
-        function escapeHtml(s){
-            return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
-                .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
-        }
-        function fillForm(item){
-            document.getElementById('tdw').value = item.site;
-            var sel = document.getElementById('strategy_sel');
-            var found = false;
-            for(var j=0;j<sel.options.length;j++){
-                if(sel.options[j].value == item.strategy){
-                    sel.selectedIndex = j;
-                    found = true;
-                    break;
-                }
-            }
-            if(!found){
-                var opt = document.createElement('option');
-                opt.value = item.strategy;
-                opt.text = item.strategy;
-                sel.appendChild(opt);
-                sel.selectedIndex = sel.options.length - 1;
-            }
-            document.getElementById('tdext').value = item.ext || '';
-        }
-        fetch('/cgi/libsites.do').then(
-            function(response) {
-                if(response.status == 403) {
-                    window.location="./login.html";
-                    return;
-                }
-                if(response.status !== 200) {
-                    console.log('Looks like there was a problem. Status Code: ' +  response.status);
-                    return;
-                }
+    </div>
 
-                // Examine the text in the response
-                response.json().then(function(data) {
-                    for(var i=0,l=data.length;i<l;i++){
-                        var item = data[i];
-                        //原来的行数    比如：此处获得表格的行数是5，则每一行对应的index是0~4，所以下面在insertRow时，使用的是表格的当前行数
-                        var currentRows = table.tBodies[0].rows.length;
-                        var insertTr = table.insertRow(currentRows);
-                        if(i%2==0){
-                            insertTr.style.background='#FFF'
-                        }
-                        var insertTd = insertTr.insertCell(0);
-                        insertTd.style.textAlign="center";
-                        insertTd.innerHTML = escapeHtml(item.site);
-
-                        insertTd = insertTr.insertCell(1);
-                        insertTd.style.textAlign="center";
-                        insertTd.innerHTML = "<span class='strategy-tag strategy-" + escapeHtml(item.strategy) + "'>" + escapeHtml(item.strategy) + "</span>";
-
-                        insertTd = insertTr.insertCell(2);
-                        insertTd.style.textAlign="center";
-                        insertTd.title = escapeHtml(item.ext || '');
-                        insertTd.innerHTML = escapeHtml(item.ext || '');
-
-                        insertTd = insertTr.insertCell(3);
-                        insertTd.style.textAlign="center";
-                        insertTd.className='delate';
-                        insertTd.innerHTML = "<form action='/cgi/libsites.do?site="+encodeURIComponent(item.site)+"' method='post'><input type='hidden' name='method' value='delete'><input type='submit' value='删除'></form>";
-                        // 先写 innerHTML 再 append 按钮，避免 innerHTML += 重建 DOM 丢失事件
-                        var editBtn = document.createElement('input');
-                        editBtn.type = 'button';
-                        editBtn.value = '编辑';
-                        editBtn.onclick = (function(row){
-                            return function(){
-                                fillForm(row);
-                                document.getElementById('tdw').focus();
-                            };
-                        })(item);
-                        insertTd.insertBefore(editBtn, insertTd.firstChild);
-                        insertTd.insertBefore(document.createElement('br'), insertTd.childNodes[1]);
-
-                    }
-                });
-            })
-        .catch(function(err) {
-            console.log('Fetch Error :-S', err);
-        });
-        var btn=document.getElementById('btn1');
-        var text=document.getElementById('keyWorld');
-        btn.onclick=function(){
-            for(var i=2;i<table.tBodies[0].rows.length;i++){
-                var text1=table.tBodies[0].rows[i].cells[0].innerHTML.toLowerCase();
-                var text2=text.value.toLowerCase();
-                if(text1.search(text2)!=-1){
-                    table.tBodies[0].rows[i].style.display='';
-                }else{
-                    table.tBodies[0].rows[i].style.display='none';
-                }
+    <script>
+    var table = document.getElementById("list");
+    var tbody = table.tBodies[0];
+    function escapeHtml(s){
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+            .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+    }
+    function fillForm(item){
+        document.getElementById('tdw').value = item.site;
+        var sel = document.getElementById('strategy_sel');
+        var found = false;
+        for(var j=0;j<sel.options.length;j++){
+            if(sel.options[j].value == item.strategy){
+                sel.selectedIndex = j;
+                found = true;
+                break;
             }
         }
-        function setproxy(proxy){
-            document.getElementById('current_proxy').innerHTML=proxy;
+        if(!found){
+            var opt = document.createElement('option');
+            opt.value = item.strategy;
+            opt.text = item.strategy;
+            sel.appendChild(opt);
+            sel.selectedIndex = sel.options.length - 1;
         }
-        </script>
-        <script type="text/javascript" src="/cgi/libproxy.do"></script>
-    </body>
+        document.getElementById('tdext').value = item.ext || '';
+        document.getElementById('tdw').focus();
+    }
+    function updateEmptyRow(){
+        var empty = document.getElementById('empty-row');
+        var hasData = false;
+        for(var i=1;i<tbody.rows.length;i++){
+            if(tbody.rows[i].id !== 'empty-row' && tbody.rows[i].style.display !== 'none'){
+                hasData = true;
+                break;
+            }
+        }
+        if(!empty){
+            if(hasData) return;
+            empty = tbody.insertRow(tbody.rows.length);
+            empty.id = 'empty-row';
+            empty.className = 'empty-row';
+            empty.innerHTML = '<td colspan="4">🌟 还没有规则，在上方添加第一条吧</td>';
+        }else{
+            empty.style.display = hasData ? 'none' : '';
+        }
+    }
+    fetch('/cgi/libsites.do').then(
+        function(response) {
+            if(response.status == 403) {
+                window.location="./login.html";
+                return;
+            }
+            if(response.status !== 200) {
+                console.log('Looks like there was a problem. Status Code: ' +  response.status);
+                return;
+            }
+
+            // Examine the text in the response
+            response.json().then(function(data) {
+                for(var i=0,l=data.length;i<l;i++){
+                    var item = data[i];
+                    var insertTr = tbody.insertRow(tbody.rows.length);
+
+                    var insertTd = insertTr.insertCell(0);
+                    insertTd.className = 'site-cell';
+                    insertTd.innerHTML = escapeHtml(item.site);
+
+                    insertTd = insertTr.insertCell(1);
+                    insertTd.innerHTML = "<span class='strategy-tag strategy-" + escapeHtml(item.strategy) + "'>" + escapeHtml(item.strategy) + "</span>";
+
+                    insertTd = insertTr.insertCell(2);
+                    insertTd.className = 'ext-cell';
+                    insertTd.title = escapeHtml(item.ext || '');
+                    insertTd.innerHTML = escapeHtml(item.ext || '');
+
+                    insertTd = insertTr.insertCell(3);
+                    insertTd.className = 'action-cell';
+                    insertTd.innerHTML = "<form action='/cgi/libsites.do?site="+encodeURIComponent(item.site)+"' method='post'><input type='hidden' name='method' value='delete'><input type='submit' value='删除'></form>";
+                    // 先写 innerHTML 再 append 按钮，避免 innerHTML += 重建 DOM 丢失事件
+                    var editBtn = document.createElement('input');
+                    editBtn.type = 'button';
+                    editBtn.value = '编辑';
+                    editBtn.onclick = (function(row){
+                        return function(){
+                            fillForm(row);
+                        };
+                    })(item);
+                    insertTd.insertBefore(editBtn, insertTd.firstChild);
+                }
+                updateEmptyRow();
+            });
+        })
+    .catch(function(err) {
+        console.log('Fetch Error :-S', err);
+    });
+    var btn=document.getElementById('btn1');
+    var text=document.getElementById('keyWorld');
+    function doSearch(){
+        var keyword = text.value.toLowerCase();
+        for(var i=1;i<tbody.rows.length;i++){
+            var row = tbody.rows[i];
+            if(row.id === 'empty-row') continue;
+            var site = row.cells[0].textContent.toLowerCase();
+            row.style.display = (keyword === '' || site.indexOf(keyword) !== -1) ? '' : 'none';
+        }
+        updateEmptyRow();
+    }
+    btn.onclick=doSearch;
+    // 输入即过滤，清空时恢复
+    text.addEventListener('input', doSearch);
+    function setproxy(proxy){
+        document.getElementById('current_proxy').textContent=proxy;
+    }
+    </script>
+    <script type="text/javascript" src="/cgi/libproxy.do"></script>
+</body>
 </html>
