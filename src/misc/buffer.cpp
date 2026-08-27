@@ -167,9 +167,10 @@ bool CBuffer::empty() const{
     return buffers.empty();
 }
 
+//超过MAX_BUF_LEN返回-1
 ssize_t CBuffer::put(Buffer&& bb) {
     if(total_len + bb.len > MAX_BUF_LEN){
-        abort();
+        return -1;
     }
 
     total_len += bb.len;
@@ -179,7 +180,7 @@ ssize_t CBuffer::put(Buffer&& bb) {
 
 ssize_t CBuffer::emplace(Buffer&& bb) {
     if(total_len + bb.len > MAX_BUF_LEN){
-        abort();
+        return -1;
     }
 
     if(bb.len > 0 && !buffers.empty()){

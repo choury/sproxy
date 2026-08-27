@@ -48,8 +48,11 @@ void MemRWer::push_data(Buffer&& bb) {
          getFd(), dumpDest(src).c_str(), bb.id, bb.len, bb.refs());
     if(bb.len == 0){
         stats = RWerStats::ReadEOF;
-    } else {
-        rb.put(std::move(bb));
+    } else if(rb.put(std::move(bb)) < 0){
+        LOGE("ERROR rb overflow, drop data and close the connection: %d, id: %" PRIu64"\n",
+             getFd(), bb.id);
+        ErrorHE(PROTOCOL_ERR, BUFFER_FULL_ERR);
+        return;
     }
     addEvents(RW_EVENT::READ);
 }

@@ -23,7 +23,7 @@ protected:
     virtual void deleteLater(uint32_t errcode) override;
     virtual void Error(int ret, int code);
 
-    virtual void ResProc(uint64_t, std::shared_ptr< HttpResHeader > header) override;
+    virtual bool ResProc(uint64_t, std::shared_ptr< HttpResHeader > header) override;
     virtual ssize_t DataProc(Buffer& bb)override;
     virtual void EndProc(uint64_t id) override;
     virtual void ErrProc(uint64_t id) override;

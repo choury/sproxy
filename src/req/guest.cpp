@@ -151,8 +151,14 @@ Guest::Guest(std::shared_ptr<RWer> rwer): Requester(rwer){
     rwer->SetCallback(cb);
 }
 
-void Guest::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
+bool Guest::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
     static const char*  HCONNECT = "HTTP/1.1 200 Connection establishe" CRLF CRLF;
+    if(statuslist.size() >= MAX_CONCURRENT_REQS) {
+        //流水线深度超限，多为恶意堆积，断开连接防止内存被耗尽
+        LOGE("(%s): too many pipelined requests: %zd, close it\n",
+             dumpDest(rwer->getSrc()).c_str(), statuslist.size());
+        return false;
+    }
     auto _cb = response(id);
     if(header->ismethod("CONNECT") &&
       (header->Dest.protocol[0] == 0 || strcmp(header->Dest.protocol, "tcp") == 0))
@@ -160,7 +166,7 @@ void Guest::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
         if(header->Dest.port == HTTPPORT) {
             if(!headless) rwer->Send({HCONNECT, strlen(HCONNECT), id});
             Http_Proc = (bool (HttpBase::*)(Buffer&))&Guest::HeaderProc;
-            return;
+            return true;
         }
         if(header->Dest.port == HTTPSPORT && shouldNegotiate(header, this)) {
             if(!headless) rwer->Send({HCONNECT, strlen(HCONNECT), id});
@@ -168,7 +174,7 @@ void Guest::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
             auto srwer = std::make_shared<SslMer>(ctx, getSrc(), getDst(), _cb);
             statuslist.emplace_back(ReqStatus{header, srwer, _cb, HTTP_NOEND_F});
             new Guest(srwer);
-            return;
+            return true;
         }
     }
     header->set("User-Agent", generateUA(header->get("User-Agent"), "", header->request_id));
@@ -200,6 +206,7 @@ void Guest::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
         LOGD(DHTTP, "<guest> ReqProc %" PRIu64 " %s, waiting for the previous request to finish\n",
              header->request_id, header->geturl().c_str());
     }
+    return true;
 }
 
 void Guest::deqReq() {
@@ -256,7 +263,14 @@ ssize_t Guest::DataProc(Buffer& bb) {
 }
 
 void Guest::EndProc(uint64_t) {
+    if(statuslist.empty()){
+        return;
+    }
     ReqStatus& status = statuslist.back();
+    if(status.flags & HTTP_REQ_COMPLETED){
+        //被拒绝的请求未入队，HeaderProc仍会对它调EndProc，此时back()是已完成的旧请求，直接忽略
+        return;
+    }
     assert(status.req);
     LOGD(DHTTP, "<guest> EndProc %" PRIu64 "\n", status.req->request_id);
     rwer->addEvents(RW_EVENT::READ);
@@ -321,6 +335,12 @@ std::shared_ptr<IMemRWerCallback> Guest::response(uint64_t id) {
             return;
         }
         buff.truncate(hlen);
+        if(rwer->cap(res->request_id) < (ssize_t)hlen) {
+            //对端不读响应导致写缓冲积压满，响应头无处安放，只能断开
+            LOGE("http response wbuff is full: %" PRIu64 "\n", res->request_id);
+            deleteLater(BUFFER_FULL_ERR);
+            return;
+        }
         rwer->Send(std::move(buff));
     })->onData([this](Buffer&& bb) {
         return Recv(std::move(bb));

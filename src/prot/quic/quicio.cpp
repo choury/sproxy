@@ -925,6 +925,14 @@ void QuicBase::cleanStream(uint64_t id) {
         my_received_data += unordered;
         rblen -= status.rb.continuous_length();
         streammap.erase(id);
+        if(!isLocal(id)){
+            //远端流释放，计入可补充的流号额度
+            if(isBidirect(id)) {
+                remote_bi_released++;
+            }else{
+                remote_ubi_released++;
+            }
+        }
     }
 }
 
@@ -1091,6 +1099,32 @@ int QuicBase::handleRetryPacket(const quic_pkt_header* header){
     return 0;
 }
 
+bool QuicBase::expandStreams(uint64_t bidi, uint64_t uni) {
+    bool expanded = false;
+    if (bidi > 0 && bidi - my_received_max_bidistream_id / 4 <= QUIC_MAX_STREAMS) {
+        //只按已释放的流数补充流号额度，保证同时打开的远端流数不超过QUIC_MAX_STREAMS
+        uint64_t target = QUIC_MAX_STREAMS + remote_bi_released;
+        if(target > my_max_streams_bidi) {
+            my_max_streams_bidi = target;
+            quic_frame rframe{QUIC_FRAME_MAX_STREAMS_BI};
+            rframe.extra = my_max_streams_bidi;
+            qos->PushFrame(ssl_encryption_application, std::move(rframe));
+        }
+        expanded = true;
+    }
+    if (uni > 0 && uni - my_received_max_unistream_id / 4 <= QUIC_MAX_STREAMS) {
+        uint64_t target = QUIC_MAX_STREAMS + remote_ubi_released;
+        if(target > my_max_streams_uni) {
+            my_max_streams_uni = target;
+            quic_frame rframe{QUIC_FRAME_MAX_STREAMS_UBI};
+            rframe.extra = my_max_streams_uni;
+            qos->PushFrame(ssl_encryption_application, std::move(rframe));
+        }
+        expanded = true;
+    }
+    return expanded;
+}
+
 QuicBase::FrameResult QuicBase::handleFrames(quic_context *context, quic_frame& frame) {
     switch (frame.type) {
     case QUIC_FRAME_CRYPTO:
@@ -1130,12 +1164,7 @@ QuicBase::FrameResult QuicBase::handleFrames(quic_context *context, quic_frame& 
     }
     case QUIC_FRAME_STREAMS_BLOCKED_BI: {
         auto recv_max_streams_bidi = frame.extra;
-        if (recv_max_streams_bidi - my_received_max_bidistream_id / 4 <= 100) {
-            my_max_streams_bidi = my_received_max_bidistream_id/ 4  + 100;
-            quic_frame rframe{QUIC_FRAME_MAX_STREAMS_BI};
-            rframe.extra = my_max_streams_bidi;
-            qos->PushFrame(ssl_encryption_application, std::move(rframe));
-        } else {
+        if (!expandStreams(recv_max_streams_bidi, 0)) {
             LOGD(DQUIC, "No space to expand bidi-streams: %zd vs %zd %zd\n",
                  (size_t)recv_max_streams_bidi, (size_t)my_max_streams_bidi, (size_t)my_received_max_bidistream_id/4);
         }
@@ -1143,12 +1172,7 @@ QuicBase::FrameResult QuicBase::handleFrames(quic_context *context, quic_frame& 
     }
     case QUIC_FRAME_STREAMS_BLOCKED_UBI: {
         auto recv_max_streams_uni = frame.extra;
-        if (recv_max_streams_uni - my_received_max_unistream_id / 4 <= 100) {
-            my_max_streams_uni = my_received_max_unistream_id/4 + 100;
-            quic_frame rframe{QUIC_FRAME_MAX_STREAMS_UBI};
-            rframe.extra = my_max_streams_uni;
-            qos->PushFrame(ssl_encryption_application, std::move(rframe));
-        } else {
+        if (!expandStreams(0, recv_max_streams_uni)) {
             LOGD(DQUIC, "No space to expand uni-streams: %zd vs %zd %zd\n",
                  (size_t)recv_max_streams_uni, (size_t)my_max_streams_uni, (size_t)my_received_max_unistream_id/4);
         }
@@ -1894,27 +1918,17 @@ void QuicBase::sinkData(uint64_t id) {
             to_clean.push_back(id);
         }
     }
+    //必须先清理再补充额度：cleanStream会累加remote_*_released，放在后面会导致本轮释放的额度要到下一轮sinkData才通告给对端
+    for(auto& i: to_clean){
+        cleanStream(i);
+    }
     if (my_max_data - my_received_data <= 50 * 1024 * 1024) {
         my_max_data += 50 * 1024 * 1024;
         quic_frame frame{QUIC_FRAME_MAX_DATA};
         frame.extra = my_max_data;
         qos->PushFrame(ssl_encryption_application, std::move(frame));
     }
-    if (my_max_streams_bidi - my_received_max_bidistream_id / 4 <= 100) {
-        my_max_streams_bidi += 100;
-        quic_frame frame{QUIC_FRAME_MAX_STREAMS_BI};
-        frame.extra = my_max_streams_bidi;
-        qos->PushFrame(ssl_encryption_application, std::move(frame));
-    }
-    if (my_max_streams_uni - my_received_max_unistream_id / 4 <= 100) {
-        my_max_streams_uni += 100;
-        quic_frame frame{QUIC_FRAME_MAX_STREAMS_UBI};
-        frame.extra = my_max_streams_uni;
-        qos->PushFrame(ssl_encryption_application, std::move(frame));
-    }
-    for(auto& i: to_clean){
-        cleanStream(i);
-    }
+    expandStreams(my_max_streams_bidi, my_max_streams_uni);
 }
 
 uint64_t QuicBase::createBiStream() {

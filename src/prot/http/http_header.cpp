@@ -402,7 +402,14 @@ Cookie::Cookie(const std::string& set_cookie) {
 
             if (key == "path") path = val;
             else if (key == "domain") domain = val;
-            else if (key == "max-age") maxage = std::stoi(val);
+            else if (key == "max-age") {
+                //上游返回的Max-Age不可信，stoi遇到超长/非数字值会抛异常，用strtol并忽略错误
+                char* end = nullptr;
+                long age = strtol(val.c_str(), &end, 10);
+                if(end != val.c_str() && age > 0) {
+                    maxage = std::min<long>(age, UINT32_MAX);
+                }
+            }
             else if (key == "secure") secure = true;
             else if (key == "httponly") httponly = true;
             else if (key == "samesite") samesite = val;

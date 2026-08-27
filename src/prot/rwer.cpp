@@ -283,7 +283,11 @@ void RWer::Send(Buffer&& bb) {
     addEvents(RW_EVENT::WRITE);
     LOGD(DRWER, "push to wbuff %d: id: %" PRIu64", len: %zd, refs: %zd, wlen: %zd\n",
         getFd(), bb.id, bb.len, bb.refs(), wbuff.length());
-    wbuff.put(std::move(bb));
+    if(wbuff.put(std::move(bb)) < 0){
+        LOGE("ERROR wbuff overflow, drop data and close the connection: %d, id: %" PRIu64", len: %zd\n",
+             getFd(), bb.id, bb.len);
+        ErrorHE(PROTOCOL_ERR, BUFFER_FULL_ERR);
+    }
 }
 
 bool RWer::idle(uint64_t) {

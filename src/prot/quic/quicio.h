@@ -14,6 +14,8 @@
 
 #define QUIC_CID_LEN     20
 #define QUIC_MAX_CONNECTION_IDS 64
+//初始流数限额：对端同时打开的流数上限(流完成后释放额度)
+#define QUIC_MAX_STREAMS MAX_CONCURRENT_REQS
 
 /*
        o
@@ -161,8 +163,10 @@ protected:
     uint64_t my_max_stream_data_bidi_local = BUF_LEN;
     uint64_t my_max_stream_data_bidi_remote = BUF_LEN;
     uint64_t my_max_stream_data_uni = BUF_LEN;
-    uint64_t my_max_streams_bidi = 100;
-    uint64_t my_max_streams_uni = 100;
+    uint64_t my_max_streams_bidi = QUIC_MAX_STREAMS;
+    uint64_t my_max_streams_uni = QUIC_MAX_STREAMS;
+    uint64_t remote_bi_released = 0;
+    uint64_t remote_ubi_released = 0;
     uint64_t my_max_datagram_frame_size = 65535;
 
     uint32_t chosen_version = QUIC_VERSION_1;
@@ -204,6 +208,7 @@ protected:
     using iterator = typename decltype(streammap)::iterator;
     iterator openStream(uint64_t id);
     void cleanStream(uint64_t id);
+    bool expandStreams(uint64_t bidi, uint64_t uni);
     bool isLocal(uint64_t id);
     static bool isBidirect(uint64_t id);
 

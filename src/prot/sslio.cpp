@@ -238,14 +238,22 @@ SslRWer::SslRWer(const Destination& dest, std::shared_ptr<IRWerCallback> cb):
 void SslRWer::write(Buffer&& bb) {
     LOGD(DSSL, "(%s) send %zd bytes to fd %d, id: %" PRIu64"\n", server.c_str(), bb.len, getFd(), bb.id);
     addEvents(RW_EVENT::WRITE);
-    wbuff.put(std::move(bb));
+    if(wbuff.put(std::move(bb)) < 0){
+        LOGE("ERROR wbuff overflow, drop data and close the connection: %d, id: %" PRIu64"\n",
+             getFd(), bb.id);
+        ErrorHE(PROTOCOL_ERR, BUFFER_FULL_ERR);
+    }
 }
 
 void SslMer::write(Buffer&& bb) {
     //bb.id = id;
     LOGD(DSSL, "(%s) send %zd bytes to mem, id: %" PRIu64"\n", server.c_str(), bb.len, bb.id);
     addEvents(RW_EVENT::WRITE);
-    wbuff.put(std::move(bb));
+    if(wbuff.put(std::move(bb)) < 0){
+        LOGE("ERROR wbuff overflow, drop data and close the connection: %d, id: %" PRIu64"\n",
+             getFd(), bb.id);
+        ErrorHE(PROTOCOL_ERR, BUFFER_FULL_ERR);
+    }
 }
 
 void SslRWer::onRead(Buffer&& bb) {

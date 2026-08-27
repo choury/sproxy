@@ -109,6 +109,12 @@ void Guest2::ReqProc(uint32_t id, std::shared_ptr<HttpReqHeader> header) {
         Reset(id, HTTP2_ERR_STREAM_CLOSED);
         return;
     }
+    if(statusmap.size() >= MAX_CONCURRENT_REQS) {
+        LOGE("(%s): <guest2> too many concurrent streams: %zd, refuse stream %d\n",
+             dumpDest(rwer->getSrc()).c_str(), statusmap.size(), id);
+        Reset(id, HTTP2_ERR_REFUSED_STREAM);
+        return;
+    }
 
     auto _cb = response(id);
     std::shared_ptr<MemRWer> rw;
@@ -176,7 +182,8 @@ void Guest2::DataProc(Buffer&& bb) {
             }
             LOGD(DHTTP2, "<guest2> DataProc put buffer [%" PRIu64"]: %zu/%zd\n", bb.id, bb.len, cap);
             if(status.buffer->put((char*)bb.data(), bb.len) < 0){
-                abort();
+                ErrProc(HTTP2_ERR_ENHANCE_YOUR_CALM);
+                return;
             }
             if(cap <= 0) {
                 return;

@@ -34,7 +34,7 @@ public:
 class HttpResponser:public HttpBase{
 protected:
     virtual bool HeaderProc(Buffer& bb)override final;
-    virtual void ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> req) = 0;
+    virtual bool ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> req) = 0;
 
     void reflect(IVisitor& v) override {
         HttpBase::reflect(v);
@@ -44,7 +44,7 @@ protected:
 class HttpRequester:public HttpBase{
 protected:
     virtual bool HeaderProc(Buffer& bb)override final;
-    virtual void ResProc(uint64_t id, std::shared_ptr<HttpResHeader> res) = 0;
+    virtual bool ResProc(uint64_t id, std::shared_ptr<HttpResHeader> res) = 0;
 
     void reflect(IVisitor& v) override {
         HttpBase::reflect(v);

@@ -583,6 +583,12 @@ void Http2Base::SendInitSetting(bool enable_push) {
     LOGD(DHTTP2, "send enable connect protocol\n");
     len += sizeof(Setting_Frame);
 
+    sf++;
+    set16(sf->identifier, HTTP2_SETTING_MAX_CONCURRENT_STREAMS);
+    set32(sf->value, MAX_CONCURRENT_REQS);
+    LOGD(DHTTP2, "send max concurrent streams: %d\n", MAX_CONCURRENT_REQS);
+    len += sizeof(Setting_Frame);
+
     set24(header->length, len);
     SendData(Buffer{std::move(buff), len + sizeof(Http2_header)});
 }

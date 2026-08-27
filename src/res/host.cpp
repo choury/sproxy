@@ -238,7 +238,7 @@ void Host::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> 
     reply();
 }
 
-void Host::ResProc(uint64_t, std::shared_ptr<HttpResHeader> header) {
+bool Host::ResProc(uint64_t, std::shared_ptr<HttpResHeader> header) {
     LOGD(DHTTP, "<host> ResProc %" PRIu64": %s, http_flag:0x%x\n",
          status.req->request_id ,header->status, http_flag);
     header->request_id = status.req->request_id;
@@ -253,6 +253,7 @@ void Host::ResProc(uint64_t, std::shared_ptr<HttpResHeader> header) {
     rewrite_rproxy_res(status.req, header);
     status.rw->SendHeader(header);
     status.flags |= HTTP_RESPOENSED;
+    return true;
 }
 
 ssize_t Host::DataProc(Buffer& bb) {

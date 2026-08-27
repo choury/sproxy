@@ -152,6 +152,12 @@ void Guest3::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
         Reset(id, HTTP3_ERR_STREAM_CREATION_ERROR);
         return;
     }
+    if(statusmap.size() >= MAX_CONCURRENT_REQS) {
+        LOGE("(%s): <guest3> too many request streams: %zd, refuse stream %" PRIu64"\n",
+             dumpDest(rwer->getSrc()).c_str(), statusmap.size(), id);
+        Reset(id, HTTP3_ERR_REQUEST_REJECTED);
+        return;
+    }
     if (mitmProxy) {
         strcpy(header->Dest.protocol, "quic");
     }

@@ -143,7 +143,10 @@ bool HttpResponser::HeaderProc(Buffer& bb) {
         }else {
             Http_Proc = &HttpResponser::AlwaysProc;
         }
-        ReqProc(bb.id, req);
+        if(!ReqProc(bb.id, req)){
+            ErrProc(bb.id);
+            return false;
+        }
         if(http_flag & HTTP_IGNORE_BODY_F){
             EndProc(bb.id);
             http_flag &= ~HTTP_IGNORE_BODY_F;
@@ -189,7 +192,10 @@ bool HttpRequester::HeaderProc(Buffer& bb) {
             http_flag &= ~HTTP_STATUS_1XX;
             Http_Proc = &HttpRequester::AlwaysProc;
         }
-        ResProc(bb.id, res);
+        if(!ResProc(bb.id, res)){
+            ErrProc(bb.id);
+            return false;
+        }
         if (http_flag & HTTP_IGNORE_BODY_F) {
             EndProc(bb.id);
 
