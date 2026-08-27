@@ -413,6 +413,47 @@ void test_cbuffer_emplace() {
     std::cout << "✓ CBuffer emplace tests passed\n";
 }
 
+// Tests for negative reserve beyond headroom (e.g. socks5 udp relay with long domain,
+// which prepends up to 262 bytes of header, exceeding PRIOR_HEAD)
+void test_buffer_reserve_overflow() {
+    std::cout << "Testing negative reserve beyond headroom...\n";
+
+    // 常规Buffer头部预留仅PRIOR_HEAD, 负向reserve超过预留时应重新分配而非abort
+    const char* payload = "payload!";
+    Buffer buf(payload, strlen(payload), 7);
+    buf.reserve(-262);
+    assert(buf.len == strlen(payload) + 262);
+    memset(buf.mutable_data(), 0xAB, 262);
+    assert(memcmp((const char*)buf.data() + 262, payload, strlen(payload)) == 0);
+    assert(buf.refs() == 1);
+
+    // 溢出重分配后继续前置小块头部仍然安全
+    buf.reserve(-3);
+    assert(buf.len == strlen(payload) + 262 + 3);
+    memset(buf.mutable_data(), 0x00, 3);
+    assert(memcmp((const char*)buf.data() + 3 + 262, payload, strlen(payload)) == 0);
+
+    // 共享底层内存时负向reserve溢出走COW, 不影响其他持有者
+    Buffer shared("shared-data", 12, 1);
+    Buffer holder = shared;
+    shared.reserve(-200);
+    assert(shared.len == 12 + 200);
+    assert(holder.len == 12);
+    memset(shared.mutable_data(), 0, 200);
+    assert(memcmp(holder.data(), "shared-data", 12) == 0);
+    assert(holder.refs() == 1);
+    assert(shared.refs() == 1);
+
+    // 未超出头部预留时在同一分配内前移, 不触发重分配
+    Buffer noshift("nocopy!!", 8, 2);
+    noshift.reserve(-6);
+    assert(noshift.len == 14);
+    memcpy(noshift.mutable_data(), "HEADER", 6);
+    assert(memcmp((const char*)noshift.data(), "HEADERnocopy!!", 14) == 0);
+
+    std::cout << "✓ Negative reserve overflow tests passed\n";
+}
+
 // Test for CBuffer with moved buffers
 void test_cbuffer_move_semantics() {
     std::cout << "Testing CBuffer move semantics...\n";
@@ -864,6 +905,7 @@ int main() {
         // Test all buffer classes
         test_block_class();
         test_buffer_class();
+        test_buffer_reserve_overflow();
         test_cbuffer_class();
         test_cbuffer_emplace();
         test_cbuffer_move_semantics();

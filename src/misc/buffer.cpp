@@ -75,7 +75,14 @@ void Buffer::reserve(int p){
         return;
     }
     if(off + p < 0) {
-        abort();
+        //头部预留空间不足，重新分配并把旧数据后移，避免向前越界
+        off_t data_off = (off_t)PRIOR_HEAD - p; //p < 0，旧数据在新空间中的偏移
+        cap = len + PRIOR_HEAD;
+        auto new_ptr = std::shared_ptr<void>(malloc(cap), free);
+        memcpy((char*)new_ptr.get() + data_off, (char*)ptr.get() + off, len + p);
+        ptr = std::move(new_ptr);
+        off = PRIOR_HEAD;
+        return;
     }
     off += p;
 }
