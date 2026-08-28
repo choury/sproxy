@@ -723,8 +723,7 @@ uint16_t Tcp::getmss() const{
             opt = (tcp_opt*)((char *)opt+1);
             continue;
         }
-        if (opt->kind == TCPOPT_MAXSEG) {
-            assert(opt->length == TCPOLEN_MAXSEG);
+        if (opt->kind == TCPOPT_MAXSEG && opt->length == TCPOLEN_MAXSEG) {
             struct tcp_mss *t = (tcp_mss *)(opt);
             return ntohs(t->mss);
         }
@@ -753,8 +752,7 @@ int Tcp::gettimestamp(uint32_t *tsval, uint32_t *tsecr) const{
             opt = (tcp_opt*)((char *)opt+1);
             continue;
         }
-        if (opt->kind == TCPOPT_TIMESTAMP) {
-            assert(opt->length == TCPOLEN_TIMESTAMP);
+        if (opt->kind == TCPOPT_TIMESTAMP && opt->length == TCPOLEN_TIMESTAMP) {
             tcp_timestamp *timestamp = (tcp_timestamp *)opt;
             *tsval = ntohl(timestamp->tsval);
             *tsecr = ntohl(timestamp->tsecr);
@@ -778,8 +776,7 @@ uint8_t Tcp::getwindowscale() const{
             opt = (tcp_opt*)((char *)opt+1);
             continue;
         }
-        if (opt->kind == TCPOPT_WINDOW) {
-            assert(opt->length == TCPOLEN_WINDOW);
+        if (opt->kind == TCPOPT_WINDOW && opt->length == TCPOLEN_WINDOW) {
             return opt->data[0];
         }
         len -= opt->length;

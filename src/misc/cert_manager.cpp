@@ -210,21 +210,22 @@ static std::string truncateDomain(const std::string &domain) {
     if (domain.length() <= 64)
         return domain;
 
-    size_t pos         = domain.length();
-    std::string result = "";
-
-    while (pos != std::string::npos) {
-        pos = domain.find_last_of('.', pos - 1);
-        if (pos == std::string::npos)
+    //CN上限64字符，取总长不超过64的最后一段点分后缀
+    size_t pos = std::string::npos;
+    size_t last = domain.length();
+    while(last > 0){
+        size_t dot = domain.find_last_of('.', last - 1);
+        if(dot == std::string::npos)
             break;
-
-        std::string substr = domain.substr(pos);
-        if (substr.length() + result.length() > 64) {
+        if(domain.length() - dot - 1 > 64) {
             break;
         }
-        result = substr + result;
+        pos = dot + 1;
+        last = dot;
     }
-    return result.substr(1);
+    if(pos == std::string::npos)
+        return domain.substr(0, 64); //没有任何可用的点分后缀，直接截断
+    return domain.substr(pos);
 }
 
 static X509_REQ* generate_csr(EVP_PKEY *key, const char* domain) {

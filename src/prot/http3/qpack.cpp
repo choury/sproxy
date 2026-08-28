@@ -301,7 +301,7 @@ HeaderMap Qpack_decoder::decode(const HttpCursor& cursor) {
                     return decltype(headers){};
                 }
                 name = static_table[index.value()][0];
-                value = static_table[index.value()][1];
+                value = static_table[index.value()][1]?static_table[index.value()][1]:"";
                 LOGD(DHPACK, "get qpack %s:[%s] id: %d\n", name.c_str(), value.c_str(), (int)index.value());
             }else{ //当前不支持动态索引，因为我们将MAX_FIELD_SECTION_SIZE设置成了0
                 return decltype(headers){};
