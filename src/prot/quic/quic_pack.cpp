@@ -8,6 +8,8 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <inttypes.h>
+#include <algorithm>
+#include <random>
 #include <openssl/kdf.h>
 #include <openssl/tls1.h>
 #include <openssl/hmac.h>
@@ -1299,6 +1301,67 @@ bool QuicCursor::put_frame(const quic_frame& frame) {
             LOGE("unknown frame: 0x%x\n", (int)frame.type);
             return false;
         }
+    }
+}
+
+void quic_chaos_protect(std::deque<quic_frame>& frames, size_t padding) {
+    std::mt19937 rng(std::random_device{}());
+    //CRYPTO随机多切：随机挑一帧从随机位置切成两段，重复2~10次
+    const size_t splits = 2 + rng() % 9;
+    for(size_t i = 0; i < splits; i++) {
+        //多切一刀的最坏开销：type(1)+offset varint(4)+length varint(2)，与包预算预留一致取20
+        if(padding < 20) {
+            break;
+        }
+        quic_frame& frame = frames[rng() % frames.size()];
+        if(frame.type != QUIC_FRAME_CRYPTO || frame.crypto.length <= 1) {
+            continue;
+        }
+        const size_t before = pack_frame_len(frame);
+        const size_t keep = 1 + rng() % (frame.crypto.length - 1);
+        quic_frame tail{QUIC_FRAME_CRYPTO};
+        tail.crypto.offset = frame.crypto.offset + keep;
+        tail.crypto.length = frame.crypto.length - keep;
+        tail.crypto.buffer = new Buffer(*frame.crypto.buffer);
+        tail.crypto.buffer->reserve(keep);
+        frame.crypto.length = keep;
+        padding -= pack_frame_len(frame) + pack_frame_len(tail) - before;
+        frames.push_back(std::move(tail));
+    }
+    //插入2~10个PING(各占1字节)
+    if(padding > 0) {
+        const size_t pings = std::min<size_t>(2 + rng() % 9, padding);
+        for(size_t i = 0; i < pings; i++) {
+            frames.emplace_back(quic_frame{QUIC_FRAME_PING});
+        }
+        padding -= pings;
+    }
+    //padding随机散布到帧间(ACK帧前不放)，余量放包尾
+    for(auto it = frames.begin(); it != frames.end() && padding > 0; ++it) {
+        const size_t len = rng() % (padding + 1);
+        if(len == 0 || it->type == QUIC_FRAME_ACK || it->type == QUIC_FRAME_ACK_ECN) {
+            continue;
+        }
+        quic_frame pad{QUIC_FRAME_PADDING};
+        pad.extra = len;
+        it = frames.insert(it, std::move(pad));
+        ++it;
+        padding -= len;
+    }
+    if(padding > 0) {
+        quic_frame pad{QUIC_FRAME_PADDING};
+        pad.extra = padding;
+        frames.push_back(std::move(pad));
+    }
+    //Fisher-Yates乱序：从后往前与随机前位交换；ACK帧不参与交换，位置保持不变
+    for(size_t i = frames.size() - 1; i > 0; i--) {
+        const size_t j = rng() % (i + 1);
+        if(i == j || frames[i].type == QUIC_FRAME_ACK || frames[i].type == QUIC_FRAME_ACK_ECN
+           || frames[j].type == QUIC_FRAME_ACK || frames[j].type == QUIC_FRAME_ACK_ECN)
+        {
+            continue;
+        }
+        std::swap(frames[i], frames[j]);
     }
 }
 

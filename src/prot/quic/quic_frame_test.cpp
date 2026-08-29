@@ -4,6 +4,7 @@
 
 #include <inttypes.h>
 #include <string.h>
+#include <random>
 
 //单测不链接整个 sproxy，桩掉依赖的全局符号(均为extern "C"链接)
 void slog(int, const char*, ...) {}
@@ -555,6 +556,87 @@ int main() {
                       == quic_decode_status::conn_error, "malformed frame in authed packet");
             }
         }
+    }
+
+    //---- chaos protect：随机切分/乱序后必须语义等价、总字节精确 ----
+    {
+        std::mt19937 rng(0x5eed);
+        bool all_ok = true;
+        bool seen_split = false, seen_ping = false, seen_padding = false;
+        for(int round = 0; round < 500; round++){
+            const size_t dlen = 1 + rng() % 1200;
+            const size_t padding = rng() % 400;
+            std::string data(dlen, '\0');
+            for(auto& c : data) c = rng();
+
+            //ACK在首(模拟PendAck)+CRYPTO在后(模拟add_handshake_data)
+            std::deque<quic_frame> frames;
+            quic_frame ack{QUIC_FRAME_ACK};
+            ack.ack.acknowledged = 9;
+            ack.ack.first_range = 9;
+            frames.push_back(std::move(ack));
+            quic_frame f{QUIC_FRAME_CRYPTO};
+            f.crypto.length = dlen;
+            f.crypto.buffer = new Buffer(dlen);
+            memcpy(f.crypto.buffer->mutable_data(), data.data(), dlen);
+            f.crypto.buffer->truncate(dlen);
+            const size_t before = pack_frame_len(f) + pack_frame_len(frames.front());
+            frames.push_back(std::move(f));
+
+            quic_chaos_protect(frames, padding);
+
+            //ACK帧必须保持在队首
+            if(frames.front().type != QUIC_FRAME_ACK){
+                all_ok = false;
+            }
+            //帧总长必须恰好增加padding字节
+            size_t total = 0;
+            for(const auto& fr : frames) total += pack_frame_len(fr);
+            if(total != before + padding){
+                all_ok = false;
+                continue;
+            }
+            //逐帧序列化→解析→按offset重组，必须还原原始数据
+            std::vector<char> buf(total);
+            QuicCursor pc(buf.data(), buf.size());
+            for(const auto& fr : frames){
+                if(!pc.put_frame(fr)){
+                    all_ok = false;
+                }
+            }
+            std::string restored(dlen, '\0');
+            size_t covered = 0, crypto_count = 0;
+            QuicCursor c(buf.data(), buf.size());
+            while(c.length()){
+                auto g = c.get_frame();
+                if(!g){
+                    all_ok = false;
+                    break;
+                }
+                if(g->type == QUIC_FRAME_CRYPTO){
+                    crypto_count++;
+                    if(g->crypto.offset + g->crypto.length > dlen ||
+                       memcmp(g->crypto.buffer->data(), data.data() + g->crypto.offset,
+                              g->crypto.length) != 0){
+                        all_ok = false;
+                    }
+                    memcpy(&restored[g->crypto.offset], g->crypto.buffer->data(), g->crypto.length);
+                    covered += g->crypto.length;
+                }else if(g->type == QUIC_FRAME_PING){
+                    seen_ping = true;
+                }else if(g->type == QUIC_FRAME_PADDING){
+                    seen_padding = true;
+                }
+            }
+            if(covered != dlen || restored != data){
+                all_ok = false;
+            }
+            if(crypto_count > 1){
+                seen_split = true;
+            }
+        }
+        check(all_ok, "chaos protect semantics");
+        check(seen_split && seen_ping && seen_padding, "chaos protect randomness");
     }
 
     printf(failures ? "=== %d FAILURES ===\n" : "=== ALL PASS ===\n", failures);

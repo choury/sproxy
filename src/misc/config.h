@@ -106,7 +106,7 @@ struct options{
     bool rproxy_keep_src;
     bool rproxy_delegate_auth;
     bool systemd_socket;
-    const char* quic_cc_algorithm;  // QUIC congestion control algorithm: "reno" or "bbr"
+    const char* quic_cc_algorithm;  // QUIC congestion control algorithm: "reno", "cubic" or "bbr"
     uint64_t quic_version;         // QUIC version: QUIC_VERSION_1 or QUIC_VERSION_2
     const char* doh_server;        // DNS over HTTPS server URL
 

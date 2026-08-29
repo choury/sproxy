@@ -387,6 +387,10 @@ quic_decode_status decode_packet(Buffer pkt, quic_pkt_header* header,
 
 
 size_t pack_frame_len(const quic_frame& frame);
+//Chrome(QUICHE QuicChaosProtector)式混沌保护：CRYPTO帧随机多切、插入PING、
+//padding随机散布到帧间、Fisher-Yates乱序(ACK帧位置不变)，只改帧布局不改语义
+//frames须非空且含CRYPTO帧；padding为帧区剩余字节数，调用后恰好用尽，包总长不变
+void quic_chaos_protect(std::deque<quic_frame>& frames, size_t padding);
 //明文加密后连同报文头写入out；返回报文总长，空间不足返回0
 size_t encode_packet(cursor plaintext, const quic_pkt_header* header,
                      const quic_secret* secret, QuicCursor& out);

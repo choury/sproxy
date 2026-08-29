@@ -268,6 +268,21 @@ std::list<quic_packet_pn> QuicBase::send(OSSL_ENCRYPTION_LEVEL level,
             sent_packets.pop_back();
             break;
         }
+        if(level == ssl_encryption_initial && !SSL_is_server(ssl)){
+            bool hasCrypto = false;
+            for(const auto& f: packet.frames) {
+                if(f.type == QUIC_FRAME_CRYPTO){
+                    hasCrypto = true;
+                    break;
+                }
+            }
+            size_t padding = his_max_payload_size - packet.meta.sent_bytes;
+            if(hasCrypto && padding > 0){
+                quic_chaos_protect(packet.frames, padding);
+                LOGD(DQUIC, "chaos protect initial packet [%" PRIu64"], padding: %zd\n",
+                     packet.meta.pn, padding);
+            }
+        }
         char* buffer = (char*)frame_blk.data();
         QuicCursor fc(buffer, his_max_payload_size);
         for(const auto& frame : packet.frames) {

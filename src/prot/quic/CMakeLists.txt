@@ -9,6 +9,7 @@ set(quic_src
         pn_namespace.cpp
         quic_qos.cpp
         quic_bbr.cpp
+        quic_cubic.cpp
         quic_reno.cpp
 )
 
