@@ -213,9 +213,13 @@ void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw)
         //req->set("X-Forwarded-For", "2001:da8:b000:6803:62eb:69ff:feb4:a6c2");
         req->chain_proxy = true;
         if(dest.credit.user[0]) {
-            char auth_plain[AUTHLIMIT * 2];
-            char auth_encode[AUTHLIMIT * 4];
-            snprintf(auth_plain, sizeof(auth_plain), "%s:%s", dest.credit.user, dest.credit.pass);
+            char auth_plain[AUTHLIMIT * 3 + 3];
+            char auth_encode[AUTHLIMIT * 5];
+            if(dest.credit.identifier[0]) {
+                snprintf(auth_plain, sizeof(auth_plain), "%s+%s:%s", dest.credit.user, dest.credit.identifier, dest.credit.pass);
+            } else {
+                snprintf(auth_plain, sizeof(auth_plain), "%s:%s", dest.credit.user, dest.credit.pass);
+            }
             Base64Encode(auth_plain, strlen(auth_plain), auth_encode);
             req->set("Proxy-Authorization", std::string("Basic ") + auth_encode);
         }else if(strlen(opt.rewrite_auth)){
