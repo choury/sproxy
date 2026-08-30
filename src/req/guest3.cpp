@@ -78,12 +78,12 @@ void Guest3::connected() {
         LOGE("(%s) no protocol found\n", dumpDest(rwer->getSrc()).c_str());
         return Server::deleteLater(PROTOCOL_ERR);
     }
-    if (strncasecmp((const char*)data, "h3", len) == 0) {
+    if (len == 2 && strncasecmp((const char*)data, "h3", 2) == 0) {
         Init();
         return;
     }
-    if (len >= 4 && memcmp((const char*)data, "r3/", 3) == 0) {
-        (new Rproxy3(rwer, std::string((const char*)data + 3, len - 3)))->init();
+    if (len == 2 && strncasecmp((const char*)data, "r3", 2) == 0) {
+        (new Rproxy3(rwer))->init();
         rwer = nullptr;
         return Server::deleteLater(NOERROR);
     }
@@ -339,6 +339,10 @@ void Guest3::SendDatagram(Buffer&& bb) {
 
 uint64_t Guest3::CreateUbiStream() {
     return std::dynamic_pointer_cast<QuicBase>(rwer)->createUbiStream();
+}
+
+uint64_t Guest3::CreateBiStream() {
+    return std::dynamic_pointer_cast<QuicBase>(rwer)->createBiStream();
 }
 
 void Guest3::Reset(uint64_t id, uint32_t code) {

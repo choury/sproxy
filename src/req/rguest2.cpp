@@ -21,28 +21,36 @@ Rguest2::Rguest2(const Destination& dest, const std::string& name):
 
 size_t Rguest2::InitProc(Buffer& bb) {
     size_t ret = Guest2::InitProc(bb);
-    if(ret > 0) {
-        uint32_t id = OpenStream();
-        char preface[URLLIMIT];
-        snprintf(preface, sizeof(preface), "GET /rproxy/%s HTTP/1.1" CRLF "Host: localhost" CRLF CRLF, name.c_str());
-
-        auto req = UnpackHttpReq(preface);
-        Block buff(BUF_LEN);
-        Http2_header* const header = (Http2_header *)buff.data();
-        memset(header, 0, sizeof(*header));
-        header->type = HTTP2_STREAM_PUSH_PROMISE;
-        header->flags = HTTP2_END_HEADERS_F | HTTP2_END_STREAM_F;
-
-        set32(header->id, id);
-        size_t len = hpack_encoder.PackHttp2Req(req, header+1, BUF_LEN - sizeof(Http2_header));
-        if(len == 0){
-            LOGE("http2 request header too long: %s\n", req->geturl().c_str());
-            deleteLater(PROTOCOL_ERR);
-            return ret;
-        }
-        set24(header->length, len);
-        SendData(Buffer{std::move(buff), len + sizeof(Http2_header), id});
+    if(ret <= 0) {
+        return ret;
     }
+    char preface[URLLIMIT];
+    snprintf(preface, sizeof(preface), "GET /rproxy/%s HTTP/1.1" CRLF "Host: localhost" CRLF CRLF, name.c_str());
+
+    auto req = UnpackHttpReq(preface);
+    //注册先于任何请求到达，没有承载流(id=0)，PushPromise内部自开
+    uint32_t pid = PushPromise(0, req);
+    if(pid == UINT32_MAX){
+        return ret; //已ErrProc
+    }
+
+    //在承诺流上交付承诺的响应
+    auto res = HttpResHeader::create(S200, sizeof(S200), 0);
+    Block rbuff(BUF_LEN);
+    Http2_header* const rheader = (Http2_header*)rbuff.data();
+    memset(rheader, 0, sizeof(*rheader));
+    rheader->type = HTTP2_STREAM_HEADERS;
+    rheader->flags = HTTP2_END_HEADERS_F | HTTP2_END_STREAM_F;
+
+    set32(rheader->id, pid);
+    size_t rlen = hpack_encoder.PackHttp2Res(res, rheader + 1, BUF_LEN - sizeof(Http2_header));
+    if(rlen == 0){
+        LOGE("http2 response header too long: %s\n", res->status);
+        deleteLater(PROTOCOL_ERR);
+        return ret;
+    }
+    set24(rheader->length, rlen);
+    SendData(Buffer{std::move(rbuff), rlen + sizeof(Http2_header), pid});
     return ret;
 }
 

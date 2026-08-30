@@ -4,19 +4,7 @@
 
 #include "rproxy2.h"
 
-Rproxy2::Rproxy2(std::shared_ptr<RWer> rwer, std::string name):Proxy2(rwer), name(name) {
-}
-
 void Rproxy2::init() {
-    if(!name.empty()) {
-        if(rproxys.count(name)) {
-            return deleteLater(RPROXY_DUP);
-        }
-        if(name == "local") {
-            return deleteLater(RPROXY_DUP);
-        }
-        rproxys[name] = this;
-    }
     return Proxy2::init(true, nullptr, nullptr);
 }
 
@@ -27,6 +15,9 @@ void Rproxy2::PushProc(uint32_t id, std::shared_ptr<HttpReqHeader> req) {
         return deleteLater(PROTOCOL_ERR);
     }
     std::string pname = req->path + 8;
+    if(pname.empty()) {
+        return deleteLater(PROTOCOL_ERR);
+    }
     if(name == pname) {
         return;
     } else if(!name.empty()) {

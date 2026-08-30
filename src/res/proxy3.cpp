@@ -146,6 +146,10 @@ uint64_t Proxy3::CreateUbiStream() {
     return std::dynamic_pointer_cast<QuicBase>(rwer)->createUbiStream();
 }
 
+uint64_t Proxy3::CreateBiStream() {
+    return std::dynamic_pointer_cast<QuicBase>(rwer)->createBiStream();
+}
+
 void Proxy3::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw) {
     uint64_t id = maxDataId = std::dynamic_pointer_cast<QuicBase>(rwer)->createBiStream();
     assert((http3_flag & HTTP3_FLAG_GOAWAYED) == 0);
@@ -224,9 +228,14 @@ bool Proxy3::reconnect() {
     return false; // Not a QUIC connection, clean up
 }
 
-void Proxy3::init(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw) {
+void Proxy3::init(bool enable_push, std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw) {
     Init();
-    request(req, rw);
+    if(enable_push) {
+        SendMaxPushId(0);
+    }
+    if(req) {
+        request(req, rw);
+    }
 }
 
 void Proxy3::ResProc(uint64_t id, std::shared_ptr<HttpResHeader> header) {

@@ -34,6 +34,7 @@ protected:
     virtual void ErrProc(int errcode)override;
     virtual void Reset(uint64_t id, uint32_t code)override;
     virtual uint64_t CreateUbiStream() override;
+    virtual uint64_t CreateBiStream() override;
     virtual void SendDatagram(Buffer&& bb)override;
 
     void RstProc(uint64_t id, uint32_t errcode);
@@ -49,7 +50,7 @@ public:
     virtual void dump_stat(Dumper dp, void* param) override;
     virtual void dump_usage(Dumper dp, void* param) override;
 
-    void init(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw);
+    void init(bool enable_push, std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw);
     void reflect(IVisitor& v) override {
         Responser::reflect(v);
         Http3Requster::reflect(v);

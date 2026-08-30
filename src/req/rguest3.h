@@ -9,6 +9,7 @@ class Rguest3: public Guest3{
     uint32_t starttime;
     bool respawned = false;
     static size_t next_retry;
+    virtual void MaxPushIdProc(uint64_t maxid) override;
 public:
     Rguest3(const Destination& dest, const std::string& name);
     virtual void ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> req) override;

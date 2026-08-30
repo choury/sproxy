@@ -102,7 +102,7 @@ void Host::connected(uint32_t resolved_time) {
         const unsigned char *data;
         unsigned int len;
         srwer->get_alpn(&data, &len);
-        if (data && strncasecmp((const char*)data, "h2", len) == 0) {
+        if (data && len == 2 && strncasecmp((const char*)data, "h2", 2) == 0) {
             LOG("<host> delegate %" PRIu64 " %s to proxy2\n",
                 status.req->request_id, status.req->geturl().c_str());
             Proxy2 *proxy = new Proxy2(srwer);
@@ -119,13 +119,13 @@ void Host::connected(uint32_t resolved_time) {
         const unsigned char *data;
         unsigned int len;
         qrwer->getAlpn(&data, &len);
-        if(data && strncasecmp((const char*)data, "h3", len) == 0) {
+        if(data && len == 2 && strncasecmp((const char*)data, "h3", 2) == 0) {
             LOG("<host> delegate %" PRIu64 " %s to proxy3\n",
                 status.req->request_id, status.req->geturl().c_str());
             Proxy3 *proxy = new Proxy3(qrwer);
             rwer = nullptr;
 
-            proxy->init(status.req, status.rw);
+            proxy->init(false, status.req, status.rw);
             responsers.add(key, proxy);
             return Server::deleteLater(NOERROR);
         }

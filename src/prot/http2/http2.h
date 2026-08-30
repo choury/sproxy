@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
+#include <set>
 
 class Buffer;
 
@@ -99,6 +100,9 @@ protected:
     Hpack_encoder hpack_encoder;
     Hpack_decoder hpack_decoder;
     std::unique_ptr<Buffer> header_buffer;
+    std::set<uint32_t> push_ids;        //已承诺、尚未在承诺流上收到响应的承诺流id
+    uint32_t push_promise_id = 0;       //正在组装的PUSH_PROMISE的承诺流id
+    uint32_t last_push_promise_id = 0;  //已见最大承诺流id，承诺流id必须严格递增(§5.1.1)
     virtual size_t InitProc(Buffer& bb) = 0;
     size_t DefaultProc(Buffer& bb);
 
@@ -142,6 +146,7 @@ protected:
     virtual void HeadersProc()override;
     virtual void ReqProc(uint32_t id, std::shared_ptr<HttpReqHeader> req) = 0;
     virtual void AltSvc(uint32_t id, const char* origin, const char* value);
+    uint32_t PushPromise(uint32_t id, std::shared_ptr<HttpReqHeader> req);
 public:
     uint32_t OpenStream();
 
@@ -158,6 +163,7 @@ protected:
     virtual void HeadersProc()override;
     virtual void ResProc(uint32_t id, std::shared_ptr<HttpResHeader> res) = 0;
     virtual void PushProc(uint32_t, std::shared_ptr<HttpReqHeader>) {}
+    virtual void PushResProc(uint32_t, std::shared_ptr<HttpResHeader>) {}
 public:
     uint32_t OpenStream();
 

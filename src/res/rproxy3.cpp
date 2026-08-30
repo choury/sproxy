@@ -4,10 +4,25 @@
 
 #include "rproxy3.h"
 
-Rproxy3::Rproxy3(std::shared_ptr<RWer> rwer, std::string name):Proxy3(rwer), name(name) {
+void Rproxy3::init() {
+    return Proxy3::init(true, nullptr, nullptr);
 }
 
-void Rproxy3::init() {
+void Rproxy3::PushProc(uint64_t pushid, std::shared_ptr<HttpReqHeader> req) {
+    LOG("Push frame [%" PRIu64 "]: %s\n", pushid, req->geturl().c_str());
+    if(memcmp(req->path, "/rproxy/", 8) != 0) {
+        return deleteLater(PROTOCOL_ERR);
+    }
+    std::string pname = req->path + 8;
+    if(pname.empty()) {
+        return deleteLater(PROTOCOL_ERR);
+    }
+    if(name == pname) {
+        return;
+    } else if(!name.empty()) {
+        return deleteLater(RPROXY_DUP);
+    }
+    name = pname;
     if(rproxys.count(name)) {
         return deleteLater(RPROXY_DUP);
     }
@@ -15,7 +30,6 @@ void Rproxy3::init() {
         return deleteLater(RPROXY_DUP);
     }
     rproxys[name] = this;
-    Http3Base::Init();
 }
 
 void Rproxy3::deleteLater(uint32_t errcode) {

@@ -12,7 +12,7 @@ class Rproxy2: public Proxy2 {
     virtual void setIdle(uint32_t) override {}
     virtual void PushProc(uint32_t id, std::shared_ptr<HttpReqHeader> req) override;
 public:
-    explicit Rproxy2(std::shared_ptr<RWer> rwer, std::string name);
+    using Proxy2::Proxy2;
     virtual void deleteLater(uint32_t errcode) override;
 
     void init();

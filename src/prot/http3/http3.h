@@ -81,12 +81,25 @@ protected:
     Qpack_decoder qpack_decoder;
     // remaining bytes of current DATA frame per stream
     std::unordered_map<uint64_t, uint64_t> data_remain;
+    std::unordered_map<uint64_t, uint64_t> push_streams;  //push stream id -> Push ID，值UINT64_MAX表示响应头已交付或已被CANCEL_PUSH取消
+    int64_t max_push_id = -1;           //收到的对端授权上限
+    int64_t sent_max_push_id = -1;      //本端发出的授权上限
+    uint64_t next_push_id = 0;          //发送侧下一个可用的Push ID，仅push发送方使用，按发送顺序严格递增
+    bool ctrl_settings_recv = false;    //控制流首帧必须为SETTINGS(§6.2.1)
     size_t Http3_Proc(Buffer& bb);
+    //Http3_Proc按流类别分派到以下处理函数，均返回本次消费的字节数，0表示数据不完整或已出错
+    size_t CtrlStreamProc(Buffer& bb);     //对端控制流
+    size_t PushStreamProc(Buffer& bb);     //push流
+    size_t RequestStreamProc(Buffer& bb);  //双向请求流
+    size_t UniStreamProc(Buffer& bb);      //未登记的单向流，解析流类型
     void Datagram_Proc(Buffer&& bb);
 
     virtual void HeadersProc(uint64_t id, const uchar *header, size_t len) = 0;
     virtual void SettingsProc(const uchar *header, size_t len);
     virtual void GoawayProc(uint64_t id);
+    virtual void PushProc(uint64_t pushid, std::shared_ptr<HttpReqHeader> req) = 0;
+    virtual void PushResProc(uint64_t, std::shared_ptr<HttpResHeader>) = 0;
+    virtual void MaxPushIdProc(uint64_t) = 0;
     //返回已消费的字节数，<0 表示bb保持原样未动
     virtual ssize_t DataProc(Buffer& bb) = 0;
     virtual void DatagramProc(Buffer&& bb) = 0;
@@ -96,6 +109,7 @@ protected:
 
     void Goaway(uint64_t lastid);
     virtual uint64_t CreateUbiStream() = 0;
+    virtual uint64_t CreateBiStream() = 0;
     virtual void SendData(Buffer&& bb) = 0;
     virtual void SendDatagram(Buffer&& bb) = 0;
     virtual void PushData(Buffer&& bb);
@@ -118,11 +132,18 @@ public:
 };
 
 class Http3Requster:public Http3Base{
+private:
+    virtual void MaxPushIdProc(uint64_t) override final {
+        ErrProc(HTTP3_ERR_FRAME_UNEXPECTED);
+    }
 protected:
     virtual void HeadersProc(uint64_t id, const uchar* header, size_t len) override;
     virtual void ResProc(uint64_t id, std::shared_ptr<HttpResHeader> res) = 0;
+    void SendMaxPushId(uint64_t maxid);
+    virtual void PushProc(uint64_t, std::shared_ptr<HttpReqHeader>) {}
+    virtual void PushResProc(uint64_t, std::shared_ptr<HttpResHeader>) {}
 public:
-    Http3Requster();
+    using Http3Base::Http3Base;
 
     void reflect(IVisitor& v) override {
         Http3Base::reflect(v);
@@ -130,11 +151,16 @@ public:
 };
 
 class Http3Responser: public Http3Base {
+private:
+    virtual void PushProc(uint64_t, std::shared_ptr<HttpReqHeader>) override final {}
+    virtual void PushResProc(uint64_t, std::shared_ptr<HttpResHeader>) override final {}
 protected:
     virtual void HeadersProc(uint64_t id, const uchar* header, size_t len) override;
     virtual void ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> res) = 0;
+    virtual void MaxPushIdProc(uint64_t) override {};
+    uint64_t PushPromise(uint64_t id, std::shared_ptr<HttpReqHeader> req);
 public:
-    Http3Responser();
+    using Http3Base::Http3Base;
 
     void reflect(IVisitor& v) override {
         Http3Base::reflect(v);

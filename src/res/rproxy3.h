@@ -11,8 +11,9 @@ class Rproxy3: public Proxy3 {
     std::string name;
 protected:
     virtual void setIdle(uint32_t) override {};
+    virtual void PushProc(uint64_t pushid, std::shared_ptr<HttpReqHeader> req) override;
 public:
-    explicit Rproxy3(std::shared_ptr<RWer> rwer, std::string name);
+    using Proxy3::Proxy3;
     virtual void deleteLater(uint32_t errcode) override;
 
     void init();

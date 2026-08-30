@@ -437,18 +437,6 @@ static int select_alpn_cb(SSL *ssl,
                 *outlen = strlen((char *) *out);
                 return SSL_TLSEXT_ERR_OK;
             }
-            if(strcmp(priorities[i], "r2") == 0 && memcmp(p, "r2/", 3) == 0 && len >= 4) {
-                LOGD(DSSL, "alpn pick %s\n", priorities[i]);
-                *out = (unsigned char *) p;
-                *outlen = len;
-                return SSL_TLSEXT_ERR_OK;
-            }
-            if(strcmp(priorities[i], "r3") == 0 && memcmp(p, "r3/", 3) == 0 && len >= 4) {
-                LOGD(DSSL, "alpn pick %s\n", priorities[i]);
-                *out = (unsigned char *) p;
-                *outlen = len;
-                return SSL_TLSEXT_ERR_OK;
-            }
             p += len;
         }
     }

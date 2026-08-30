@@ -34,7 +34,9 @@ size_t Http2Base::DefaultProc(Buffer& bb) {
     switch(header->type) {
         uint32_t value;
     case HTTP2_STREAM_DATA: {
-        if (bb.id == 0 || (bb.id > recvid && bb.id >= sendid - 1)) {
+        //TODO: 承诺流id严格递增：偶数且不超last_push_promise_id的流必为已承诺或已被隐式关闭，当前先直接丢弃
+        const bool pushed = (bb.id & 1) == 0 && bb.id <= last_push_promise_id;
+        if (bb.id == 0 || (bb.id > recvid && bb.id >= sendid - 1 && !pushed)) {
             LOGE("ERROR wrong data id: %" PRIu64"/%d/%d\n", bb.id, recvid, sendid);
             ErrProc(HTTP2_ERR_PROTOCOL_ERROR);
             return 0;
@@ -58,6 +60,14 @@ size_t Http2Base::DefaultProc(Buffer& bb) {
         }
         length-= padlen;
         auto flags = header->flags;
+        if(pushed){
+            LOGD(DHTTP2, "drop data frame on pushed stream: %" PRIu64", length:%d\n", bb.id, length);
+            bb.reserve(length + padlen);
+            if (flags & HTTP2_END_STREAM_F) {
+                EndProc(bb.id);
+            }
+            return len - bb.len;
+        }
         //这里我们规定必须需要处理所有数据，因为我们的窗口大小是根据对端的cap进行设置的
         //不然，状态机会混乱，因为无法处理半个frame的情况
         //所以DataProc这个函数不需要一个返回值，我们也不考虑对端主动shrunk自己的cap的情况
@@ -247,8 +257,9 @@ size_t Http2Base::DefaultProc(Buffer& bb) {
             ErrProc(HTTP2_ERR_PROTOCOL_ERROR);
             return 0;
         }
-        if(bb.id & 1) {
-            LOGE("ERROR get push promise with id of odd\n");
+        //承载流：奇数=标准push挂对端请求流，0=私有注册帧(连接级)，非0偶数非法
+        if(bb.id != 0 && (bb.id & 1) == 0) {
+            LOGE("ERROR get push promise with even carrier id: %d\n", (int)bb.id);
             ErrProc(HTTP2_ERR_PROTOCOL_ERROR);
             return 0;
         }
@@ -262,6 +273,22 @@ size_t Http2Base::DefaultProc(Buffer& bb) {
         if (header->flags & HTTP2_PADDED_F) {
             padlen = *pos++;
         }
+
+        if(length < (uint32_t)(pos - (char*)bb.data()) + 4){
+            LOGE("ERROR push promise without promised stream id: %d\n", length);
+            ErrProc(HTTP2_ERR_PROTOCOL_ERROR);
+            return 0;
+        }
+        //载荷 = [Pad Length] + Promised Stream ID + Header Block Fragment + Padding，
+        uint32_t promised = get32(pos) & 0x7fffffff;
+        pos += 4;
+        if((promised & 1) || promised <= last_push_promise_id){
+            LOGE("ERROR push promise invalid promised id: %d\n", promised);
+            ErrProc(HTTP2_ERR_PROTOCOL_ERROR);
+            return 0;
+        }
+        last_push_promise_id = promised;
+        push_promise_id = promised;
 
         if(header_buffer != nullptr){
             LOGE("ERROR get another header id: %d/%" PRIu64"\n", (int)header_buffer->id, bb.id);
@@ -277,9 +304,6 @@ size_t Http2Base::DefaultProc(Buffer& bb) {
         header_buffer = std::make_unique<Buffer>(bb);
         header_buffer->reserve(prelen);
         header_buffer->truncate(length - prelen - padlen);
-        if (header->flags & HTTP2_END_STREAM_F) {
-            http2_flag |= HTTP2_FLAG_END;
-        }
         if(header->flags & HTTP2_END_HEADERS_F){
             HeadersProc();
             if(http2_flag & HTTP2_FLAG_END){
@@ -599,6 +623,31 @@ uint32_t Http2Responser::OpenStream(){
     return id + 1;
 }
 
+//在流id上发送PUSH_PROMISE，承诺流号取本端下一个流号并返回，失败返回UINT32_MAX；
+//id非0时应为触发推送的对端请求流(奇数)，id=0为私有注册帧(直接走连接流，不占用流号)
+uint32_t Http2Responser::PushPromise(uint32_t id, std::shared_ptr<HttpReqHeader> req) {
+    assert(id == 0 || (id & 1) == 1);
+    uint32_t promised = OpenStream(); //承诺流，响应在此交付
+    Block buff(BUF_LEN);
+    Http2_header* const header = (Http2_header *)buff.data();
+    memset(header, 0, sizeof(*header));
+    header->type = HTTP2_STREAM_PUSH_PROMISE;
+    header->flags = HTTP2_END_HEADERS_F;
+
+    set32(header->id, id);
+    set32(header + 1, promised); //载荷前4字节为Promised Stream ID
+    size_t len = hpack_encoder.PackHttp2Req(req, (char*)(header + 1) + 4,
+                                            BUF_LEN - sizeof(Http2_header) - 4);
+    if(len == 0){
+        LOGE("http2 request header too long: %s\n", req->geturl().c_str());
+        ErrProc(HTTP2_ERR_INTERNAL_ERROR);
+        return UINT32_MAX;
+    }
+    set24(header->length, len + 4);
+    SendData(Buffer{std::move(buff), len + 4 + sizeof(Http2_header), id});
+    return promised;
+}
+
 size_t Http2Responser::InitProc(Buffer& bb) {
     size_t prelen = strlen(HTTP2_PREFACE);
     if(bb.len < prelen) {
@@ -618,6 +667,11 @@ size_t Http2Responser::InitProc(Buffer& bb) {
 
 void Http2Responser::HeadersProc() {
     uint32_t id = header_buffer->id;
+    if (push_promise_id) {
+        LOGE("ERROR Promised stream id: %d/%d\n", id, push_promise_id);
+        ErrProc(HTTP2_ERR_STREAM_CLOSED);
+        return;
+    }
     if(id <= recvid || (id&1) == 0){
         LOGE("ERROR header id: %d/%d\n", id, recvid);
         ErrProc(HTTP2_ERR_STREAM_CLOSED);
@@ -691,7 +745,17 @@ size_t Http2Requster::InitProc(Buffer& bb) {
 
 void Http2Requster::HeadersProc() {
     uint32_t id = header_buffer->id;
-    if(id & 1) {
+    //PUSH_PROMISE的头块按帧类型分派(承载流可为0或奇数)，不能按流id奇偶猜
+    if(push_promise_id) {
+        std::shared_ptr<HttpReqHeader> req = hpack_decoder.UnpackHttp2Req(header_buffer->data(), header_buffer->len);
+        if(req == nullptr){
+            ErrProc(HTTP2_ERR_COMPRESSION_ERROR);
+            return;
+        }
+        push_ids.insert(push_promise_id);
+        PushProc(push_promise_id, req);
+        push_promise_id = 0;
+    } else if(id & 1) {
         if(id >= sendid){
             LOGE("ERROR header id: %d/%d\n", id, sendid);
             ErrProc(HTTP2_ERR_STREAM_CLOSED);
@@ -704,13 +768,18 @@ void Http2Requster::HeadersProc() {
             return;
         }
         ResProc(id, res);
-    }else {
-        std::shared_ptr<HttpReqHeader> req = hpack_decoder.UnpackHttp2Req(header_buffer->data(), header_buffer->len);
-        if(req == nullptr){
+    } else if(push_ids.count(id)) {
+        std::shared_ptr<HttpResHeader> res = hpack_decoder.UnpackHttp2Res(header_buffer->data(), header_buffer->len);
+        if(res == nullptr){
             ErrProc(HTTP2_ERR_COMPRESSION_ERROR);
             return;
         }
-        PushProc(id, req);
+        PushResProc(id, res);
+        push_ids.erase(id);
+    } else {
+        LOGE("ERROR get headers on unexpected stream: %d\n", (int)id);
+        ErrProc(HTTP2_ERR_PROTOCOL_ERROR);
+        return;
     }
     header_buffer = nullptr;
 }

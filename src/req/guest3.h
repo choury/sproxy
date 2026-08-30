@@ -42,6 +42,7 @@ protected:
     virtual void ErrProc(int errcode)override;
     virtual void Reset(uint64_t id, uint32_t code)override;
     virtual uint64_t CreateUbiStream() override;
+    virtual uint64_t CreateBiStream() override;
     virtual void SendDatagram(Buffer&& bb)override;
 
     void init();
