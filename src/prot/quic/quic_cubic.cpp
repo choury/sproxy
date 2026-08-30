@@ -50,7 +50,7 @@ void QuicCubic::OnCongestionEvent(uint64_t sent_time) {
     epoch_start_time = now;
     w_est = congestion_window;
     LOGD(DQUIC, "cubic cut congestion_window from %zd to %zd, w_max: %.1f\n",
-         (size_t)(cwnd_pkts * max_datagram_size), ssthresh, w_max);
+         (size_t)(cwnd_pkts * max_datagram_size), (size_t)ssthresh, w_max);
 }
 
 void QuicCubic::OnPacketsLost(pn_namespace* ns, std::list<quic_packet_pn>& lost_packets) {

@@ -3,7 +3,6 @@
 #include "req/requester.h"
 #include "misc/util.h"
 #include "misc/config.h"
-#include "misc/strategy.h"
 #include "prot/memio.h"
 #include "cgi.h"
 #include "doh.h"
@@ -335,13 +334,21 @@ void File::dump_usage(Dumper dp, void *param) {
 }
 
 
-void File::getfile(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw) {
+void File::getfile(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw, bool authorized) {
     uint64_t id = req->request_id;
     std::string filename = resolve(req->filename);
     bool is_webdav = false;
+    auto sheader = HttpResHeader::create(S401, sizeof(S401), id);
+    sheader->set("WWW-Authenticate", "Basic realm=\"Secure Area\"");
     if(filename == "status"){
+        if(!authorized) {
+            return response(rw, sheader, "[[Authorization needed]]\n");
+        }
         return (new Status())->request(req, rw);
     }else if (filename == "dns-query"){
+        if(!authorized) {
+            return response(rw, sheader, "[[Authorization needed]]\n");
+        }
         return Doh::GetInstance()->request(req, rw);
     }else if(filename == "rproxy/sw") {
         filename = "webui/sw.html";
@@ -354,10 +361,8 @@ void File::getfile(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> 
         std::string cgi = pathjoin(opt.rootdir, std::string("cgi/libtest") + LIBSUFFIX);
         return getcgi(req, cgi.c_str(), rw);
     }else if(opt.webdav_root && (req->ismethod("GET") || req->ismethod("HEAD")) && startwith(filename.c_str(), "webdav/")){
-        if(!checkauth(rw->getSrc().hostname, req)) {
-            auto sheader = HttpResHeader::create(S401, sizeof(S401), id);
-            sheader->set("WWW-Authenticate", "Basic realm=\"Secure Area\"");
-            return response(rw, sheader, "");
+        if(!authorized) {
+            return response(rw, sheader, "[[Authorization needed]]\n");
         }
         is_webdav = true;
         //strip "/webdav/"

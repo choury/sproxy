@@ -226,6 +226,7 @@ static struct option long_options[] = {
     {"rproxy-dg-auth",no_argument,       NULL, 0 },
     {"request-header",required_argument, NULL,  0 },
     {"forward-header",required_argument, NULL,  0 },
+    {"mimic",         no_argument,       NULL,  0 },
 #if __linux__
     {"tun",           no_argument,       NULL,  0 },
     {"tap",           no_argument,       NULL,  0 },
@@ -279,6 +280,7 @@ static struct option_detail option_detail[] = {
     {"ipv6", "The ipv6 mode ([auto], enable, disable)", option_enum, &opt.ipv6_mode, auto_options},
     {"ipv6-prefer", "Prefer IPv6 address; error if IPv6 is unavailable", option_bool, &opt.ipv6_prefer, (void*)true},
     {"key", "Private key file name (ssl/quic)", option_string, &keyfile, NULL},
+    {"mimic", "Make sproxy mimic a standard web server.", option_bool, &opt.mimic, (void*)true},
     {"mitm", "Mitm mode for https request ([auto], enable, disable), require cakey", option_enum, &opt.mitm_mode, auto_options},
     {"pcap", "Save packets in pcap file for vpn", option_string, &opt.pcap_file, NULL},
     {"pcap-len", "Max packet length to save in pcap file", option_uint64, &opt.pcap_len, NULL},

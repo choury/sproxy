@@ -58,8 +58,8 @@ bool shouldNegotiate(std::shared_ptr<const HttpReqHeader> req, Requester* src){
     return false;
 }
 
-static CheckResult check_header(std::shared_ptr<const HttpReqHeader> req, const char* src_host, bool skip_auth){
-    if (!skip_auth && !checkauth(src_host, req)){
+static CheckResult check_header(std::shared_ptr<const HttpReqHeader> req, const char* src_host){
+    if (!checkauth(src_host, req)){
         return CheckResult::AuthFailed;
     }
     if(req->has("via") && strstr(req->get("via"), identify.c_str())){
@@ -99,6 +99,18 @@ static std::string getBackend(std::shared_ptr<HttpReqHeader> req) {
     }
 
     return backend;
+}
+
+std::string encodeCredit(const struct Credit* credit) {
+    char auth_plain[AUTHLIMIT * 3 + 3];
+    char auth_encode[AUTHLIMIT * 5];
+    if(credit->identifier[0]) {
+        snprintf(auth_plain, sizeof(auth_plain), "%s+%s:%s", credit->user, credit->identifier, credit->pass);
+    } else {
+        snprintf(auth_plain, sizeof(auth_plain), "%s:%s", credit->user, credit->pass);
+    }
+    Base64Encode(auth_plain, strlen(auth_plain), auth_encode);
+    return std::string{"Basic "} + std::string{auth_encode};
 }
 
 void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw){
@@ -147,6 +159,11 @@ void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw)
         }
     }
 
+    auto check_result = check_header(req, rw->getSrc().hostname);
+    if(check_result == CheckResult::LoopBack)
+        return response(rw, HttpResHeader::create(S508, sizeof(S508), id), "[[redirect back]]\n");
+    if(check_result == CheckResult::NoPort)
+        return response(rw, HttpResHeader::create(S400, sizeof(S400), id), "[[no port]]\n");
 
     strategy stra{Strategy::none, ""};
     std::string backend = getBackend(req);
@@ -165,11 +182,6 @@ void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw)
         return response(rw, HttpResHeader::create(S404, sizeof(S404), id),
                             "[[can't find backend]]\n");
     }
-    if(stra.s == Strategy::block){
-        req->set(STRATEGY, getstrategystring(Strategy::block));
-        return response(rw, HttpResHeader::create(S403, sizeof(S403), id),
-                            "This site is blocked, please contact administrator for more information.\n");
-    }
     if(stra.s == Strategy::local){
         if(!opt.restrict_local && !req->http_method() && !req->webdav_method()) {
             return response(rw, HttpResHeader::create(S405, sizeof(S405), id),
@@ -179,24 +191,26 @@ void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw)
             ((req->http_method() ||(req->webdav_method())) && (rw->getDst().port == 0 || req->getDport() == rw->getDst().port)))
         {
             req->set(STRATEGY, getstrategystring(Strategy::local));
-            return File::getfile(req, rw);
+            return File::getfile(req, rw, check_result == CheckResult::Succeed);
         }
         stra.s = Strategy::direct;
     }
-    req->set(STRATEGY, getstrategystring(stra.s));
     bool skip_auth = stra.s == Strategy::forward || (stra.s == Strategy::direct && stra.ext == PUBLIC);
-    switch(check_header(req, rw->getSrc().hostname, skip_auth)){
-    case CheckResult::Succeed:
-        break;
-    case CheckResult::AuthFailed: {
-        auto sheader = HttpResHeader::create(S407, sizeof(S407), id);
-        sheader->set("Proxy-Authenticate", "Basic realm=\"Secure Area\"");
-        return response(rw, sheader, "[[Authorization needed]]\n");
+    if(!skip_auth && check_result == CheckResult::AuthFailed) {
+        if(!opt.mimic) {
+            auto sheader = HttpResHeader::create(S407, sizeof(S407), id);
+            sheader->set("Proxy-Authenticate", "Basic realm=\"Secure Area\"");
+            return response(rw, sheader, "[[Authorization needed]]\n");
+        } else if(req->ismethod("CONNECT")) {
+            return response(rw, HttpResHeader::create(S405, sizeof(S405), id), "[[unsupported method]]\n");
+        } else {
+            return response(rw, HttpResHeader::create(S404, sizeof(S404), id), "[[host not found]]\n");
+        }
     }
-    case CheckResult::LoopBack:
-        return response(rw, HttpResHeader::create(S508, sizeof(S508), id), "[[redirect back]]\n");
-    case CheckResult::NoPort:
-        return response(rw, HttpResHeader::create(S400, sizeof(S400), id), "[[no port]]\n");
+    req->set(STRATEGY, getstrategystring(stra.s));
+    if(stra.s == Strategy::block){
+        return response(rw, HttpResHeader::create(S403, sizeof(S403), id),
+                            "This site is blocked, please contact administrator for more information.\n");
     }
     req->del("Proxy-Authorization");
     req->append("Via", identify);
@@ -213,15 +227,7 @@ void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw)
         //req->set("X-Forwarded-For", "2001:da8:b000:6803:62eb:69ff:feb4:a6c2");
         req->chain_proxy = true;
         if(dest.credit.user[0]) {
-            char auth_plain[AUTHLIMIT * 3 + 3];
-            char auth_encode[AUTHLIMIT * 5];
-            if(dest.credit.identifier[0]) {
-                snprintf(auth_plain, sizeof(auth_plain), "%s+%s:%s", dest.credit.user, dest.credit.identifier, dest.credit.pass);
-            } else {
-                snprintf(auth_plain, sizeof(auth_plain), "%s:%s", dest.credit.user, dest.credit.pass);
-            }
-            Base64Encode(auth_plain, strlen(auth_plain), auth_encode);
-            req->set("Proxy-Authorization", std::string("Basic ") + auth_encode);
+            req->set("Proxy-Authorization", encodeCredit(&dest.credit));
         }else if(strlen(opt.rewrite_auth)){
             req->set("Proxy-Authorization", std::string("Basic ") + opt.rewrite_auth);
         }

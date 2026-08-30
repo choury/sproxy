@@ -152,7 +152,7 @@ Guest::Guest(std::shared_ptr<RWer> rwer): Requester(rwer){
 }
 
 bool Guest::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
-    static const char*  HCONNECT = "HTTP/1.1 200 Connection establishe" CRLF CRLF;
+    static const char*  HCONNECT = "HTTP/1.1 200 Connection established" CRLF CRLF;
     if(statuslist.size() >= MAX_CONCURRENT_REQS) {
         //流水线深度超限，多为恶意堆积，断开连接防止内存被耗尽
         LOGE("(%s): too many pipelined requests: %zd, close it\n",
@@ -160,7 +160,7 @@ bool Guest::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
         return false;
     }
     auto _cb = response(id);
-    if(header->ismethod("CONNECT") &&
+    if(header->ismethod("CONNECT") && !opt.mimic &&
       (header->Dest.protocol[0] == 0 || strcmp(header->Dest.protocol, "tcp") == 0))
     {
         if(header->Dest.port == HTTPPORT) {

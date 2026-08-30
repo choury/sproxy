@@ -147,6 +147,9 @@ HttpResolver::HttpResolver(const Destination& server) {
     status.req = UnpackHttpReq(buff, headlen);
     memcpy(&status.req->Dest, &server, sizeof(Destination));
     status.req->Dest.system_resolve = true;
+    if(server.credit.user[0]) {
+        status.req->set("Authorization", encodeCredit(&server.credit));
+    }
 
     status.cb = std::make_shared<IMemRWerCallback>()->onData([this](Buffer&& bb) {
         if (bb.len == 0) {

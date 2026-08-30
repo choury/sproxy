@@ -37,4 +37,5 @@ void distribute_rproxy(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRW
 void response(std::shared_ptr<MemRWer> rw, std::shared_ptr<HttpResHeader> res, std::string_view body = "");
 void rewrite_rproxy_req(std::shared_ptr<HttpReqHeader> req);
 void rewrite_rproxy_res(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<HttpResHeader> res);
+std::string encodeCredit(const struct Credit* credit);
 #endif

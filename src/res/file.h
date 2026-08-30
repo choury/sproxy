@@ -31,7 +31,7 @@ public:
     virtual void deleteLater(uint32_t error) override;
     virtual void dump_stat(Dumper dp, void* param) override;
     virtual void dump_usage(Dumper dp, void* param) override;
-    static void getfile(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw);
+    static void getfile(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw, bool authorized);
     void reflect(IVisitor& v) override {
         Responser::reflect(v);
         reflect_all(filename, suffix, fd, st, status);
