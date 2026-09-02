@@ -73,6 +73,8 @@ protected:
         return cap > 0 ? cap : 0;
     }
     virtual void waitconnectHE(RW_EVENT events) override;
+    //握手前应用DNS查到的ech配置(或GREASE)，仅在客户端连接上调用
+    void apply_ech();
     virtual void ConsumeRData(uint64_t id) override {
         if(sslStats != SslStats::Established && sslStats != SslStats::SslEOF) {
             delEvents(RW_EVENT::READ);

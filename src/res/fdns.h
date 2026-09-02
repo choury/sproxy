@@ -7,6 +7,7 @@
 #include "hook/reflect.h"
 
 struct Dns_Query;
+struct Host_Result; //dns/resolver.h
 class FDns: public Responser{
     struct FDnsStatus{
         std::shared_ptr<RWer>          rw;
@@ -22,7 +23,7 @@ class FDns: public Responser{
 
     void Recv(Buffer&& bb);
     static void RawCb(std::shared_ptr<void> param, const char *buff, size_t size);
-    static void DnsCb(std::shared_ptr<void> param, int error, const std::list<sockaddr_storage>& addrs, int ttl);
+    static void DnsCb(const Host_Result& result);
     FDns();
     virtual ~FDns() override;
 public:

@@ -40,6 +40,13 @@
 #include <openssl/err.h>
 #include <openssl/x509.h>
 #include <openssl/pem.h>
+#ifdef HAVE_ECH
+#include <openssl/rand.h>
+#include <openssl/hpke.h>
+#include "misc/util.h"
+#include <fcntl.h>
+#include <unistd.h>
+#endif
 
 const char *DEFAULT_CIPHER_LIST =
             "TLS13-AES-256-GCM-SHA384:"
@@ -490,6 +497,180 @@ static int ssl_callback_ServerName(SSL *ssl, int* al, void* arg){
 }
 
 
+#ifdef HAVE_ECH
+/*
+ * ECH密钥状态文件，每行一项:
+ *   public_name=<域名>       ECHConfig里的公网回退名
+ *   ech_config=<base64>      序列化的单个ECHConfig
+ *   private_key=<base64>     X25519私钥(32字节)
+ * 文件不存在且设置了ech-name时自动生成新密钥并落盘。
+ */
+static SSL_ECH_KEYS* server_ech_keys = NULL;
+
+static int write_ech_key_file(const char* path, const char* public_name,
+                              const uint8_t* ech_config, size_t ech_config_len,
+                              const uint8_t* private_key, size_t private_key_len) {
+    char config_b64[1024];
+    char key_b64[64];
+    //base64输出长度为4*ceil(len/3)，加结尾nul后必须先验长度再编码
+    if((ech_config_len + 2) / 3 * 4 + 1 > sizeof(config_b64) ||
+       (private_key_len + 2) / 3 * 4 + 1 > sizeof(key_b64)) {
+        LOGE("ech key too long: %zd/%zd\n", ech_config_len, private_key_len);
+        return -1;
+    }
+    Base64Encode((const char*)ech_config, ech_config_len, config_b64);
+    Base64Encode((const char*)private_key, private_key_len, key_b64);
+    //私钥文件必须0600且不跟随已存在的符号链接，生成路径保证文件不存在
+    int fd = open(path, O_WRONLY | O_CREAT | O_EXCL, 0600);
+    if(fd < 0) {
+        LOGE("create %s failed: %s\n", path, strerror(errno));
+        return -1;
+    }
+    FILE* fp = fdopen(fd, "w");
+    if(fp == NULL) {
+        close(fd);
+        return -1;
+    }
+    int ret = 0;
+    if(fprintf(fp, "public_name=%s\n", public_name) < 0 ||
+       fprintf(fp, "ech_config=%s\n", config_b64) < 0 ||
+       fprintf(fp, "private_key=%s\n", key_b64) < 0 ||
+       fclose(fp) != 0) {
+        ret = -1;
+    }
+    return ret;
+}
+
+static SSL_ECH_KEYS* load_ech_keys() {
+    if(server_ech_keys != NULL) {
+        return server_ech_keys;
+    }
+    if(opt.ech_key == NULL) {
+        return NULL;
+    }
+    EVP_HPKE_KEY* hpke_key = EVP_HPKE_KEY_new();
+    SSL_ECH_KEYS* keys = SSL_ECH_KEYS_new();
+    if(hpke_key == NULL || keys == NULL) {
+        LOGE("alloc for ech keys failed\n");
+        EVP_HPKE_KEY_free(hpke_key);
+        SSL_ECH_KEYS_free(keys);
+        return NULL;
+    }
+    uint8_t ech_config[512];
+    size_t ech_config_len = 0;
+    uint8_t private_key[EVP_HPKE_MAX_PRIVATE_KEY_LENGTH];
+    size_t private_key_len = 0;
+    char public_name[DOMAINLIMIT] = {0};
+    FILE* fp = fopen(opt.ech_key, "r");
+    if(fp == NULL && errno != ENOENT) {
+        //权限/IO错误等必须如实报错，误生成新密钥会使已发布的DNS记录失效
+        LOGE("open ech key file %s failed: %s\n", opt.ech_key, strerror(errno));
+        goto err;
+    }
+
+    if(fp != NULL) {
+        char line[2048];
+        uint8_t bin[2048]; //与行缓冲对齐：2047个base64字符最多解码1535字节
+        while(fgets(line, sizeof(line), fp)) {
+            char b64[2048];
+            size_t len;
+            if(sscanf(line, "public_name=%255s", public_name) == 1) {
+                continue;
+            }
+            if(sscanf(line, "ech_config=%2047s", b64) == 1) {
+                len = Base64Decode(b64, strlen(b64), (char*)bin);
+                if(len == 0 || len > sizeof(ech_config)) {
+                    LOGE("invalid ech_config in %s\n", opt.ech_key);
+                    goto err;
+                }
+                memcpy(ech_config, bin, len);
+                ech_config_len = len;
+                continue;
+            }
+            if(sscanf(line, "private_key=%2047s", b64) == 1) {
+                len = Base64Decode(b64, strlen(b64), (char*)bin);
+                if(len == 0 || len > sizeof(private_key)) {
+                    LOGE("invalid private_key in %s\n", opt.ech_key);
+                    goto err;
+                }
+                memcpy(private_key, bin, len);
+                private_key_len = len;
+                continue;
+            }
+        }
+        fclose(fp);
+        fp = NULL;
+        if(EVP_HPKE_KEY_init(hpke_key, EVP_hpke_x25519_hkdf_sha256(),
+                             private_key, private_key_len) != 1) {
+            LOGE("ech private_key invalid: %s\n", opt.ech_key);
+            goto err;
+        }
+    } else {
+        //密钥文件不存在则生成新密钥
+        if(opt.ech_name == NULL || opt.ech_name[0] == 0) {
+            LOGE("ech-key %s not found and no ech-name set for generation\n", opt.ech_key);
+            goto err;
+        }
+        uint8_t config_id = 0;
+        RAND_bytes(&config_id, 1);
+        uint8_t* marshaled = NULL;
+        size_t marshaled_len = 0;
+        if(EVP_HPKE_KEY_generate(hpke_key, EVP_hpke_x25519_hkdf_sha256()) != 1 ||
+           SSL_marshal_ech_config(&marshaled, &marshaled_len, config_id, hpke_key,
+                                  opt.ech_name, strlen(opt.ech_name)) != 1 ||
+           marshaled_len > sizeof(ech_config)) {
+            LOGE("generate ech key failed\n");
+            OPENSSL_free(marshaled);
+            goto err;
+        }
+        memcpy(ech_config, marshaled, marshaled_len);
+        ech_config_len = marshaled_len;
+        OPENSSL_free(marshaled);
+        if(EVP_HPKE_KEY_private_key(hpke_key, private_key, &private_key_len,
+                                    sizeof(private_key)) != 1) {
+            goto err;
+        }
+        snprintf(public_name, sizeof(public_name), "%s", opt.ech_name);
+        if(write_ech_key_file(opt.ech_key, public_name, ech_config, ech_config_len,
+                              private_key, private_key_len) != 0) {
+            //落盘失败视为致命：重启后会生成不同密钥，已发布的DNS ech值随之失效
+            LOGE("persist ech key file %s failed\n", opt.ech_key);
+            goto err;
+        }
+    }
+
+    if(ech_config_len == 0 || private_key_len == 0) {
+        LOGE("ech key file %s missing ech_config or private_key\n", opt.ech_key);
+        goto err;
+    }
+    if(SSL_ECH_KEYS_add(keys, 1 /*is_retry_config*/, ech_config, ech_config_len, hpke_key) != 1) {
+        LOGE("ech key/config mismatch in %s\n", opt.ech_key);
+        goto err;
+    }
+    {
+        //打印可发布到DNS HTTPS RR ech参数的值
+        uint8_t* retry_configs = NULL;
+        size_t retry_configs_len = 0;
+        if(SSL_ECH_KEYS_marshal_retry_configs(keys, &retry_configs, &retry_configs_len) == 1) {
+            char b64[2048];
+            Base64Encode((const char*)retry_configs, retry_configs_len, b64);
+            LOG("[ECH] server ech enabled, publish to DNS HTTPS RR: ech=%s\n", b64);
+            OPENSSL_free(retry_configs);
+        }
+    }
+    EVP_HPKE_KEY_free(hpke_key);
+    server_ech_keys = keys;
+    return keys;
+err:
+    if(fp) {
+        fclose(fp);
+    }
+    EVP_HPKE_KEY_free(hpke_key);
+    SSL_ECH_KEYS_free(keys);
+    return NULL;
+}
+#endif
+
 SSL_CTX* initssl(int quic, const char* host){
     const char** alpn_list = NULL;
     if(quic) {
@@ -586,5 +767,13 @@ SSL_CTX* initssl(int quic, const char* host){
     SSL_CTX_set_alpn_select_cb(ctx, select_alpn_cb, alpn_list);
     SSL_CTX_set_read_ahead(ctx, 1);
     SSL_CTX_set_keylog_callback(ctx, keylog_write_line);
+#ifdef HAVE_ECH
+    //ECH协商成功后SNI回调/证书选择会透明反映inner ClientHello，无需额外处理
+    SSL_ECH_KEYS* ech_keys = load_ech_keys();
+    if(ech_keys != NULL && SSL_CTX_set1_ech_keys(ctx, ech_keys) != 1) {
+        LOGE("SSL_CTX_set1_ech_keys failed\n");
+        ERR_print_errors_fp(stderr);
+    }
+#endif
     return ctx;
 }

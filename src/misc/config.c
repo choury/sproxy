@@ -37,6 +37,7 @@
 
 static char** main_argv = NULL;
 static char* auto_options[] = {"disable", "enable", "auto", NULL};
+static char* ech_options[] = {"disable", "enable", "grease", NULL};
 static char* server_string = NULL;
 static char* policy_file = NULL;
 static struct arg_list secrets = {NULL, NULL};
@@ -111,6 +112,9 @@ struct options opt = {
     .quic_cc_algorithm = NULL,
     .quic_version      = 1,  // Default to QUIC v1
     .doh_server        = NULL,
+    .ech_mode          = Disable,
+    .ech_key           = NULL,
+    .ech_name          = NULL,
 
     .policy_read    = NULL,
     .policy_write   = NULL,
@@ -183,6 +187,9 @@ static struct option long_options[] = {
     {"disable-fakeip",no_argument,       NULL,  0 },
     {"disable-http2", no_argument,       NULL, '1'},
     {"doh",           optional_argument, NULL,  0 },
+    {"ech",           required_argument, NULL,  0 },
+    {"ech-key",       required_argument, NULL,  0 },
+    {"ech-name",      required_argument, NULL,  0 },
     {"fwmark",        required_argument, NULL,  0 },
     {"help",          no_argument,       NULL, 'h'},
     {"bind",          required_argument, NULL,  0 },
@@ -269,6 +276,9 @@ static struct option_detail option_detail[] = {
     {"disable-http2", "Use http/1.1 only", option_bool, &opt.disable_http2, (void*)true},
     {"disable-fakeip", "Do not use fakeip for vpn and tproxy", option_bool, &opt.disable_fakeip, (void*)true},
     {"doh", "DNS over HTTPS server (e.g., https://1.1.1.1), use server address if no argument", option_string, &opt.doh_server, ""},
+    {"ech", "ECH mode for outbound tls ([disable], enable, grease), need DNS HTTPS record", option_enum, &opt.ech_mode, ech_options},
+    {"ech-key", "ECH key file for server (generate with ech-name if not exists)", option_string, &opt.ech_key, NULL},
+    {"ech-name", "Public name for ECH key generation (server, e.g. cdn.example.com)", option_string, &opt.ech_name, NULL},
     {"forward-header", "append the header (name:value) when forward http request", option_list, &opt.forward_headers, NULL},
     {"fwmark", "Set fwmark for output packet", option_uint64, &opt.fwmark, NULL},
     {"help", "Print this usage", option_bool, NULL, NULL},

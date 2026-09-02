@@ -5,11 +5,16 @@
 #include "hook/reflect.h"
 
 #include <vector>
+#include <string>
 #include <netinet/in.h>
 #if __APPLE__
 #define BIND_8_COMPAT
 #endif
 #include <arpa/nameser.h>
+
+#ifndef ns_t_https
+#define ns_t_https 65
+#endif
 
 typedef HEADER DNS_HDR;
 
@@ -45,5 +50,10 @@ public:
     int build(const Dns_Query* query, unsigned char *buf, size_t buf_len)const;
     static int buildError(const Dns_Query* query, unsigned char errcode, unsigned char *buf);
 };
+
+//从DNS响应报文中解析HTTPS RR(type 65)的ech参数(SvcParam key 5),
+//多条记录的ech依次拼接为ECHConfigList。返回0表示报文完整(ech可能为空,
+//rcode错误或无记录视为无ech),-1表示报文畸形。ttl返回应答记录的最小TTL
+int parse_ech_configs(const char* buff, size_t len, std::string& ech_config_list, uint32_t* ttl);
 
 #endif

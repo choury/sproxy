@@ -6,6 +6,9 @@
 #include "misc/job.h"
 
 #include <queue>
+#include <string>
+
+struct Host_Result; //dns/resolver.h
 
 struct ISocketCallback: public IRWerCallback {
     std::function<void(const sockaddr_storage&, uint32_t resolved_time)> connectCB = [](const sockaddr_storage&, uint32_t){};
@@ -32,12 +35,13 @@ protected:
     void connect();
     Job     dns_job = nullptr;
     Job     con_failed_job = nullptr;
+    std::string ech_config;    //DNS HTTPS RR中获取的ECHConfigList，供TLS握手前使用
     //std::function<void(const sockaddr_storage&, uint32_t resolved_time)> connectCB = [](const sockaddr_storage&, uint32_t){};
     // connectFailed should only be called with job con_failed_job,
     // there's always an extra job somewhere if you invoke it directly.
     void connectFailed(int error);
     void connected(const sockaddr_storage& addr);
-    static void Dnscallback(std::shared_ptr<void> param, int error, const std::list<sockaddr_storage>& addrs, int ttl);
+    static void Dnscallback(const Host_Result& result);
 
     virtual void waitconnectHE(RW_EVENT events);
     //virtual ssize_t Write(const void* buff, size_t len, uint64_t) override;

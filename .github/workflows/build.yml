@@ -8,6 +8,8 @@ on:
 
 env:
   project: sproxy
+  #boringssl无版本发布，固定到具体commit保证可复现，升级时更新此值
+  BORINGSSL_REF: a074f282d026a0ebbed7c9efef5a0cf63f72338d
 
 jobs:
   build-ubuntu:
@@ -28,27 +30,31 @@ jobs:
     - uses: actions/checkout@v4
       with:
         fetch-depth: 0
-    - name: Cache OpenSSL
-      id: cache-openssl
-      uses: actions/cache@v4
-      with:
-        path: ~/openssl
-        key: openssl-linux-${{matrix.os}}-${{hashFiles('**/build.yml')}}-${{env.CC}}
-    - name: 'build and install openssl'
-      if: steps.cache-openssl.outputs.cache-hit != 'true'
-      run: |
-        git clone --depth=1 -b OpenSSL_1_1_1w+quic https://github.com/quictls/openssl.git
-        cd openssl
-        ./config no-ui-console no-tests no-md4 no-rc2 no-rc4  no-shared  no-ssl2 no-ssl3 no-comp no-hw no-engine --prefix=$HOME/openssl
-        make install_dev -j`nproc`
     - name: install pkg
       run: |
         sudo apt-get update
-        sudo apt-get install -y --no-install-recommends libz-dev libjson-c-dev libelf-dev libreadline-dev liburing-dev libjemalloc-dev libxml2-dev binutils-bpf
+        sudo apt-get install -y --no-install-recommends ninja-build libz-dev libjson-c-dev libelf-dev libreadline-dev liburing-dev libjemalloc-dev libxml2-dev binutils-bpf
+    - name: Cache BoringSSL
+      id: cache-boringssl
+      uses: actions/cache@v4
+      with:
+        path: ~/openssl
+        key: boringssl-linux-${{matrix.os}}-${{env.BORINGSSL_REF}}-${{env.CC}}-${{hashFiles('**/build.yml')}}
+    - name: 'build and install boringssl'
+      if: steps.cache-boringssl.outputs.cache-hit != 'true'
+      run: |
+        git clone --depth=1 https://github.com/google/boringssl
+        cd boringssl
+        git fetch --depth=1 origin ${{ env.BORINGSSL_REF }}
+        git checkout ${{ env.BORINGSSL_REF }}
+        cmake -GNinja -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=0 -DCMAKE_INSTALL_PREFIX=$HOME/openssl -B build
+        ninja -C build ssl crypto bssl
+        #必须用cmake --install：include/openssl下是指向源码树的符号链接，手动cp会拷出死链
+        cmake --install build
     - name: Configure CMake
       # Configure CMake in a 'build' subdirectory. `CMAKE_BUILD_TYPE` is only required if you are using a single-configuration generator such as make.
       # See https://cmake.org/cmake/help/latest/variable/CMAKE_BUILD_TYPE.html?highlight=cmake_build_type
-      run: ${{matrix.env}} cmake -B ${{github.workspace}}/build -DOPENSSL_ROOT_DIR=$HOME/openssl -DCMAKE_BUILD_TYPE=${{matrix.build_type}}
+      run: ${{matrix.env}} cmake -B ${{github.workspace}}/build -DUSE_BORINGSSL=1 -DOPENSSL_ROOT_DIR=$HOME/openssl -DCMAKE_BUILD_TYPE=${{matrix.build_type}}
 
     - name: build
       # Build your program with the given configuration
@@ -91,7 +97,7 @@ jobs:
     - name: Install Build Dependencies
       run: |
         apt-get update
-        apt-get install -y --no-install-recommends git curl build-essential cmake pkg-config ca-certificates \
+        apt-get install -y --no-install-recommends git build-essential cmake ninja-build pkg-config ca-certificates \
         libz-dev libjson-c-dev libelf-dev libreadline-dev liburing-dev libjemalloc-dev libxml2-dev
         apt-get install -y --no-install-recommends ${{matrix.cargo-name}}
     - uses: actions/checkout@v4
@@ -99,21 +105,25 @@ jobs:
         fetch-depth: 0
     - name: Fix Git Safe Directory
       run: git config --global --add safe.directory '*'
-    - name: Cache OpenSSL
-      id: cache-openssl
+    - name: Cache BoringSSL
+      id: cache-boringssl
       uses: actions/cache@v4
       with:
         path: ~/openssl
-        key: openssl-${{ matrix.image }}-${{ hashFiles('.github/workflows/build.yml') }}
-    - name: 'Build and install OpenSSL (QuicTLS)'
-      if: steps.cache-openssl.outputs.cache-hit != 'true'
+        key: boringssl-${{ matrix.image }}-${{ env.BORINGSSL_REF }}-${{ hashFiles('.github/workflows/build.yml') }}
+    - name: 'Build and install BoringSSL'
+      if: steps.cache-boringssl.outputs.cache-hit != 'true'
       run: |
-        git clone --depth=1 -b OpenSSL_1_1_1w+quic https://github.com/quictls/openssl.git
-        cd openssl
-        ./config no-ui-console no-tests no-md4 no-rc2 no-rc4  no-shared  no-ssl2 no-ssl3 no-comp no-hw no-engine --prefix=$HOME/openssl
-        make install_dev -j`nproc`
+        git clone --depth=1 https://github.com/google/boringssl
+        cd boringssl
+        git fetch --depth=1 origin ${{ env.BORINGSSL_REF }}
+        git checkout ${{ env.BORINGSSL_REF }}
+        cmake -GNinja -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=0 -DCMAKE_INSTALL_PREFIX=$HOME/openssl -B build
+        ninja -C build ssl crypto bssl
+        #必须用cmake --install：include/openssl下是指向源码树的符号链接，手动cp会拷出死链
+        cmake --install build
     - name: Configure CMake
-      run: cmake -B build -DOPENSSL_ROOT_DIR=$HOME/openssl -DCMAKE_BUILD_TYPE=RelWithDebInfo
+      run: cmake -B build -DUSE_BORINGSSL=1 -DOPENSSL_ROOT_DIR=$HOME/openssl -DCMAKE_BUILD_TYPE=RelWithDebInfo
     - name: Build
       run: cmake --build build --config RelWithDebInfo --parallel `nproc`
     - name: Pack
@@ -141,27 +151,31 @@ jobs:
     - name: Install Build Dependencies
       run: |
         apk update
-        apk add build-base cmake git linux-headers perl zlib-dev json-c-dev elfutils-dev readline-dev liburing-dev jemalloc-dev libxml2-dev tar pkgconf ruby ruby-dev libffi-dev
+        apk add build-base cmake ninja git linux-headers perl zlib-dev json-c-dev elfutils-dev readline-dev liburing-dev jemalloc-dev libxml2-dev tar pkgconf ruby ruby-dev libffi-dev
     - uses: actions/checkout@v4
       with:
         fetch-depth: 0
     - name: Fix Git Safe Directory
       run: git config --global --add safe.directory '*'
-    - name: Cache OpenSSL
-      id: cache-openssl
+    - name: Cache BoringSSL
+      id: cache-boringssl
       uses: actions/cache@v4
       with:
         path: ~/openssl
-        key: openssl-${{ matrix.image }}-${{ hashFiles('.github/workflows/build.yml') }}
-    - name: 'Build and install OpenSSL (QuicTLS)'
-      if: steps.cache-openssl.outputs.cache-hit != 'true'
+        key: boringssl-${{ matrix.image }}-${{ env.BORINGSSL_REF }}-${{ hashFiles('.github/workflows/build.yml') }}
+    - name: 'Build and install BoringSSL'
+      if: steps.cache-boringssl.outputs.cache-hit != 'true'
       run: |
-        git clone --depth=1 -b OpenSSL_1_1_1w+quic https://github.com/quictls/openssl.git
-        cd openssl
-        ./config no-ui-console no-tests no-md4 no-rc2 no-rc4  no-shared  no-ssl2 no-ssl3 no-comp no-hw no-engine --prefix=$HOME/openssl
-        make install_dev -j`nproc`
+        git clone --depth=1 https://github.com/google/boringssl
+        cd boringssl
+        git fetch --depth=1 origin ${{ env.BORINGSSL_REF }}
+        git checkout ${{ env.BORINGSSL_REF }}
+        cmake -GNinja -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=0 -DCMAKE_INSTALL_PREFIX=$HOME/openssl -B build
+        ninja -C build ssl crypto bssl
+        #必须用cmake --install：include/openssl下是指向源码树的符号链接，手动cp会拷出死链
+        cmake --install build
     - name: Configure CMake
-      run: cmake -B build -DOPENSSL_ROOT_DIR=$HOME/openssl -DCMAKE_BUILD_TYPE=RelWithDebInfo
+      run: cmake -B build -DUSE_BORINGSSL=1 -DOPENSSL_ROOT_DIR=$HOME/openssl -DCMAKE_BUILD_TYPE=RelWithDebInfo
     - name: Build
       run: cmake --build build --config RelWithDebInfo --parallel `nproc`
     - name: Pack
@@ -205,25 +219,29 @@ jobs:
     - uses: actions/checkout@v4
       with:
         fetch-depth: 0
-    - name: Cache OpenSSL
-      id: cache-openssl-macos
+    - name: Cache BoringSSL
+      id: cache-boringssl-macos
       uses: actions/cache@v4
       with:
         path: ~/openssl
-        key: openssl-macos-${{matrix.os}}-${{hashFiles('**/build.yml')}}
-    - name: 'build and install openssl'
-      if: steps.cache-openssl-macos.outputs.cache-hit != 'true'
+        key: boringssl-macos-${{matrix.os}}-${{env.BORINGSSL_REF}}-${{hashFiles('**/build.yml')}}
+    - name: 'build and install boringssl'
+      if: steps.cache-boringssl-macos.outputs.cache-hit != 'true'
       run: |
-        git clone --depth=1 -b OpenSSL_1_1_1w+quic https://github.com/quictls/openssl.git
-        cd openssl
-        ./config no-ui-console no-tests no-md4 no-rc2 no-rc4  no-shared  no-ssl2 no-ssl3 no-comp no-hw no-engine --prefix=$HOME/openssl
-        make install_dev -j`nproc`
+        git clone --depth=1 https://github.com/google/boringssl
+        cd boringssl
+        git fetch --depth=1 origin ${{ env.BORINGSSL_REF }}
+        git checkout ${{ env.BORINGSSL_REF }}
+        cmake -GNinja -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=0 -DCMAKE_INSTALL_PREFIX=$HOME/openssl -B build
+        ninja -C build ssl crypto bssl
+        #必须用cmake --install：include/openssl下是指向源码树的符号链接，手动cp会拷出死链
+        cmake --install build
     - name: install pkg
-      run: brew install json-c coreutils libxml2
+      run: brew install ninja json-c coreutils libxml2
     - name: Configure CMake
       # Configure CMake in a 'build' subdirectory. `CMAKE_BUILD_TYPE` is only required if you are using a single-configuration generator such as make.
       # See https://cmake.org/cmake/help/latest/variable/CMAKE_BUILD_TYPE.html?highlight=cmake_build_type
-      run: cmake -B ${{github.workspace}}/build -DOPENSSL_ROOT_DIR=$HOME/openssl -DCMAKE_BUILD_TYPE=${{matrix.build_type}}
+      run: cmake -B ${{github.workspace}}/build -DUSE_BORINGSSL=1 -DOPENSSL_ROOT_DIR=$HOME/openssl -DCMAKE_BUILD_TYPE=${{matrix.build_type}}
 
     - name: build
       # Build your program with the given configuration

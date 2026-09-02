@@ -74,7 +74,7 @@ SocketRWer::SocketRWer(const Destination& dest, std::shared_ptr<IRWerCallback> c
     if(dest.system_resolve){
         //这里使用job,因为shared_from_this不能在构造函数里面用
         dns_job = AddJob([this]{
-            query_host(this->hostname, SocketRWer::Dnscallback, shared_from_this(), true);
+            query_host(this->hostname, SocketRWer::Dnscallback, shared_from_this(), QARES | QAAAARES | RAWRESOLVER);
         }, 0, 0);
     }else{
         dns_job = AddJob([this]{
@@ -112,21 +112,22 @@ SocketRWer::SocketRWer(const sockaddr_storage& addr, Protocol protocol, std::sha
 SocketRWer::~SocketRWer() {
 }
 
-void SocketRWer::Dnscallback(std::shared_ptr<void> param, int error, const std::list<sockaddr_storage>& addrs, int) {
-    std::shared_ptr<SocketRWer> rwer = std::static_pointer_cast<SocketRWer>(param);
-    HOOK_BPF(rwer, rwer->hostname, error, addrs);
+void SocketRWer::Dnscallback(const Host_Result& result) {
+    std::shared_ptr<SocketRWer> rwer = std::static_pointer_cast<SocketRWer>(result.param);
+    HOOK_BPF(rwer, rwer->hostname, result.error, result.addrs);
     rwer->resolved_time = getmtime();
     if(rwer->flags & RWER_CLOSING){
         return;
     }
-    if (error) {
-        return rwer->ErrorHE(DNS_FAILED, error);
+    if (result.error) {
+        return rwer->ErrorHE(DNS_FAILED, result.error);
     }
-    if(addrs.empty()){
+    if(result.addrs.empty()){
         return rwer->ErrorHE(DNS_FAILED, 0);
     }
+    rwer->ech_config = result.ech;
 
-    for(const auto& i: addrs){
+    for(const auto& i: result.addrs){
         sockaddr_in6 *addr6 = (sockaddr_in6*)&i;
         addr6->sin6_port = htons(rwer->port);
         rwer->addrs.push(i);

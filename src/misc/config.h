@@ -46,7 +46,7 @@ void getDnsConfig(struct DnsConfig* config);
 enum auto_mode{
     Disable = 0,
     Enable = 1,
-    Auto = 2,
+    Auto = 2,    //grease for ech
 };
 
 struct arg_list{
@@ -110,6 +110,9 @@ struct options{
     const char* quic_cc_algorithm;  // QUIC congestion control algorithm: "reno", "cubic" or "bbr"
     uint64_t quic_version;         // QUIC version: QUIC_VERSION_1 or QUIC_VERSION_2
     const char* doh_server;        // DNS over HTTPS server URL
+    enum auto_mode ech_mode;        // ECH mode for outbound tls connections, Auto -> GREASE
+    const char* ech_key;           // ECH key file for server (generate if not exists)
+    const char* ech_name;          // public name for ECH key generation (server)
 
     FILE* policy_read;
     FILE* policy_write;

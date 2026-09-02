@@ -33,19 +33,15 @@ extern "C" {
 
 
 #ifdef USE_BORINGSSL
-#define QUIC_CIPHERS                                              \
-   TLS1_3_RFC_AES_256_GCM_SHA384                                  \
-   ":" TLS1_3_RFC_AES_128_GCM_SHA256                              \
-   ":" TLS1_3_RFC_CHACHA20_POLY1305_SHA256                        \
-   ":" TLS1_TXT_ECDHE_RSA_WITH_AES_256_GCM_SHA384                 \
-   ":" TLS1_TXT_ECDH_RSA_WITH_AES_256_GCM_SHA384                  \
-
+//BoringSSL没有SSL_CTX_set_ciphersuites，由下方宏映射到set_cipher_list，
+//后者只认TLS1.2名(纯TLS1.3名列表会解析为空而失败)；TLS1.3套件不受该API
+//控制且默认全开，这里放一个新旧版本都保留的TLS1.2名保证调用成功
+#define QUIC_CIPHERS TLS1_TXT_ECDHE_RSA_WITH_AES_128_GCM_SHA256
 #else
-#define QUIC_CIPHERS                                              \
-   TLS1_3_RFC_AES_256_GCM_SHA384                                  \
-   ":" TLS1_3_RFC_AES_128_GCM_SHA256                              \
-   ":" TLS1_3_RFC_CHACHA20_POLY1305_SHA256                        \
-
+#define QUIC_CIPHERS                                                 \
+   TLS1_3_RFC_AES_256_GCM_SHA384                                     \
+   ":" TLS1_3_RFC_AES_128_GCM_SHA256                                 \
+   ":" TLS1_3_RFC_CHACHA20_POLY1305_SHA256
 #endif
 
 

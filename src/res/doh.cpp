@@ -3,6 +3,7 @@
 //
 #include "doh.h"
 #include "misc/util.h"
+#include "misc/job.h"
 #include "prot/dns/resolver.h"
 #include "prot/memio.h"
 
