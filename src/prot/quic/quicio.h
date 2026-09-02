@@ -95,6 +95,10 @@ protected:
     bool isClosing = false;
     bool migrating = false;
     bool hasParam = false;
+#ifdef HAVE_ECH
+    //doSslConnect时记录的目标域名，ECH被拒时用于更新ech缓存
+    char ech_hostname[DOMAINLIMIT] = {0};
+#endif
 
     std::unique_ptr<QuicQos> qos;
     struct quic_context{
@@ -337,6 +341,8 @@ protected:
     virtual void ReadData() override;
     virtual void ConsumeRData(uint64_t id) override;
     virtual size_t rlength(uint64_t id) override;
+    //握手前应用DNS查到的ech配置(或GREASE)，仅在客户端连接上调用
+    void apply_ech();
 
     void pathValidationTimeout();
 public:
@@ -364,8 +370,7 @@ public:
     // Trigger immediate connection migration
     bool triggerMigration();
     void resolveForMigration();
-    static void MigrationDnscallback(std::shared_ptr<void> param, int error,
-                                      const std::list<sockaddr_storage>& addrs, int ttl);
+    static void MigrationDnscallback(const Host_Result& result);
 
     virtual void dump_status(Dumper dp, void* param) override;
     virtual size_t mem_usage() override;

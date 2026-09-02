@@ -19,6 +19,15 @@ typedef struct DNS_RR {
     unsigned char rdata[0];
 } __attribute__((packed)) DNS_RR;
 
+typedef struct HTTPS_PRIO {
+    uint16_t priority;           // 0为AliasMode，其余为ServiceMode
+} __attribute__((packed)) HTTPS_PRIO;
+
+typedef struct SVC_PARAM {
+    uint16_t key;
+    uint16_t len;
+} __attribute__((packed)) SVC_PARAM;
+
 //DNS报文游标：在通用游标上叠加DNS原语
 //base为报文起点指针，作为压缩指针绝对偏移的基准，永不变化
 class DnsCursor: public cursor {
@@ -336,6 +345,96 @@ Dns_Result::Dns_Result(const char* buff, size_t len): id(0) {
         packet.advance(rdlength);
     }
     id = ntohs(dnshdr->id);
+}
+
+int parse_ech_configs(const char* buff, size_t len, std::string& ech_config_list, uint32_t* ttl) {
+    ech_config_list.clear();
+    *ttl = 0;
+    DnsCursor packet(buff, len);
+    const DNS_HDR* dnshdr = packet.read<DNS_HDR>();
+    if(dnshdr == nullptr){
+        LOGE("[DNS] incomplete DNS response\n");
+        return -1;
+    }
+    if(ntohs(dnshdr->qdcount) == 0 || !dnshdr->qr){
+        LOGE("[DNS] <%d> malformed response header\n", ntohs(dnshdr->id));
+        return -1;
+    }
+    uint16_t numq = ntohs(dnshdr->qdcount);
+    for (int i = 0; i < numq; ++i) {
+        if(!packet.getdomain() || packet.read<DNS_QUE>() == nullptr){
+            return -1;
+        }
+    }
+    if(dnshdr->rcode != 0){
+        //nxdomain等错误码：域名不存在，视为无ech记录
+        return 0;
+    }
+    uint32_t ttl_min = 0xffffffff;
+    std::string configs; //跨记录拼接的裸ECHConfig
+    uint16_t numa = ntohs(dnshdr->ancount);
+    for(int i = 0; i < numa; ++i) {
+        if(!packet.getdomain()){
+            return -1;
+        }
+        const DNS_RR* dnsrr = packet.read<DNS_RR>();
+        if(dnsrr == nullptr){
+            return -1;
+        }
+        uint16_t rdlength = ntohs(dnsrr->rdlength);
+        if(packet.length() < rdlength){
+            LOGE("[DNS] <%d> rdlength overflow\n", ntohs(dnshdr->id));
+            return -1;
+        }
+        if(ntohs(dnsrr->type) == ns_t_https) {
+            //RDATA: SvcPriority(2) + TargetName + SvcParam{key(2) len(2) value}...
+            //rdata内的名字用子游标解析，主游标按rdlength跳过
+            DnsCursor rc = packet;
+            const unsigned char* rdata_end = packet.data() + rdlength;
+            const HTTPS_PRIO* prio = rc.read<HTTPS_PRIO>();
+            if(prio == nullptr){
+                return -1;
+            }
+            if(ntohs(prio->priority) != 0) {
+                //ServiceMode才有SvcParam，AliasMode(priority=0)只有别名目标
+                if(!rc.getdomain()){
+                    return -1;
+                }
+                while(rc.data() + sizeof(SVC_PARAM) <= rdata_end) {
+                    const SVC_PARAM* sp = rc.read<SVC_PARAM>();
+                    uint16_t plen = ntohs(sp->len);
+                    if(rc.data() + plen > rdata_end){
+                        break;
+                    }
+                    if(ntohs(sp->key) == 5) {
+                        //ech参数的value是一段完整的ECHConfigList(2字节总长+串接的ECHConfig)，
+                        //多条记录的配置去前缀后重新拼成一个列表
+                        if(plen >= 2) {
+                            uint16_t list_len = get16(rc.data());
+                            if((size_t)list_len + 2 > plen){
+                                list_len = plen - 2; //长度域与实际不符时按实际截断
+                            }
+                            configs.append((const char*)rc.data() + 2, list_len);
+                        }
+                    }
+                    rc.advance(plen);
+                }
+            }
+            LOGD(DDNS, "HTTPS: ech %zu bytes, ttl: %d\n", configs.size(), ntohl(dnsrr->TTL));
+        }
+        ttl_min = std::min(ttl_min, ntohl(dnsrr->TTL));
+        packet.advance(rdlength);
+    }
+    if(!configs.empty() && configs.size() <= 0xffff){
+        //重新包上ECHConfigList的总长度前缀
+        ech_config_list.push_back((char)(configs.size() >> 8));
+        ech_config_list.push_back((char)configs.size());
+        ech_config_list += configs;
+    }
+    if(ttl_min != 0xffffffff){
+        *ttl = ttl_min;
+    }
+    return 0;
 }
 
 Dns_Result::Dns_Result(const char *domain, const in_addr* addr): type(ns_t_a), ttl(0){

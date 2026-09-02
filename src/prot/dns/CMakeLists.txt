@@ -11,3 +11,6 @@ target_sources(prot PRIVATE ${dns_src})
 
 add_executable(dns_test dns_test.cpp dns.cpp)
 target_link_libraries(dns_test PRIVATE sproxy_headers)
+
+add_executable(ech_test ech_test.cpp dns.cpp)
+target_link_libraries(ech_test PRIVATE sproxy_headers ${OPENSSL_LIBRARIES})

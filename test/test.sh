@@ -122,6 +122,16 @@ function test_https(){
     echo ""
 }
 
+function test_ech(){
+    if [ ! -s ech.dns ]; then
+        echo "ech not supported by this build, skip"
+        return
+    fi
+    ./ech_test -c 127.0.0.1:$1 "$(cat ech.dns)" localhost
+    [ $? -ne 0 ] && echo "ech test failed" && exit 1
+    echo ""
+}
+
 function test_http(){
     curl -f -v http://$HOSTNAME:$1/sites.list  -k 2>> curl.log
     [ $? -ne 0 ] && echo "http test 1 failed" && exit 1
@@ -615,6 +625,7 @@ EOF
 ln -f -s "$buildpath/sproxy" .
 ln -f -s "$buildpath/scli" .
 ln -s -f "$buildpath/../test/sproxy_test" .
+ln -f -s "$buildpath/prot/dns/ech_test" .
 mkdir -p cgi
 ln -f -s "$buildpath"/cgi/liblogin.* cgi/
 ln -f -s "$buildpath"/cgi/libproxy.* cgi/
@@ -656,6 +667,16 @@ ipv6 enable
 debug all
 EOF
 
+#ech密钥文件：无ech支持的构建下ech_test返回77，ech-key被忽略
+rm -f ech.key ech.dns #ech_test以O_EXCL建文件，残留会让生成失败而ech测试静默跳过
+./ech_test -g ech.key localhost > ech.dns 2>/dev/null || true
+if [ -s ech.dns ]; then
+    echo "ech-key ech.key" >> server.conf
+fi
+#出站ech依赖上游DNS返回可信的HTTPS记录，明文DNS环境下可能被污染导致握手被拒，
+#测试环境不做外网ech假设，出站ech的验证见ech_test
+echo "ech disable" >> server.conf
+
 if [ "$run_extended_tests" = true ]; then
     echo "bind 4333 tproxy" >> server.conf
     echo "fwmark 1" >> server.conf
@@ -671,6 +692,12 @@ wait_tcp_port 3334
 echo "test https server"
 test_https 3334
 kill -SIGUSR1 %1
+
+if [ -s ech.dns ]; then
+    echo "test ech server"
+    test_ech 3334
+    kill -SIGUSR1 %1
+fi
 
 wait_udp_port 3334
 echo "test quic server"
@@ -749,12 +776,27 @@ fi
 
 jobs
 
-$buildpath/prot/dns/dns_test
-$buildpath/prot/http2/hpack_test
-$buildpath/prot/http3/qpack_test
-$buildpath/prot/quic/quic_frame_test
-$buildpath/misc/trie_test
-$buildpath/misc/buffer_test
+#单测退出码检查：非0失败即中止，77表示skip(如无ech支持的构建)
+function run_test() {
+    "$@"
+    local ret=$?
+    if [ $ret -eq 77 ]; then
+        echo "$1 skipped"
+        return 0
+    fi
+    if [ $ret -ne 0 ]; then
+        echo "$1 failed: $ret"
+        exit 1
+    fi
+}
+
+run_test $buildpath/prot/dns/dns_test
+run_test $buildpath/prot/dns/ech_test
+run_test $buildpath/prot/http2/hpack_test
+run_test $buildpath/prot/http3/qpack_test
+run_test $buildpath/prot/quic/quic_frame_test
+run_test $buildpath/misc/trie_test
+run_test $buildpath/misc/buffer_test
 if [ $ker == 'Linux' ];then
-    $buildpath/hook/hook_test $buildpath/hook/hook_bpf.elf
+    run_test $buildpath/hook/hook_test $buildpath/hook/hook_bpf.elf
 fi
