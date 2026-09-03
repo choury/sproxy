@@ -779,6 +779,9 @@ QuicBase::~QuicBase(){
 
 int QuicBase::doSslConnect(const char* hostname) {
     sslStats = SslStats::SslConnecting;
+#ifdef HAVE_ECH
+    snprintf(ech_hostname, sizeof(ech_hostname), "%s", hostname);
+#endif
     X509_VERIFY_PARAM *param = SSL_get0_param(ssl);
 
     /* Enable automatic hostname checks */
@@ -850,8 +853,19 @@ QuicBase::FrameResult QuicBase::handleCryptoFrame(quic_context* context, const q
             }
             hasParam = true;
         }
-        if(ssl_get_error(ssl, SSL_do_handshake(ssl)) == 1){
+        int hsret = SSL_do_handshake(ssl);
+#ifdef HAVE_ECH
+        //必须在ssl_get_error之前peek(它会清空错误队列)；ECH被拒要等服务端
+        //flight到达此处才浮现，doSslConnect首次调用只产出ClientHello不会触发
+        bool ech_rejected = hsret <= 0 && ERR_GET_REASON(ERR_peek_error()) == SSL_R_ECH_REJECTED;
+#endif
+        if(ssl_get_error(ssl, hsret) == 1){
             LOGD(DQUIC, "SSL_do_handshake succeed\n");
+#ifdef HAVE_ECH
+            if(SSL_ech_accepted(ssl)) {
+                LOGD(DQUIC, "ech accepted\n");
+            }
+#endif
             his_max_ack_delay = his_max_ack_delay?:25;
             qos->SetMaxAckDelay(his_max_ack_delay);
             if(ctx == nullptr){
@@ -866,6 +880,17 @@ QuicBase::FrameResult QuicBase::handleCryptoFrame(quic_context* context, const q
             onConnected();
         }else if(errno != EAGAIN){
             int error = errno;
+#ifdef HAVE_ECH
+            if(ech_rejected) {
+                //服务端无法解密ech(通常是DNS里的配置已轮换)，取retry configs更新缓存供下次连接使用
+                const uint8_t* retry_configs = nullptr;
+                size_t retry_configs_len = 0;
+                SSL_get0_ech_retry_configs(ssl, &retry_configs, &retry_configs_len);
+                update_ech_cache(ech_hostname, retry_configs, retry_configs_len);
+                LOGE("(%s): ech rejected by server, %s\n", ech_hostname,
+                     retry_configs_len ? "retry configs cached" : "server rolled back ech support");
+            }
+#endif
             LOGE("(%s): ssl connect error:%s\n",
                     dumpHex(hisids[hisid_idx].data(), hisids[hisid_idx].length()).c_str(), strerror(error));
             onError(SSL_SHAKEHAND_ERR, error);
@@ -2046,6 +2071,27 @@ QuicRWer::QuicRWer(const Destination& dest, std::shared_ptr<IRWerCallback> cb):
                                [this]{connectFailed(ETIMEDOUT);}, 2000);
 }
 
+void QuicRWer::apply_ech() {
+#ifdef HAVE_ECH
+    sockaddr_storage addr{};
+    if(storage_aton(hostname, 0, &addr) == 1) {
+        return; //IP直连没有SNI，ech无意义
+    }
+    if(!ech_config.empty()) {
+        if(SSL_set1_ech_config_list(ssl, (const uint8_t*)ech_config.data(), ech_config.size()) == 1) {
+            //ECH仅在TLS1.3中定义(QUIC本身就只有TLS1.3)
+            LOGD(DQUIC, "(%s) offer ech, config: %zd bytes\n", hostname, ech_config.size());
+        }else{
+            LOGE("(%s) invalid ech config list, fallback to plain sni\n", hostname);
+            ERR_clear_error();
+        }
+    }else if(opt.ech_mode == Auto) {
+        SSL_set_enable_ech_grease(ssl, 1);
+        LOGD(DQUIC, "(%s) offer grease ech\n", hostname);
+    }
+#endif
+}
+
 QuicRWer::QuicRWer(int fd, const sockaddr_storage *peer, SSL_CTX *ctx, Quic_server* server):
         QuicBase(ctx),
         SocketRWer(fd, peer, ISocketCallback::create()->onError([](int, int){})),
@@ -2233,6 +2279,7 @@ void QuicRWer::waitconnectHE(RW_EVENT events) {
     }
     if (!!(events & RW_EVENT::WRITE)) {
         assert(!addrs.empty());
+        apply_ech();
         if (doSslConnect(hostname)) {
             return;
         }
@@ -2538,18 +2585,17 @@ void QuicRWer::resolveForMigration() {
     query_host(hostname, MigrationDnscallback, shared_from_this());
 }
 
-void QuicRWer::MigrationDnscallback(std::shared_ptr<void> param, int error,
-                                    const std::list<sockaddr_storage>& addrs, int /*ttl*/)
+void QuicRWer::MigrationDnscallback(const Host_Result& result)
 {
     //param经shared_ptr<void>传递，多重继承下需先回SocketRWer(偏移0)再动态下转
     std::shared_ptr<QuicRWer> rwer = std::dynamic_pointer_cast<QuicRWer>(
-        std::static_pointer_cast<SocketRWer>(param));
+        std::static_pointer_cast<SocketRWer>(result.param));
     if(rwer->flags & RWER_CLOSING){
         return;
     }
     QuicRWer* rw = rwer.get();
-    if (error || addrs.empty()) {
-        LOGE("migration dns resolve failed: %d\n", error);
+    if (result.error || result.addrs.empty()) {
+        LOGE("migration dns resolve failed: %d\n", result.error);
         rwer->keepAlive_timer = UpdateJob(std::move(rwer->keepAlive_timer),
                                           [rw]{rw->resolveForMigration();}, 5000);
         return;
@@ -2557,7 +2603,7 @@ void QuicRWer::MigrationDnscallback(std::shared_ptr<void> param, int error,
     //用当前网络的解析结果整体替换旧地址
     std::queue<sockaddr_storage> empty;
     rwer->addrs.swap(empty);
-    for(const auto& i: addrs){
+    for(const auto& i: result.addrs){
         sockaddr_storage addr = i;
         ((sockaddr_in6*)&addr)->sin6_port = htons(rwer->port);
         rwer->addrs.push(addr);

@@ -1,6 +1,9 @@
 #include "sslio.h"
 #include "prot/rwer.h"
 #include "prot/tls.h"
+#include "prot/dns/resolver.h"
+#include "misc/config.h"
+#include "misc/net.h"
 #include "hook/hook.h"
 
 #include <openssl/err.h>
@@ -178,10 +181,20 @@ void SslRWerBase::sendData(Buffer&& bb) {
 
 void SslRWerBase::do_handshake() {
     ERR_clear_error();
-    if(ssl_get_error(ssl, SSL_do_handshake(ssl)) == 1){
+    int ret = SSL_do_handshake(ssl);
+#ifdef HAVE_ECH
+    //必须在ssl_get_error之前peek，它会清空错误队列
+    bool ech_rejected = ret <= 0 && ERR_GET_REASON(ERR_peek_error()) == SSL_R_ECH_REJECTED;
+#endif
+    if(ssl_get_error(ssl, ret) == 1){
         sslStats = SslStats::Established;
         HOOK_BPF(this, server, sslStats, SSL_is_server(ssl));
         LOGD(DSSL, "(%s) ssl handshake success\n", server.c_str());
+#ifdef HAVE_ECH
+        if(SSL_ech_accepted(ssl)) {
+            LOGD(DSSL, "(%s) ech accepted\n", server.c_str());
+        }
+#endif
         onConnected();
     }else if(errno != EAGAIN){
         sslStats = SslStats::SslError;
@@ -190,6 +203,17 @@ void SslRWerBase::do_handshake() {
         const char* sni = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
         LOGE("(%s): ssl %s error:%s sni:<%s>\n", server.c_str(), SSL_is_server(ssl)?"accept":"connect", strerror(error),
              sni ? sni : "none");
+#ifdef HAVE_ECH
+        if(ech_rejected) {
+            //服务端无法解密ech(通常是DNS里的配置已轮换)，取retry configs更新缓存供下次连接使用
+            const uint8_t* retry_configs = nullptr;
+            size_t retry_configs_len = 0;
+            SSL_get0_ech_retry_configs(ssl, &retry_configs, &retry_configs_len);
+            update_ech_cache(server.c_str(), retry_configs, retry_configs_len);
+            LOGE("(%s): ech rejected by server, %s\n", server.c_str(),
+                 retry_configs_len ? "retry configs cached" : "server rolled back ech support");
+        }
+#endif
         onError(SSL_SHAKEHAND_ERR, error);
     }
     sink_out_bio(0);
@@ -233,6 +257,28 @@ SslRWer::SslRWer(const Destination& dest, std::shared_ptr<IRWerCallback> cb):
         SslRWerBase(dest.hostname), StreamRWer(dest, std::move(cb))
 {
         assert(this->protocol == Protocol::TCP);
+}
+
+void SslRWer::apply_ech() {
+#ifdef HAVE_ECH
+    sockaddr_storage addr{};
+    if(storage_aton(server.c_str(), 0, &addr) == 1) {
+        return; //IP直连没有SNI，ech无意义
+    }
+    if(!ech_config.empty()) {
+        if(SSL_set1_ech_config_list(ssl, (const uint8_t*)ech_config.data(), ech_config.size()) == 1) {
+            //ECH仅在TLS1.3中定义
+            SSL_set_min_proto_version(ssl, TLS1_3_VERSION);
+            LOGD(DSSL, "(%s) offer ech, config: %zd bytes\n", server.c_str(), ech_config.size());
+        }else{
+            LOGE("(%s) invalid ech config list, fallback to plain sni\n", server.c_str());
+            ERR_clear_error();
+        }
+    }else if(opt.ech_mode == Auto) {
+        SSL_set_enable_ech_grease(ssl, 1);
+        LOGD(DSSL, "(%s) offer grease ech\n", server.c_str());
+    }
+#endif
 }
 
 void SslRWer::write(Buffer&& bb) {
@@ -326,6 +372,7 @@ void SslRWer::waitconnectHE(RW_EVENT events) {
         this->con_failed_job = UpdateJob(std::move(this->con_failed_job),
                                          [this]{connectFailed(ETIMEDOUT);}, 2000);
         handleEvent = (void (Ep::*)(RW_EVENT))&SslRWer::defaultHE;
+        apply_ech();
         do_handshake();
     }
 }

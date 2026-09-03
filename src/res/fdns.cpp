@@ -183,7 +183,7 @@ void FDns::Recv(Buffer&& bb) {
             if (stra.s == Strategy::direct) {
                 status.quemap.emplace(que->id, que);
                 addjob_with_name([que, index = std::make_shared<__uint128_t>(index)]{
-                    query_host(que->domain, DnsCb, index);
+                    query_host(que->domain, DnsCb, index, que->type == ns_t_a ? QARES : QAAAARES);
                 }, "fdns_query", 0, JOB_FLAGS_AUTORELEASE);
                 return;
             } else if (que->domain[0] == 0) {
@@ -219,8 +219,8 @@ void FDns::Recv(Buffer&& bb) {
     }
 }
 
-void FDns::DnsCb(std::shared_ptr<void> param, int error, const std::list<sockaddr_storage>& addrs, int ttl) {
-    auto index = *std::static_pointer_cast<__uint128_t>(param);
+void FDns::DnsCb(const Host_Result& response) {
+    auto index = *std::static_pointer_cast<__uint128_t>(response.param);
 #if __LP64__
     uint64_t id = index >> 64;
     uint16_t qid = index & 0xffff;
@@ -228,6 +228,9 @@ void FDns::DnsCb(std::shared_ptr<void> param, int error, const std::list<sockadd
     uint64_t id = index.hi;
     uint16_t qid = index.lo & 0xffff;
 #endif
+    const int error = response.error;
+    const std::list<sockaddr_storage>& addrs = response.addrs;
+    const int ttl = response.ttl;
     HOOK_BPF(fdns, fdns->statusmap, id, qid, error, addrs, ttl);
     if(fdns->statusmap.count(id) == 0){
         fdns->failed_count++;
