@@ -127,7 +127,8 @@ function test_ech(){
         echo "ech not supported by this build, skip"
         return
     fi
-    ./ech_test -c 127.0.0.1:$1 "$(cat ech.dns)" localhost
+    { echo "connect 127.0.0.1 $1";
+      echo "tlsconnect localhost $(cat ech.dns)"; } | ./sproxy_test
     [ $? -ne 0 ] && echo "ech test failed" && exit 1
     echo ""
 }
@@ -291,6 +292,57 @@ function test_rproxy(){
     kill -SIGUSR1 %2
     kill -SIGINT %2
     wait %2
+}
+
+#DoH服务(/dns-query)验证：独立实例 + 公共DoH上游(cloudflare-dns.com)。
+#1) type-65应答透传ech参数；2) 被MITM的域名(block子域触发mayBeBlocked)
+#应答剥离ech；3) curl以sproxy为DoH解析器并经代理访问，验证真实DoH客户端兼容
+function test_doh_strip(){
+    cat > server_doh.conf << EOF
+cafile ca.crt
+cakey  ca.key
+cert localhost.crt
+key localhost.key
+root-dir .
+policy-file sites_doh.list
+secret testuser:testpass
+index libproxy.do
+insecure
+bind 3360
+doh https://cloudflare-dns.com/dns-query
+debug all
+EOF
+    echo "localhost.choury.com local" > sites_doh.list
+    ./sproxy -c server_doh.conf --admin unix:${sp}doh.sock > doh_server.log 2>&1 &
+    doh_pid=$!
+    wait_tcp_port 3360
+
+    curl -s -m 15 -H 'content-type: application/dns-message' --data-binary @ech_query.bin \
+        http://localhost:3360/dns-query -o doh_resp1.bin
+    [ $? -ne 0 -o ! -s doh_resp1.bin ] && echo "doh strip test 1 failed" && exit 1
+    if ! grep -q $'\xfe\x0d' doh_resp1.bin; then
+        echo "doh strip test 2 failed: upstream has no ech in HTTPS RR, skip"
+        kill -SIGINT $doh_pid; wait $doh_pid
+        return
+    fi
+
+    #block整个域名(将被MITM)后，ech应被剥离
+    curl -s http://localhost:3360/cgi/libsites.do -XPUT -d 'site=cloudflare-ech.com&strategy=block' > /dev/null 2>&1
+    curl -s -m 15 -H 'content-type: application/dns-message' --data-binary @ech_query.bin \
+        http://localhost:3360/dns-query -o doh_resp2.bin
+    [ $? -ne 0 -o ! -s doh_resp2.bin ] && echo "doh strip test 3 failed" && exit 1
+    if grep -q $'\xfe\x0d' doh_resp2.bin; then
+        echo "doh strip test 4 failed: ech not stripped for MITM domain"
+        exit 1
+    fi
+
+    #curl作为真实DoH客户端：经sproxy解析域名并经其代理访问未block的域名
+    curl -s -m 20 -x http://localhost:3360 --doh-url http://localhost:3360/dns-query \
+        https://cloudflare-dns.com/ -o /dev/null
+    [ $? -ne 0 ] && echo "doh strip test 5 failed: curl --doh-url via proxy" && exit 1
+
+    kill -SIGINT $doh_pid; wait $doh_pid
+    echo ""
 }
 
 function test_tproxy() {
@@ -499,12 +551,149 @@ function test_sni(){
 
     printf "dump usage" | ./scli -s ${sp}server.sock
     kill -SIGUSR1 %1
-    kill -SIGINT %1
-    wait %1
     jobs
 }
 
+#代理CONNECT路径的ECH决策：GREASE(outer SNI==CONNECT域名)保持MITM、真实
+#ECH转隧道，及隧道上游EOF向客户端的传播。ECH后端复用test_sni留在443的
+#实例(其mitm层持同一ech密钥，能解密inner)，前端4434(h1)/4435(h2)
+function test_ech_mitm(){
+    if [ ! -s ech.dns ]; then
+        #echgen在无ech支持的构建下无输出
+        echo "ech not supported by this build, skip"
+        kill -SIGINT %1 2>/dev/null; wait %1 2>/dev/null
+        return
+    fi
+    #4435入口证书SAN不含$HOSTNAME：否则lookup_cert会命中预置证书替代
+    #动态签发(动态证书subject=CONNECT域名是断言依据)
+    openssl req -new -key localhost.key -out h2front.csr -subj '/CN=localhost' 2>/dev/null
+    printf '[SAN]
+subjectAltName=DNS:localhost,IP:127.0.0.1,IP:::1
+' > h2front_san.cnf
+    openssl x509 -req -days 365 -in h2front.csr -CA ca.crt -CAkey ca.key -set_serial 02 \
+        -out h2front.crt -extfile h2front_san.cnf -extensions SAN 2>/dev/null
+    cat > echfront.conf << EOF
+cafile ca.crt
+cakey  ca.key
+cert h2front.crt
+key localhost.key
+insecure
+bind 4434
+bind 4435 ssl
+mitm enable
+debug all
+EOF
+    ./sproxy -c echfront.conf --admin unix:${sp}echfront.sock > echfront.log 2>&1 &
+    echfront_pid=$!
+    wait_tcp_port 4434
+    wait_tcp_port 4435
 
+    #纯代理前端(无ca/mitm配置)：验证无名目标的无条件嗅探
+    ./sproxy -k --bind 4436 --debug all --admin unix:${sp}echplain.sock > echplain.log 2>&1 &
+    echplain_pid=$!
+    wait_tcp_port 4436
+
+    #GREASE(outer SNI==CONNECT域名)：保持MITM，动态签发证书
+    { echo "connect localhost 4434";
+      echo "send CONNECT $HOSTNAME:443\r\n\r\n";
+      echo "read head";
+      echo "tlsconnect $HOSTNAME grease"; } | ./sproxy_test > ech_case1.log 2>&1
+    [ $? -ne 0 ] && echo "ech mitm test 1 failed" && exit 1
+    grep -q " 200 " ech_case1.log
+    [ $? -ne 0 ] && echo "ech mitm test 1.5 failed: CONNECT not established" && exit 1
+    grep -q "subject:.*$HOSTNAME" ech_case1.log
+    [ $? -ne 0 ] && echo "ech mitm test 2 failed" && exit 1
+
+    #真实ECH(outer SNI=public_name≠CONNECT域名)：转隧道，由后端mitm层解密
+    { echo "connect localhost 4434";
+      echo "send CONNECT $HOSTNAME:443\r\n\r\n";
+      echo "read head";
+      echo "tlsconnect localhost $(cat ech.dns)"; } | ./sproxy_test > ech_case2.log 2>&1
+    [ $? -ne 0 ] && echo "ech mitm test 3 failed" && exit 1
+    grep -q "ech accepted" ech_case2.log
+    [ $? -ne 0 ] && echo "ech mitm test 4 failed" && exit 1
+    grep -q "subject: /CN=localhost," ech_case2.log
+    [ $? -ne 0 ] && echo "ech mitm test 5 failed" && exit 1
+
+    #h2路径(Guest2嗅探)：4435 ssl + alpn h2，h2connect开CONNECT流(200先行
+    #应答)，流内再叠tlsconnect跑内层TLS。证书断言只看status 200之后的输出，
+    #外层tlsconnect(4435入口)也会打印cert subject
+    #GREASE × h2 CONNECT：保持MITM
+    { echo "connect localhost 4435";
+      echo "tlsconnect localhost - h2";
+      echo "h2connect $HOSTNAME:443";
+      echo "tlsconnect $HOSTNAME grease";
+      echo "close"; } | ./sproxy_test > ech_case4.log 2>&1
+    [ $? -ne 0 ] && echo "ech mitm h2 test 1 failed" && exit 1
+    grep -q "\[h2\] status 200" ech_case4.log
+    [ $? -ne 0 ] && echo "ech mitm h2 test 1.5 failed: CONNECT not established" && exit 1
+    sed -n '/\[h2\] status 200/,$p' ech_case4.log | grep -q "subject:.*$HOSTNAME"
+    [ $? -ne 0 ] && echo "ech mitm h2 test 2 failed" && exit 1
+
+    #真实ECH × h2 CONNECT：转隧道
+    { echo "connect localhost 4435";
+      echo "tlsconnect localhost - h2";
+      echo "h2connect $HOSTNAME:443";
+      echo "tlsconnect localhost $(cat ech.dns)";
+      echo "close"; } | ./sproxy_test > ech_case5.log 2>&1
+    [ $? -ne 0 ] && echo "ech mitm h2 test 3 failed" && exit 1
+    grep -q "ech accepted" ech_case5.log
+    [ $? -ne 0 ] && echo "ech mitm h2 test 4 failed" && exit 1
+    sed -n '/\[h2\] status 200/,$p' ech_case5.log | grep -q "subject: /CN=localhost,"
+    [ $? -ne 0 ] && echo "ech mitm h2 test 5 failed" && exit 1
+
+    #FIN传播：杀掉复用的443后端(%1)换哑上游(nc accept即FIN，单连接，每用例
+    #重开)。grease ECH且SNI≠CONNECT目标判真实ECH走隧道，上游FIN应传回使握手
+    #立即失败；误MITM则会握手成功并打印证书subject
+    kill -SIGINT %1; wait %1
+    start_dumb_443() {
+        #nc_pid未设时wait无参会等到所有后台任务(含常驻实例)
+        if [ -n "$nc_pid" ]; then
+            kill $nc_pid 2>/dev/null
+            wait $nc_pid 2>/dev/null
+        fi
+        nc -l -N 127.0.0.1 443 < /dev/null > /dev/null &
+        nc_pid=$!
+        sleep 0.2
+    }
+    start_dumb_443
+    { echo "connect localhost 4434";
+      echo "send CONNECT $HOSTNAME:443\r\n\r\n";
+      echo "read head";
+      echo "tlsconnect sni-not-target.test grease"; } | ./sproxy_test > ech_case3.log 2>&1 || true
+    grep -q "ssl connect failed" ech_case3.log
+    [ $? -ne 0 ] && echo "ech mitm test 6 failed" && exit 1
+    if grep -q "cert subject" ech_case3.log; then
+        echo "ech mitm test 7 failed: mitm should not happen" && exit 1
+    fi
+
+    #h2路径FIN传播：同上但经h2 CONNECT
+    start_dumb_443
+    { echo "connect localhost 4435";
+      echo "tlsconnect localhost - h2";
+      echo "h2connect $HOSTNAME:443";
+      echo "tlsconnect sni-not-target.test grease";
+      echo "close"; } | ./sproxy_test > ech_case6.log 2>&1 || true
+    grep -q "stream closed during handshake" ech_case6.log
+    [ $? -ne 0 ] && echo "ech mitm h2 test 6 failed: tunnel eof not propagated" && exit 1
+    if sed -n '/\[h2\] status 200/,$p' ech_case6.log | grep -q "cert subject"; then
+        echo "ech mitm h2 test 7 failed: mitm should not happen" && exit 1
+    fi
+    kill $nc_pid 2>/dev/null; wait $nc_pid 2>/dev/null
+
+    #IP字面量目标无条件嗅探：无ca/mitm的纯代理上也应嗅探并改写目标为SNI
+    #(域名不存在，握手失败是预期)
+    { echo "connect localhost 4436";
+      echo "send CONNECT 127.0.0.1:443\r\n\r\n";
+      echo "read head";
+      echo "tlsconnect sni-ip-sniff.test"; } | ./sproxy_test > ech_case7.log 2>&1 || true
+    grep -q "\[sni\] forward to sni-ip-sniff.test" echplain.log
+    [ $? -ne 0 ] && echo "ech plain test 1 failed: ip target not sniffed" && exit 1
+
+    kill -SIGINT $echfront_pid; wait $echfront_pid
+    kill -SIGINT $echplain_pid; wait $echplain_pid
+    echo ""
+}
 
 function test_strategy() {
     local sock=$1
@@ -625,7 +814,6 @@ EOF
 ln -f -s "$buildpath/sproxy" .
 ln -f -s "$buildpath/scli" .
 ln -s -f "$buildpath/../test/sproxy_test" .
-ln -f -s "$buildpath/prot/dns/ech_test" .
 mkdir -p cgi
 ln -f -s "$buildpath"/cgi/liblogin.* cgi/
 ln -f -s "$buildpath"/cgi/libproxy.* cgi/
@@ -667,14 +855,14 @@ ipv6 enable
 debug all
 EOF
 
-#ech密钥文件：无ech支持的构建下ech_test返回77，ech-key被忽略
-rm -f ech.key ech.dns #ech_test以O_EXCL建文件，残留会让生成失败而ech测试静默跳过
-./ech_test -g ech.key localhost > ech.dns 2>/dev/null || true
+#ech密钥文件：无ech支持的构建下echgen失败，ech-key被忽略
+rm -f ech.key ech.dns #echgen以O_EXCL建文件，残留会让生成失败而ech测试静默跳过
+echo "echgen ech.key localhost" | ./sproxy_test > ech.dns 2>/dev/null || true
 if [ -s ech.dns ]; then
     echo "ech-key ech.key" >> server.conf
 fi
 #出站ech依赖上游DNS返回可信的HTTPS记录，明文DNS环境下可能被污染导致握手被拒，
-#测试环境不做外网ech假设，出站ech的验证见ech_test
+#测试环境不做外网ech假设，出站ech的验证见sproxy_test的tlsconnect命令
 echo "ech disable" >> server.conf
 
 if [ "$run_extended_tests" = true ]; then
@@ -751,6 +939,9 @@ test_rproxy
 printf "dump usage" | ./scli -s ${sp}server.sock
 kill -SIGUSR1 %1
 
+echo "test doh strip"
+test_doh_strip
+
 if [ "$run_extended_tests" = true ]; then
     echo "test tproxy"
     test_tproxy 4333
@@ -769,6 +960,9 @@ if [ "$run_extended_tests" = true ]; then
 
     echo "test sni"
     test_sni
+
+    echo "test ech mitm"
+    test_ech_mitm
 else
     kill -SIGINT %1
     wait %1
@@ -776,7 +970,7 @@ fi
 
 jobs
 
-#单测退出码检查：非0失败即中止，77表示skip(如无ech支持的构建)
+#单测退出码检查：非0失败即中止，77表示skip
 function run_test() {
     "$@"
     local ret=$?

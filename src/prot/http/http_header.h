@@ -69,6 +69,7 @@ HTTP_STATUS_MAP(DEFINE_HTTP_STATUS)
 #define HTTP_RESPOENSED     (1u<<6u)   //res has generated
 #define HTTP_RST            (1u<<7u)   //got reset
 #define HTTP_RECV_1ST_BYTE  (1u<<8u)   //got first byte
+#define HTTP_REPLIED_F      (1u<<9u)   //CONNECT已先行应答200，上游响应头应吞掉不重复发送
 
 static inline std::string ltrim(std::string s) {
     s.erase(0, s.find_first_not_of(' '));

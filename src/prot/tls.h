@@ -26,6 +26,7 @@
 #ifndef TLS_H__
 #define TLS_H__
 #include <openssl/ssl.h>
+#include "common/common.h"
 
 #ifdef  __cplusplus
 extern "C" {
@@ -51,8 +52,17 @@ extern "C" {
 #define SSL_CTX_set_ciphersuites SSL_CTX_set_cipher_list
 #endif
 
-int parse_client_hello(const unsigned char*data, size_t data_len, char** hostname);
-int parse_tls_header(const unsigned char *data, size_t data_len, char **hostname);
+#include <stdbool.h>
+
+//ClientHello嗅探结果：hostname为嗅探到的SNI(定长缓冲，空串表示CH无server_name)，
+//ech表示CH带encrypted_client_hello(0xfe0d, RFC 9480)扩展(真实ECH与GREASE语法上不可区分)
+struct sni_result {
+    char      hostname[DOMAINLIMIT];
+    bool      ech;
+};
+
+int parse_client_hello(const unsigned char*data, size_t data_len, struct sni_result* result);
+int parse_tls_header(const unsigned char *data, size_t data_len, struct sni_result *result);
 int verify_host_callback(int ok, X509_STORE_CTX *ctx);
 int ssl_get_error(SSL* ssl, int ret);
 void keylog_write_line(const SSL *ssl, const char *line);

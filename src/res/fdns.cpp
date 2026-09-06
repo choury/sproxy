@@ -318,7 +318,34 @@ void FDns::RawCb(std::shared_ptr<void> param, const char* data, size_t size) {
         memcpy(buff.mutable_data(), data, size);
         DNS_HDR *dnshdr = (DNS_HDR*)buff.mutable_data();
         dnshdr->id = htons(que->id);
-        buff.truncate(size);
+        size_t newlen = size;
+        if(que->type == ns_t_https){
+            //HTTPS RR应答改写：对将被MITM的域名剥离ech参数(客户端不发ECH，
+            //MITM握手才能成功)；fakeip启用时把hint改写为假IP，与A/AAAA行为
+            //对齐，防止HTTPS-RR感知的客户端直连hint真实IP绕过fakeip
+            unsigned flags = 0;
+            in_addr fake4{};
+            in6_addr fake6{};
+            if(shouldNegotiate(que->domain, HTTPSPORT)){
+                flags |= HTTPS_RR_STRIP_ECH;
+            }
+            if(!opt.disable_fakeip){
+                fake4 = getInet(que->domain);
+                flags |= HTTPS_RR_FAKE_V4HINT;
+                if(opt.ipv6_enabled){
+                    flags |= HTTPS_RR_FAKE_V6HINT;
+                    fake6 = getInet6(que->domain);
+                }else{
+                    flags |= HTTPS_RR_DROP_V6HINT;
+                }
+            }
+            newlen = rewrite_https_rr((unsigned char*)buff.mutable_data(), size, flags, &fake4, &fake6);
+            if(newlen != size){
+                LOGD(DDNS, "<FDNS> rewrite https rr for %s, size %zu -> %zu\n",
+                     que->domain, size, newlen);
+            }
+        }
+        buff.truncate(newlen);
         status.rw->Send(std::move(buff));
         fdns->succeed_count++;
     }else {

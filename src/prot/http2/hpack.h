@@ -35,6 +35,8 @@ public:
 class HttpCursor;
 
 class Hpack_decoder: public Hpack {
+protected:
+    //原始头块解码，供扩展子类直接取HeaderMap(如test/sproxy_test)
     HeaderMap decode(const HttpCursor& cursor);
 public:
     explicit Hpack_decoder(size_t dynamic_table_size_limit_max = 4096): Hpack(dynamic_table_size_limit_max){}
@@ -43,6 +45,8 @@ public:
 };
 
 class Hpack_encoder: public Hpack {
+protected:
+    //单头编码原语，供扩展子类逐头构造(如test/sproxy_test的CONNECT流)
     bool encode(HttpCursor& cursor, const char* name, const char* value);
 public:
     explicit Hpack_encoder(size_t dynamic_table_size_limit_max = 4096): Hpack(dynamic_table_size_limit_max){}

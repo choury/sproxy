@@ -3,9 +3,11 @@
 //
 
 #include "guest3.h"
+#include "guest_sni.h"
 #include "res/responser.h"
 #include "res/rproxy3.h"
 #include "prot/quic/quicio.h"
+#include "prot/memio.h"
 #include "hook/hook.h"
 #include <assert.h>
 #include <inttypes.h>
@@ -47,7 +49,17 @@ void Guest3::init() {
         }
         return len;
     })->onWrite([this](uint64_t id){
+        if(id == 0){
+            for(auto& i : statusmap){
+                if(i.second.flags & (HTTP_RES_COMPLETED | HTTP_CLOSED_F | HTTP_RST)){
+                    continue;
+                }
+                i.second.rw->pull(i.first);
+            }
+            return;
+        }
         if(statusmap.count(id) == 0){
+            LOGD(DHTTP3, "<guest3> pull unknown stream: %" PRIu64 "\n", id);
             return;
         }
         ReqStatus& status = statusmap[id];
@@ -175,6 +187,15 @@ void Guest3::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
         _cb,
     };
     ReqStatus& status = statusmap[id];
+    if(should_sniff_sni(header, this)) {
+        //先发200再置REPLIED标志，顺序反了200会被守卫吞掉
+        auto res = UnpackHttpRes("HTTP/1.1 200 Connection established" CRLF CRLF);
+        res->request_id = id;
+        rw->SendHeader(res);
+        status.flags = HTTP_REPLIED_F;
+        new Guest_sni(status.rw, header);
+        return;
+    }
     if(!header->ismethod("CONNECT") && strcmp(header->Dest.protocol, "websocket") != 0){
         if(const char* cl = header->get("Content-Length")){
             //RFC 9114 §4.1.2:content-length必须等于流内数据总长，入口处记录，Data/fin强制
@@ -252,6 +273,15 @@ void Guest3::DatagramProc(Buffer&& bb) {
 std::shared_ptr<IMemRWerCallback> Guest3::response(uint64_t id) {
     return IMemRWerCallback::create()->onHeader([this, id](std::shared_ptr<HttpResHeader> res){
         ReqStatus &status = statusmap.at(id);
+        if((status.flags & HTTP_REPLIED_F) && status.req->ismethod("CONNECT")) {
+            //200已先行应答，吞掉上游响应头不重复发送
+            if(memcmp(res->status, "200", 3) == 0){
+                rwer->Unblock(id);
+                return;
+            }
+            status.cleanJob = AddJob(([this, id]{Clean(id, HTTP3_ERR_INTERNAL_ERROR);}), 0, 0);
+            return;
+        }
         LOGD(DHTTP3, "<guest3> get response [%" PRIu64"]: %s\n", id, res->status);
         HttpLog(dumpDest(rwer->getSrc()), status.req, res);
         if(mitmProxy) {
