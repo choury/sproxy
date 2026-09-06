@@ -1,5 +1,6 @@
 #include "guest.h"
 #include "guest2.h"
+#include "guest_sni.h"
 #include "res/responser.h"
 #include "res/rproxy2.h"
 #include "misc/config.h"
@@ -150,20 +151,24 @@ bool Guest::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
         return false;
     }
     auto _cb = response(id);
-    if(header->ismethod("CONNECT") && !opt.mimic &&
-      (header->Dest.protocol[0] == 0 || strcmp(header->Dest.protocol, "tcp") == 0))
-    {
-        if(header->Dest.port == HTTPPORT) {
+    if(header->ismethod("CONNECT") && !opt.mimic) {
+        bool tcp = strcmp(header->Dest.protocol, "tcp") == 0;
+        if(tcp && header->Dest.port == HTTPPORT) {
             if(!headless) rwer->Send({HCONNECT, strlen(HCONNECT), id});
             Http_Proc = (bool (HttpBase::*)(Buffer&))&Guest::HeaderProc;
             return true;
         }
-        if(header->Dest.port == HTTPSPORT && shouldNegotiate(header, this)) {
+        if(should_sniff_sni(header, this)) {
             if(!headless) rwer->Send({HCONNECT, strlen(HCONNECT), id});
-            auto ctx = initssl(0, header->Dest.hostname);
-            auto srwer = std::make_shared<SslMer>(ctx, getSrc(), getDst(), _cb);
-            statuslist.emplace_back(ReqStatus{header, srwer, _cb, HTTP_NOEND_F});
-            new Guest(srwer);
+            headless = true;
+            std::shared_ptr<MemRWer> rw;
+            if(tcp) {
+                rw = std::make_shared<MemRWer>(getSrc(), getDst(), _cb);
+            } else {
+                rw = std::make_shared<PMemRWer>(getSrc(), getDst(), _cb);
+            }
+            statuslist.emplace_back(ReqStatus{header, rw, _cb, HTTP_NOEND_F});
+            new Guest_sni(rw, header);
             return true;
         }
     }

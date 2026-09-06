@@ -437,6 +437,159 @@ int parse_ech_configs(const char* buff, size_t len, std::string& ech_config_list
     return 0;
 }
 
+int get_dns_question(const char* buff, size_t len, char* domain, size_t domain_len, uint16_t* qtype) {
+    DnsCursor packet(buff, len);
+    const DNS_HDR* dnshdr = packet.read<DNS_HDR>();
+    if(dnshdr == nullptr || ntohs(dnshdr->qdcount) == 0){
+        return -1;
+    }
+    auto qdomain = packet.getdomain();
+    const DNS_QUE* que = qdomain ? packet.read<DNS_QUE>() : nullptr;
+    if(que == nullptr || qdomain->size() + 1 > domain_len){
+        return -1;
+    }
+    snprintf(domain, domain_len, "%s", qdomain->c_str());
+    *qtype = ntohs(que->type);
+    return 0;
+}
+
+static size_t rewrite_svcb_rdata(unsigned char* rdata, size_t rdlength, unsigned flags,
+                                 const in_addr* v4, const in6_addr* v6) {
+    if(rdlength < sizeof(HTTPS_PRIO)){
+        return 0;
+    }
+    {
+        //AliasMode(priority=0)只有别名目标，没有SvcParam
+        uint16_t prio = (rdata[0] << 8) | rdata[1];
+        if(prio == 0){
+            return 0;
+        }
+    }
+    DnsCursor rc(rdata, rdlength);
+    if(rc.read<HTTPS_PRIO>() == nullptr || !rc.getdomain()){
+        return 0;
+    }
+    size_t head_len = rc.data() - rdata;
+    unsigned char* r = rdata + head_len;
+    unsigned char* w = r;
+    const unsigned char* rdata_end = rdata + rdlength;
+    bool changed = false;
+    while(r + sizeof(SVC_PARAM) <= rdata_end){
+        uint16_t key = (r[0] << 8) | r[1];
+        uint16_t plen = (r[2] << 8) | r[3];
+        const unsigned char* val = r + sizeof(SVC_PARAM);
+        if(val + plen > rdata_end){
+            break;
+        }
+        const unsigned char* rep = nullptr;
+        size_t replen = 0;
+        if(key == 5 && (flags & HTTPS_RR_STRIP_ECH)){
+            changed = true;
+            r += sizeof(SVC_PARAM) + plen;
+            continue;
+        }else if(key == 4 && (flags & HTTPS_RR_FAKE_V4HINT)){
+            rep = (const unsigned char*)v4;
+            replen = sizeof(in_addr);
+        }else if(key == 6 && (flags & HTTPS_RR_FAKE_V6HINT)){
+            rep = (const unsigned char*)v6;
+            replen = sizeof(in6_addr);
+        }else if(key == 6 && (flags & HTTPS_RR_DROP_V6HINT)){
+            changed = true;
+            r += sizeof(SVC_PARAM) + plen;
+            continue;
+        }
+        if(rep){
+            if(plen < replen){
+                //长度不足容纳替换值时丢弃该参数，客户端会回落到A/AAAA查询
+                changed = true;
+                r += sizeof(SVC_PARAM) + plen;
+                continue;
+            }
+            w[0] = r[0];
+            w[1] = r[1];
+            w[2] = (unsigned char)(replen >> 8);
+            w[3] = (unsigned char)replen;
+            memcpy(w + sizeof(SVC_PARAM), rep, replen);
+            w += sizeof(SVC_PARAM) + replen;
+            changed = true;
+        }else{
+            memmove(w, r, sizeof(SVC_PARAM) + plen);
+            w += sizeof(SVC_PARAM) + plen;
+        }
+        r += sizeof(SVC_PARAM) + plen;
+    }
+    if(!changed){
+        return 0;
+    }
+    if(r != rdata_end){
+        memmove(w, r, rdata_end - r);
+        w += rdata_end - r;
+    }
+    return rdlength - (size_t)(w - rdata);
+}
+
+size_t rewrite_https_rr(unsigned char* buff, size_t len, unsigned flags,
+                        const in_addr* v4, const in6_addr* v6) {
+    if((flags & (HTTPS_RR_STRIP_ECH | HTTPS_RR_FAKE_V4HINT |
+                 HTTPS_RR_FAKE_V6HINT | HTTPS_RR_DROP_V6HINT)) == 0){
+        return len;
+    }
+    DnsCursor packet(buff, len);
+    const DNS_HDR* dnshdr = packet.read<DNS_HDR>();
+    if(dnshdr == nullptr || ntohs(dnshdr->qdcount) == 0 || !dnshdr->qr){
+        return len;
+    }
+    uint16_t numq = ntohs(dnshdr->qdcount);
+    for (int i = 0; i < numq; ++i) {
+        if(!packet.getdomain() || packet.read<DNS_QUE>() == nullptr){
+            return len;
+        }
+    }
+    //第一遍记录answer段每条RR的位置与类型，第二遍从后往前改写：
+    //前面的RR位置不受收缩影响，RR之后的数据随收缩整体前移。处理到
+    //RR i时shrink_total只含右侧RR的收缩量，而rr_end(i)不超前其右侧
+    //RR的起始，故搬移长度len-shrink_total-rr_end恒非负
+    struct {
+        size_t rdata_off;
+        uint16_t rdlength;
+        uint16_t type;
+    } rrs[64];
+    uint16_t numa = ntohs(dnshdr->ancount);
+    if(numa > 64){
+        return len;
+    }
+    for(int i = 0; i < numa; ++i) {
+        const DNS_RR* dnsrr = nullptr;
+        if(!packet.getdomain() || (dnsrr = packet.read<DNS_RR>()) == nullptr){
+            return len;
+        }
+        uint16_t rdlength = ntohs(dnsrr->rdlength);
+        if(packet.length() < rdlength){
+            return len;
+        }
+        rrs[i] = {(size_t)(packet.data() - buff), rdlength, ntohs(dnsrr->type)};
+        packet.advance(rdlength);
+    }
+    size_t shrink_total = 0;
+    for(int i = numa - 1; i >= 0; --i){
+        if(rrs[i].type != ns_t_https){
+            continue;
+        }
+        size_t shrink = rewrite_svcb_rdata(buff + rrs[i].rdata_off, rrs[i].rdlength,
+                                           flags, v4, v6);
+        if(shrink == 0){
+            continue;
+        }
+        size_t new_rdl = rrs[i].rdlength - shrink;
+        buff[rrs[i].rdata_off - 2] = (unsigned char)(new_rdl >> 8);
+        buff[rrs[i].rdata_off - 1] = (unsigned char)new_rdl;
+        size_t rr_end = rrs[i].rdata_off + rrs[i].rdlength;
+        memmove(buff + rr_end - shrink, buff + rr_end, len - shrink_total - rr_end);
+        shrink_total += shrink;
+    }
+    return len - shrink_total;
+}
+
 Dns_Result::Dns_Result(const char *domain, const in_addr* addr): type(ns_t_a), ttl(0){
     strcpy(this->domain, domain);
     if(addr) {

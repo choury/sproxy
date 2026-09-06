@@ -1,8 +1,8 @@
 #include "guest_sni.h"
 #include "prot/tls.h"
 #include "prot/sslio.h"
+#include "prot/memio.h"
 #include "misc/config.h"
-#include "misc/defer.h"
 #include "res/responser.h"
 
 #ifdef HAVE_QUIC
@@ -12,6 +12,9 @@
 
 #include <stdlib.h>
 #include <inttypes.h>
+#include <string>
+#include <arpa/inet.h>
+#include <strings.h>
 
 Guest_sni::Guest_sni(int fd, const sockaddr_storage* addr, SSL_CTX* ctx, std::function<void(Server*)> df):Guest(fd, addr, ctx){
     assert(ctx == nullptr);
@@ -30,17 +33,14 @@ Guest_sni::Guest_sni(int fd, const sockaddr_storage* addr, SSL_CTX* ctx, std::fu
     }
 
     Http_Proc = &Guest_sni::AlwaysProc;
-    user_agent = generateUA(opt.ua, "", 0);
     this->df = std::move(df);
 }
 
-Guest_sni::Guest_sni(std::shared_ptr<RWer> rwer, std::string host, const char* ua):
-        Guest(rwer), host(std::move(host))
+Guest_sni::Guest_sni(std::shared_ptr<RWer> rwer, std::shared_ptr<HttpReqHeader> req):
+        Guest(rwer), req(std::move(req))
 {
+    assert(this->req);
     headless = true;
-    if(ua) {
-        user_agent = ua;
-    }
     if(std::dynamic_pointer_cast<PMemRWer>(rwer)) {
         cb->onRead([this](Buffer&& bb){return sniffer_quic(std::move(bb));});
     } else if(std::dynamic_pointer_cast<MemRWer>(rwer)) {
@@ -51,58 +51,111 @@ Guest_sni::Guest_sni(std::shared_ptr<RWer> rwer, std::string host, const char* u
     Http_Proc = &Guest_sni::AlwaysProc;
 }
 
-Guest::ReqStatus* Guest_sni::forward(const char *hostname, Protocol prot, uint64_t id) {
-    if (hostname && hostname[0]){
-        host = hostname;
+static bool is_ip_host(const std::string& host) {
+    in_addr a4;
+    in6_addr a6;
+    return inet_pton(AF_INET, host.c_str(), &a4) == 1 ||
+           inet_pton(AF_INET6, host.c_str(), &a6) == 1;
+}
+
+bool should_sniff_sni(std::shared_ptr<const HttpReqHeader> req, Requester* src) {
+    if(req->Dest.port != HTTPSPORT) {
+        return false;
     }
-    hostname = host.c_str();
-    if(*hostname == '\0') {
-        LOGE("Guest_sni: empty hostname\n");
+    if(opt.mimic || !req->ismethod("CONNECT")) {
+        return false;
+    }
+    bool tcp = strcmp(req->Dest.protocol, "tcp") == 0;
+    bool udp = strcmp(req->Dest.protocol, "udp") == 0;
+#ifndef HAVE_QUIC
+    if(udp) {
+        //无QUIC支持的构建解不出QUIC Initial，嗅探注定无产出
+        return false;
+    }
+#endif
+    if(!tcp && !udp) {
+        return false;
+    }
+    if(is_ip_host(req->Dest.hostname) || strcmp(req->Dest.hostname, "fake_ip") == 0) {
+        return true;
+    }
+    return shouldNegotiate(req, src);
+}
+
+Guest::ReqStatus* Guest_sni::forward(const char* sni, bool ech, Protocol prot, uint64_t id) {
+    assert(statuslist.empty());
+    assert(sni);
+    if(req == nullptr && sni[0] == '\0') {
+        LOGE("Guest_sni: no req and no sni to forward\n");
         return nullptr;
     }
-    assert(statuslist.empty());
-    char buff[HEADLENLIMIT];
-    int slen;
-    if(strchr(hostname, ':') && hostname[0] != '[') {
-        //may be ipv6 without []
-        slen = snprintf(buff, sizeof(buff), "CONNECT [%s]:%d" CRLF, hostname, 443);
-    }else {
-        slen = snprintf(buff, sizeof(buff), "CONNECT %s:%d" CRLF, hostname, 443);
+    //known为权威已知域名(fakeip反查域名/CONNECT显式主机名)、IP串、空串
+    //(listen路径)或哨兵"fake_ip"(重启后映射丢失)
+    const std::string known = req ? req->Dest.hostname : "";
+    std::string target = known;
+    bool allow_mitm = true;
+    if(!ech || known.empty() || known == "fake_ip") {
+        //无ECH或无有效目标时信任SNI
+        if (sni[0]) {
+            target = sni;
+        }
+    }else if(strcasecmp(sni, known.c_str()) != 0) {
+        //除非 sni和known一致(GREASE模式)，不然拿到的sni就不可靠，做不了mitm
+        allow_mitm = false;
+    }
+    if(!allow_mitm) {
+        LOG("[sni] ECH detected, sni:%s, known:%s, forward %s via tunnel\n",
+            sni, known.c_str(), target.c_str());
+    }
+    if(req == nullptr)  {
+        //listen路径：按嗅探结果合成CONNECT请求
+        char buff[HEADLENLIMIT];
+        int slen = snprintf(buff, sizeof(buff), "CONNECT %s:%d" CRLF, target.c_str(), 443);
+        if(prot == Protocol::UDP) {
+            slen += snprintf(buff + slen, sizeof(buff) - slen, "Protocol: udp" CRLF);
+        }
+        slen += snprintf(buff + slen, sizeof(buff) - slen, CRLF);
+        req = UnpackHttpReq(buff, slen);
+        req->set("User-Agent", generateUA(opt.ua, "", req->request_id));
+        req->skip_authorize = true;
+    }else if(target != known) {
+        snprintf(req->Dest.hostname, sizeof(req->Dest.hostname), "%s", target.c_str());
+    }
+    assert(req->Dest.hostname[0]);
+    assert(req->Dest.port == HTTPSPORT);
+    req->set("User-Agent", generateUA(req->get("User-Agent"), "", req->request_id));
+    bool do_mitm = allow_mitm && shouldNegotiate(req, this);
+    auto cb = response(id);
+    std::shared_ptr<MemRWer> rw;
+    if(prot == Protocol::TCP) {
+        if(do_mitm) {
+            ctx = initssl(0, req->Dest.hostname);
+            auto srwer = std::make_shared<SslMer>(ctx, getSrc(), getDst(), cb);
+            srwer->set_server_name(req->Dest.hostname);
+            rw = srwer;
+            new Guest(srwer);
+        } else {
+            rw = std::make_shared<MemRWer>(getSrc(), getDst(), cb);
+        }
     }
     if(prot == Protocol::UDP) {
-        slen += snprintf(buff + slen, sizeof(buff) - slen, "Protocol: udp" CRLF);
-    }
-    slen += snprintf(buff + slen, sizeof(buff) - slen, CRLF);
-    std::shared_ptr<HttpReqHeader> req = UnpackHttpReq(buff, slen);
-    if(req == nullptr) {
-        LOGE("Guest_sni: UnpackHttpReq failed\n");
-        return nullptr;
-    }
-    req->set("User-Agent", generateUA(user_agent.c_str(), "", req->request_id));
-    req->skip_authorize = true;
-
-    auto _cb = response(id);
 #ifdef HAVE_QUIC
-    if(shouldNegotiate(hostname, 443)) {
-        if(prot == Protocol::TCP) {
-#else
-    if(shouldNegotiate(hostname, 443) && prot == Protocol::TCP) {
-#endif
-            ctx = initssl(0, hostname);
-            auto srwer = std::make_shared<SslMer>(ctx, getSrc(), getDst(), _cb);
-            statuslist.emplace_back(ReqStatus{req, srwer, _cb, HTTP_NOEND_F});
-            new Guest(srwer);
-#ifdef HAVE_QUIC
+        if(do_mitm) {
+            ctx = initssl(1, req->Dest.hostname);
+            auto qrwer = std::make_shared<QuicMer>(ctx, getSrc(), getDst(), cb);
+            rw = qrwer;
+            new Guest3(qrwer);
         } else {
-            ctx = initssl(1, hostname);
-            auto srwer = std::make_shared<QuicMer>(ctx, getSrc(), getDst(), _cb);
-            statuslist.emplace_back(ReqStatus{req, srwer, _cb, HTTP_NOEND_F});
-            new Guest3(srwer);
-        }
+#else
+        {
 #endif
-    } else {
-        headless = true;
-        ReqProc(req->request_id, req);
+            rw = std::make_shared<PMemRWer>(getSrc(), getDst(), cb);
+        }
+    }
+    //distribute可能同步回调错误响应(S407/S408/S504)，需要访问statuslist
+    statuslist.emplace_back(ReqStatus{req, rw, cb, do_mitm ? HTTP_NOEND_F : 0u});
+    if(!do_mitm) {
+        distribute(req, rw);
     }
     return &statuslist.back();
 }
@@ -112,16 +165,20 @@ Guest_sni::~Guest_sni() {
 }
 
 size_t Guest_sni::sniffer(Buffer&& bb) {
-    char *hostname = nullptr;
-    int ret = parse_tls_header((unsigned const char*)bb.data(), bb.len, &hostname);
-    defer(free, hostname);
+    if(bb.len == 0) {
+        //嗅探期间对端关闭；deleteLater会Close掉rwer，经closeHE通知外层清理
+        deleteLater(NOERROR);
+        return 0;
+    }
+    struct sni_result result{};
+    int ret = parse_tls_header((unsigned const char*)bb.data(), bb.len, &result);
     if(ret == -1) {
         // not enough data, wait for more
         return 0;
     }
-    LOGD(DHTTP, "[sni] forward to %s\n", hostname);
+    LOGD(DHTTP, "[sni] forward to %s\n", result.hostname);
     cb->onRead([this](Buffer&& bb){return ReadHE(std::move(bb));});
-    auto status = forward(hostname, Protocol::TCP, bb.id);
+    auto status = forward(result.hostname, result.ech, Protocol::TCP, bb.id);
     if(status == nullptr){
         deleteLater(SNI_HOST_ERR);
         return bb.len;
@@ -134,9 +191,13 @@ size_t Guest_sni::sniffer(Buffer&& bb) {
 
 size_t Guest_sni::sniffer_quic(Buffer&& bb) {
     const size_t len = bb.len;
-    char* hostname = nullptr;
-    defer([](char** ptr){free(*ptr);}, &hostname);
+    struct sni_result result{};
 
+    if(bb.len == 0) {
+        //嗅探期间对端关闭
+        deleteLater(NOERROR);
+        return 0;
+    }
     auto buffer = std::make_unique<char[]>(BUF_LEN);
     size_t length = 0;
     size_t max_off = 0;
@@ -189,7 +250,7 @@ size_t Guest_sni::sniffer_quic(Buffer&& bb) {
     if(max_off == 0 || length < max_off) {
         return 0;
     }
-    ret = parse_client_hello((unsigned const char*)buffer.get(), length, &hostname);
+    ret = parse_client_hello((unsigned const char*)buffer.get(), length, &result);
     if (ret == -1) {
         return 0;
     }
@@ -198,14 +259,14 @@ size_t Guest_sni::sniffer_quic(Buffer&& bb) {
         goto Forward;
     }
 Forward:
-    LOGD(DQUIC, "[sni] forward to %s\n", hostname);
+    LOGD(DQUIC, "[sni] forward to %s\n", result.hostname);
 #else
     (void)length;
     (void)max_off;
     (void)ret;
 #endif
     cb->onRead([this](Buffer&& bb){return ReadHE(std::move(bb));});
-    auto status = forward(hostname, Protocol::UDP, bb.id);
+    auto status = forward(result.hostname, result.ech, Protocol::UDP, bb.id);
     if(status == nullptr) {
         deleteLater(SNI_HOST_ERR);
         return bb.len;

@@ -1,4 +1,5 @@
 #include "guest2.h"
+#include "guest_sni.h"
 #include "res/responser.h"
 #include "misc/config.h"
 #include "hook/hook.h"
@@ -44,13 +45,24 @@ Guest2::Guest2(std::shared_ptr<RWer> rwer): Requester(rwer) {
                 [this]{connection_lost();}, 1800000);
         return len;
     })->onWrite([this](uint64_t id){
+        if(id == 0){
+            for(auto& i : statusmap){
+                if(!wantmore(i.second)){
+                    continue;
+                }
+                i.second.rw->pull(i.first);
+            }
+            return;
+        }
         if(statusmap.count(id) == 0){
+            LOGD(DHTTP2, "<guest2> pull unknown stream: %" PRIu64 "\n", id);
             return;
         }
         ReqStatus& status = statusmap[id];
-        if(wantmore(status)){
-            status.rw->pull(id);
+        if(!wantmore(status)){
+            return;
         }
+        status.rw->pull(id);
     })->onError([this](int ret, int code){
         Error(ret, code);
     });
@@ -131,6 +143,14 @@ void Guest2::ReqProc(uint32_t id, std::shared_ptr<HttpReqHeader> header) {
         localframewindowsize,
     };
     ReqStatus& status = statusmap[id];
+    if(should_sniff_sni(header, this)) {
+        auto res = UnpackHttpRes("HTTP/1.1 200 Connection established" CRLF CRLF);
+        res->request_id = id;
+        rw->SendHeader(res);
+        status.flags = HTTP_REPLIED_F;
+        new Guest_sni(status.rw, header);
+        return;
+    }
     if(!header->ismethod("CONNECT") && strcmp(header->Dest.protocol, "websocket") != 0){
         if(const char* cl = header->get("Content-Length")){
             //RFC 9113 §8.1.1:content-length必须等于DATA帧总长，入口处记录，Data/EndProc强制
@@ -225,6 +245,15 @@ void Guest2::EndProc(uint32_t id) {
 std::shared_ptr<IMemRWerCallback> Guest2::response(uint64_t id) {
     return IMemRWerCallback::create()->onHeader([this, id](std::shared_ptr<HttpResHeader> res){
         ReqStatus& status = statusmap.at(id);
+        if((status.flags & HTTP_REPLIED_F) && status.req->ismethod("CONNECT")) {
+            //200已先行应答，吞掉上游响应头不重复发送
+            if(memcmp(res->status, "200", 3) == 0){
+                rwer->Unblock(id);
+                return;
+            }
+            status.cleanJob = AddJob(([this, id]{Clean(id, HTTP2_ERR_INTERNAL_ERROR);}), 0, 0);
+            return;
+        }
         status.req->tracker.emplace_back("header", getmtime());
         LOGD(DHTTP2, "<guest2> get response [%" PRIu64"]: %s\n", id, res->status);
         HttpLog(dumpDest(rwer->getSrc()), status.req, res);

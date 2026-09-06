@@ -4,6 +4,7 @@
 #include "doh.h"
 #include "misc/util.h"
 #include "misc/job.h"
+#include "prot/dns/dns.h"
 #include "prot/dns/resolver.h"
 #include "prot/memio.h"
 
@@ -51,7 +52,24 @@ void Doh::DnsCB(std::shared_ptr<void> id_, const char *buff, size_t size) {
     auto res = HttpResHeader::create(S200, sizeof(S200), id);
     res->set("Content-Type", "application/dns-message")
        ->set("Date", gmt);
-    response(status.rw, res, std::string_view(buff, size));
+    //HTTPS RR(type 65)应答：对将被MITM的域名剥离ech参数，迫使客户端回退sni
+    char domain[DOMAINLIMIT];
+    uint16_t qtype = 0;
+    if(get_dns_question(buff, size, domain, sizeof(domain), &qtype) == 0 &&
+       qtype == ns_t_https && shouldNegotiate(domain, 443))
+    {
+        std::string rewritten(size, 0);
+        memcpy(rewritten.data(), buff, size);
+        rewritten.resize(rewrite_https_rr((unsigned char*)rewritten.data(), rewritten.size(),
+                                          HTTPS_RR_STRIP_ECH, nullptr, nullptr));
+        if(rewritten.size() != size){
+            LOGD(DDNS, "<doh> strip ech for %s, size %zu -> %zu\n",
+                 domain, size, rewritten.size());
+        }
+        response(status.rw, res, rewritten);
+    }else{
+        response(status.rw, res, std::string_view(buff, size));
+    }
     _doh->succeed_count++;
     _doh->statusmap.erase(id);
 }
@@ -139,7 +157,8 @@ void Doh::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> r
 
 
 void Doh::dump_stat(Dumper dp, void* param) {
-    dp(param, "DoH: %p, sessions: %zu, succeed: %zd, failed: %zd, rtt: %.3fms\n", this, statusmap.size(), succeed_count, failed_count, last_rtt);
+    dp(param, "DoH: %p, sessions: %zu, succeed: %zd, failed: %zd, rtt: %.3fms\n",
+        this, statusmap.size(), succeed_count, failed_count, last_rtt);
     for(auto& [name, status]: statusmap) {
         dp(param, "  [%" PRIu64 "]: %s\n", name, dumpDest(status.rw->getSrc()).c_str());
     }

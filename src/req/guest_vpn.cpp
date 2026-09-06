@@ -70,7 +70,8 @@ Guest_vpn::Guest_vpn(int fd, bool enable_offload, bool is_tap): Requester(nullpt
         if(status.flags & (HTTP_RES_COMPLETED | HTTP_CLOSED_F | HTTP_RST)){
             return;
         }
-        status.rw->pull(id);
+        // 入参的id是vpn的id，不能用来调用pull
+        status.rw->pull(0);
     })->onError([](int ret, int code){
         LOGE("vpn_server error: %d/%d\n", ret, code);
         exit_loop(0);
@@ -307,10 +308,6 @@ static void storage2Dest(const sockaddr_storage& ss, Destination* dest) {
     return storage2Dest(&ss, dest);
 }
 
-static bool isFakeAddress(const sockaddr_storage& dst) {
-    return isFakeAddress(&dst);
-}
-
 void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
     assert(statusmap.count(id) == 0);
     statusmap.emplace(id, VpnStatus{});
@@ -323,40 +320,40 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
     Destination src, dst;
     storage2Dest(pac->getsrc(), &src);
     storage2Dest(pac->getdst(), &dst);
-    bool shouldMitm = isFakeAddress(pac->getdst()) && shouldNegotiate(status.host, dport);
+    bool local = getstrategy(status.host.c_str(), dport).s == Strategy::local;
+    std::shared_ptr<TunRWer> trwer = std::dynamic_pointer_cast<TunRWer>(rwer);
     status.cb = response(id);
     switch(pac->gettype()){
     case IPPROTO_TCP:{
         if(dport == HTTPPORT) {
             status.rw = std::make_shared<MemRWer>(src, dst, status.cb);
             new Guest(status.rw);
-            std::shared_ptr<TunRWer> trwer = std::dynamic_pointer_cast<TunRWer>(rwer);
             trwer->sendMsg(id, TUN_MSG_SYN);
-        } else if(dport == HTTPSPORT) {
-            if(shouldMitm || getstrategy(status.host.c_str(), dport).s == Strategy::local) {
-                auto ctx = initssl(0, status.host.c_str());
-                auto wrwer = std::make_shared<SslMer>(ctx, src, dst, status.cb);
-                wrwer->set_server_name(status.host);
-                status.rw = wrwer;
-                new Guest(wrwer);
-            } else {
-                status.rw = std::make_shared<MemRWer>(src, dst, status.cb);
-                new Guest_sni(status.rw, status.host, generateUA(opt.ua, status.prog, 0).c_str());
-            }
-            std::shared_ptr<TunRWer> trwer = std::dynamic_pointer_cast<TunRWer>(rwer);
+            break;
+        } else if(dport == HTTPSPORT && local) {
+            auto ctx = initssl(0, status.host.c_str());
+            auto wrwer = std::make_shared<SslMer>(ctx, src, dst, status.cb);
+            wrwer->set_server_name(status.host);
+            status.rw = wrwer;
+            new Guest(wrwer);
             trwer->sendMsg(id, TUN_MSG_SYN);
-        } else {
-            //create a http proxy request
-            int headlen = snprintf(buff, sizeof(buff), "CONNECT %s" CRLF CRLF,
-                                getRdnsWithPort(pac->getdst()).c_str());
-
-            status.req = UnpackHttpReq(buff, headlen);
-            status.req->request_id = id;
-            status.req->set("User-Agent", generateUA(opt.ua, status.prog, id));
-            status.req->skip_authorize = true;
-            status.rw = std::make_shared<MemRWer>(src, dst, status.cb);
-            distribute(status.req, status.rw);
+            break;
         }
+        //create a http proxy request
+        int headlen = snprintf(buff, sizeof(buff), "CONNECT %s" CRLF CRLF,
+                            getRdnsWithPort(pac->getdst()).c_str());
+
+        status.req = UnpackHttpReq(buff, headlen);
+        status.req->request_id = id;
+        status.req->set("User-Agent", generateUA(opt.ua, status.prog, id));
+        status.req->skip_authorize = true;
+        status.rw = std::make_shared<MemRWer>(src, dst, status.cb);
+        if(should_sniff_sni(status.req, this)) {
+            new Guest_sni(status.rw, status.req);
+            trwer->sendMsg(id, TUN_MSG_SYN);
+            break;
+        }
+        distribute(status.req, status.rw);
         break;
     }
     case IPPROTO_UDP:{
@@ -364,30 +361,32 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
             status.flags |= VPN_DNSREQ_F;
             status.rw = std::make_shared<PMemRWer>(src, dst, status.cb);
             FDns::GetInstance()->query(id, status.rw);
+            break;
 #ifdef HAVE_QUIC
-        } else if (dport == HTTPSPORT) {
-            if(shouldMitm || getstrategy(status.host.c_str(), dport).s == Strategy::local) {
-                auto ctx = initssl(1, status.host.c_str());
-                auto wrwer = std::make_shared<QuicMer>(ctx, src, dst, status.cb);
-                status.rw = wrwer;
-                new Guest3(wrwer);
-            } else {
-                status.rw = std::make_shared<PMemRWer>(src, dst, status.cb);
-                new Guest_sni(status.rw, status.host, generateUA(opt.ua, status.prog, 0).c_str());
-            }
+        } else if(dport == HTTPSPORT && local) {
+            auto ctx = initssl(1, status.host.c_str());
+            auto wrwer = std::make_shared<QuicMer>(ctx, src, dst, status.cb);
+            status.rw = wrwer;
+            new Guest3(wrwer);
+            break;
 #endif
-        } else {
-            //create a http proxy request
-            int headlen = snprintf(buff, sizeof(buff), "CONNECT %s" CRLF "Protocol: udp" CRLF CRLF,
-                                  getRdnsWithPort(pac->getdst()).c_str());
-
-            status.req = UnpackHttpReq(buff, headlen);
-            status.req->request_id = id;
-            status.req->set("User-Agent", generateUA(opt.ua, status.prog, id));
-            status.req->skip_authorize = true;
-            status.rw = std::make_shared<PMemRWer>(src, dst, status.cb);
-            distribute(status.req, status.rw);
         }
+        //create a http proxy request
+        int headlen = snprintf(buff, sizeof(buff), "CONNECT %s" CRLF "Protocol: udp" CRLF CRLF,
+                                getRdnsWithPort(pac->getdst()).c_str());
+
+        status.req = UnpackHttpReq(buff, headlen);
+        status.req->request_id = id;
+        status.req->set("User-Agent", generateUA(opt.ua, status.prog, id));
+        status.req->skip_authorize = true;
+        status.rw = std::make_shared<PMemRWer>(src, dst, status.cb);
+#ifdef HAVE_QUIC
+        if(should_sniff_sni(status.req, this)) {
+            new Guest_sni(status.rw, status.req);
+            break;
+        }
+#endif
+        distribute(status.req, status.rw);
         break;
     }
     case IPPROTO_ICMP:{

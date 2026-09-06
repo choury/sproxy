@@ -72,25 +72,23 @@ const char *DEFAULT_CIPHER_LIST =
 #define TLS_HANDSHAKE_CONTENT_TYPE 0x16
 #define TLS_HANDSHAKE_TYPE_CLIENT_HELLO 0x01
 
-static int parse_extensions(const unsigned char*, size_t, char **);
-static int parse_server_name_extension(const unsigned char *, size_t, char **);
+static int parse_extensions(const unsigned char*, size_t, struct sni_result *);
+static int parse_server_name_extension(const unsigned char *, size_t, char *);
 
 
 /* Parse a TLS packet for the Server Name Indication extension in the client
- * hello handshake, returning the first servername found (pointer to static
- * array)
+ * hello handshake, filling result->hostname (first servername found) and
+ * result->ech (encrypted_client_hello 0xfe0d, RFC 9480)
  *
  * Returns:
- *  >=0  - length of the hostname and updates *hostname
- *         caller is responsible for freeing *hostname
+ *  >=0  - length of the hostname
  *  -1   - Incomplete request
  *  -2   - No Host header included in this request
  *  -3   - Invalid hostname pointer
- *  -4   - malloc failure
- *  < -4 - Invalid TLS client hello
+ *  <-3  - Invalid TLS client hello
  */
-int parse_tls_header(const unsigned char *data, size_t data_len, char **hostname) {
-    if (hostname == NULL)
+int parse_tls_header(const unsigned char *data, size_t data_len, struct sni_result *result) {
+    if (result == NULL)
         return -3;
 
     /* Check that our TCP payload is at least large enough for a TLS header */
@@ -138,10 +136,10 @@ int parse_tls_header(const unsigned char *data, size_t data_len, char **hostname
     if (TLS_HEADER_LEN + 1 > data_len) {
         return -5;
     }
-    return parse_client_hello(data + TLS_HEADER_LEN, data_len - TLS_HEADER_LEN, hostname);
+    return parse_client_hello(data + TLS_HEADER_LEN, data_len - TLS_HEADER_LEN, result);
 }
 
-int parse_client_hello(const unsigned char*data, size_t data_len, char** hostname) {
+int parse_client_hello(const unsigned char*data, size_t data_len, struct sni_result* result) {
     size_t pos = 0;
     if (data[pos] != TLS_HANDSHAKE_TYPE_CLIENT_HELLO) {
         LOGE("Not a client hello\n");
@@ -196,27 +194,35 @@ int parse_client_hello(const unsigned char*data, size_t data_len, char** hostnam
 
     if (pos + len > data_len)
         return -1;
-    return parse_extensions(data + pos, len, hostname);
+    return parse_extensions(data + pos, len, result);
 }
 
 static int
-parse_extensions(const unsigned char *data, size_t data_len, char **hostname) {
+parse_extensions(const unsigned char *data, size_t data_len, struct sni_result *result) {
     size_t pos = 0;
+    int host_ret = -2;
 
     /* Parse each 4 bytes for the extension header */
     while (pos + 4 <= data_len) {
         /* Extension Length */
         size_t len = (data[pos + 2] << 8) + data[pos + 3];
 
-        /* Check if it's a server name extension */
+        if (pos + 4 + len > data_len) {
+            LOGE("Pos exceed\n");
+            return -5;
+        }
         if (data[pos] == 0x00 && data[pos + 1] == 0x00) {
-            /* There can be only one extension of each type, so we break
-               our state and move p to beinnging of the extension here */
-            if (pos + 4 + len > data_len) {
-                LOGE("Pos exceed\n");
+            /* server_name扩展只应出现一次，重复视为畸形 */
+            if (host_ret != -2) {
+                LOGE("duplicated server_name extension\n");
                 return -5;
             }
-            return parse_server_name_extension(data + pos + 4, len, hostname);
+            host_ret = parse_server_name_extension(data + pos + 4, len, result->hostname);
+            if (host_ret < 0)
+                return host_ret;
+        } else if (data[pos] == 0xfe && data[pos + 1] == 0x0d) {
+            /* encrypted_client_hello(RFC 9480)，真实ECH与GREASE不可区分，仅记标志 */
+            result->ech = true;
         }
         pos += 4 + len; /* Advance to the next extension header */
     }
@@ -225,12 +231,12 @@ parse_extensions(const unsigned char *data, size_t data_len, char **hostname) {
         LOGE("Unexpected Pos\n");
         return -5;
     }
-    return -2;
+    return host_ret;
 }
 
 static int
 parse_server_name_extension(const unsigned char *data, size_t data_len,
-        char **hostname) {
+        char *hostname) {
     size_t pos = 2; /* skip server name list length */
 
     while (pos + 3 < data_len) {
@@ -243,15 +249,27 @@ parse_server_name_extension(const unsigned char *data, size_t data_len,
 
         switch (data[pos]) { /* name type */
             case 0x00: /* host_name */
-                *hostname = malloc(len + 1);
-                if (*hostname == NULL) {
-                    LOGE("malloc() failure: %s\n", strerror(errno));
-                    return -4;
+                if (len >= DOMAINLIMIT) {
+                    LOGE("server name too long: %zd\n", len);
+                    return -5;
+                }
+                /* SNI必须是DNS主机名(RFC 6066)，只允许字母数字、'-'、'.'与
+                 * '_'。嗅探结果会被拼进CONNECT请求行，白名单校验杜绝空格、
+                 * CRLF、'['等字符造成的请求走私或畸形URL */
+                for (size_t i = 0; i < len; i++) {
+                    unsigned char c = data[pos + 3 + i];
+                    if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                        (c >= '0' && c <= '9') ||
+                        c == '-' || c == '.' || c == '_') {
+                        continue;
+                    }
+                    LOGE("invalid char 0x%02x in server name\n", c);
+                    return -5;
                 }
 
-                strncpy(*hostname, (char*)data + pos + 3, len);
+                memcpy(hostname, (char*)data + pos + 3, len);
 
-                (*hostname)[len] = '\0';
+                hostname[len] = '\0';
 
                 return len;
             default:
