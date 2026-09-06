@@ -24,6 +24,11 @@
 extern "C" {
 void addrstring(const struct sockaddr_storage*, char*, size_t) {}
 void demangle_func(char*, int) {}
+//app构建下bionic无backtrace(自带的execinfo.cpp只编进主库)，同样桩掉
+#ifdef ANDROID_APP
+int backtrace(void**, int) { return 0; }
+char** backtrace_symbols(void* const*, int) { return nullptr; }
+#endif
 }
 
 //打印协商结果与对端证书供脚本断言(ech为空/"grease"/base64)，返回ech是否按预期接受

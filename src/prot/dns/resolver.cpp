@@ -30,7 +30,7 @@ struct Dns_Addr_Rcd {
     uint32_t ttl = 0xefffffff;
     time_t get_time = 0;
     bool fresh() const {
-        return (ttl != 0xefffffff) && (get_time + ttl > time(nullptr));
+        return (ttl != 0xefffffff) && (get_time + (time_t)ttl > time(nullptr));
     }
 };
 
@@ -40,7 +40,7 @@ struct Dns_Ech_Rcd {
     uint32_t ttl = 0xefffffff;
     time_t get_time = 0;
     bool fresh() const {
-        return (ttl != 0xefffffff) && (get_time + ttl > time(nullptr));
+        return (ttl != 0xefffffff) && (get_time + (time_t)ttl > time(nullptr));
     }
 };
 

@@ -140,8 +140,8 @@ protected:
     virtual void HeadersProc(uint64_t id, const uchar* header, size_t len) override;
     virtual void ResProc(uint64_t id, std::shared_ptr<HttpResHeader> res) = 0;
     void SendMaxPushId(uint64_t maxid);
-    virtual void PushProc(uint64_t, std::shared_ptr<HttpReqHeader>) {}
-    virtual void PushResProc(uint64_t, std::shared_ptr<HttpResHeader>) {}
+    virtual void PushProc(uint64_t, std::shared_ptr<HttpReqHeader>) override {}
+    virtual void PushResProc(uint64_t, std::shared_ptr<HttpResHeader>) override {}
 public:
     using Http3Base::Http3Base;
 
