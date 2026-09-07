@@ -46,6 +46,20 @@
 3. 远端节点完成实际的网络请求，并将响应回传给本地 `sproxy`，最终返回给客户端。
 4. 特别的，`local` 作为内部实现的一个名称，直接由本机处理，比如 `/rproxy/local/127.0.0.1:8080`
 
+### Origin 头改写
+
+浏览器视角下 `/rproxy/` 页面与其加载的接口同属代理域名，页面发起请求时携带的 `Origin`/`Referer` 是代理自身的地址，直接透传会被目标站的跨域校验拒绝。服务端 `rewrite_rproxy_req` 按以下优先级改写 `Origin`：
+
+1. **`X-Rproxy-Origin` 标记头**：`inject.js` 在 hook 的 `fetch`/`XMLHttpRequest` 中注入页面真实源（`Origin` 是禁止头，页面 JS 无法直接设置）。服务端仅在请求携带 `Sec-Fetch-Site: same-origin` 时信任该头——`Sec-Fetch-Site` 由浏览器生成、JS 不可伪造，外部站点经预检（preflight）注入的伪造标记头不满足此条件，不会被采纳。无论是否采纳，该头都会在转发前删除。该门控只能排除外部站点的伪造：与代理同源的页面（如同一代理下的其他 `/rproxy/` 页面）仍可伪造标记头，但 `Origin` 本就是客户端自报的头，攻击者用非浏览器客户端直连目标站同样能伪造，故不构成额外的提权面。
+2. **Referer 推导**：`Referer` 指向 `/rproxy/` 页面时，取其目标 URL 的源。
+3. 其余情况（外部站点直接发起、无 Referer）保留原始 `Origin`。
+
+`Sec-Fetch-Site` 按语义映射而非一律改写为 `cross-site`：带 Fetch Metadata CSRF 防护的后端会直接拒绝 `cross-site` 请求，同源请求被误杀。具体规则：`none`（用户直接导航）保留原值；能推导出页面真实源（上述标记头或 Referer 途径）且与请求目标同源时，如实改写为 `same-origin`；推导不出页面源或页面与目标跨站时，维持防御性的 `cross-site`。标记头的门控依赖请求原始的 `Sec-Fetch-Site: same-origin`，该判断发生在改写之前，不受映射结果影响。
+
+注意：经代理转写的 `<iframe>` 默认会被强制加上 `sandbox="allow-scripts"`（不含 `allow-same-origin`），iframe 页面因此是不透明源（opaque origin），其请求的 `Sec-Fetch-Site` 恒为 `cross-site`，标记头不会被信任，实际生效的是第 2 条 Referer 推导；若 iframe 页面自身设置了 `Referrer-Policy: no-referrer`，`Origin` 改写将完全失效。
+
+WebSocket 升级请求构造函数无法携带自定义头，上述机制不覆盖。对 WS 握手，服务端会直接删除 `Origin` 及 `Sec-Fetch-*`（Fetch Metadata）组头， RFC 6455 允许非浏览器客户端省略 `Origin`，删除后握手端表现为非浏览器客户端。要求 `Origin` 必须存在且匹配的严格服务端仍会拒绝，此类站点无解。`sendBeacon` 与 `EventSource`（SSE）的构造接口同样无法携带自定义头，标记头机制不覆盖，但二者的请求会携带 `Referer`，通常可经第 2 条推导改写。
+
 ## 30x 跳转与 Cookie 处理
 
 为了确保浏览器在访问代理页面时能正确维持会话和路径上下文，`sproxy` 在服务端对响应头进行了透明改写。

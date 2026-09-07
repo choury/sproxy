@@ -220,19 +220,12 @@ self.addEventListener('fetch', (event) => {
       }
     }
 
+    //响应头的清理(CSP/ACAO等)由服务端rewrite_rproxy_res统一处理，SW只负责改写body
     const headers = new Headers(res.headers);
     if (newType) {
         headers.delete('content-length');
         headers.set('content-type', newType);
     }
-
-    // Common header cleanup for all proxied content
-    headers.delete('content-security-policy');
-    headers.delete('content-security-policy-report-only');
-    headers.delete('x-content-security-policy');
-    headers.delete('x-webkit-csp');
-    headers.set('access-control-allow-origin', '*');
-    headers.set('timing-allow-origin', '*');
 
     return new Response(body, {
       status: res.status,

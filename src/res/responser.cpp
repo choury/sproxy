@@ -19,7 +19,6 @@
 #include <unistd.h>
 #include <sstream>
 #include <cctype>
-#include <strings.h>
 
 
 bimap<std::string, Responser*> responsers;
@@ -327,29 +326,10 @@ static bool origin_from_url(const std::string& url, std::string& origin_out) {
     if(spliturl(url.c_str(), &dest, nullptr) != 0) {
         return false;
     }
+    if(!dest.scheme[0] || !dest.hostname[0]) {
+        return false; //无scheme的源不是合法的序列化形态
+    }
     origin_out = dumpDest(&dest);
-    return true;
-}
-
-static bool origin_matches_host(const char* origin_header, const char* host_header) {
-    if(!origin_header || !host_header) {
-        return false;
-    }
-    Destination origin_dest{};
-    if(spliturl(origin_header, &origin_dest, nullptr) != 0) {
-        return false;
-    }
-    std::string host_url = std::string("http://") + host_header;
-    Destination host_dest{};
-    if(spliturl(host_url.c_str(), &host_dest, nullptr) != 0) {
-        return false;
-    }
-    if(strcasecmp(origin_dest.hostname, host_dest.hostname) != 0) {
-        return false;
-    }
-    if(origin_dest.port != 0 && host_dest.port != 0 && origin_dest.port != host_dest.port) {
-        return false;
-    }
     return true;
 }
 
@@ -372,25 +352,29 @@ void rewrite_rproxy_req(std::shared_ptr<HttpReqHeader> req) {
             }
         }
     }
-    if(req->has("Origin")) {
-        std::string origin;
-        const char* origin_header = req->get("Origin");
-        if(origin_header && startwith(origin_header, "/rproxy/")) {
-            std::string rewritten;
-            if(extract_rproxy_target_url(origin_header, rewritten) && origin_from_url(rewritten, origin)) {
-                req->set("Origin", origin);
-            }
-        } else if(!rewritten_referer.empty() && origin_from_url(rewritten_referer, origin)) {
-            req->set("Origin", origin);
-        } else {
-            const char* host = req->get("Host");
-            if(origin_matches_host(origin_header, host)) {
-                req->set("Origin", dumpDest(&req->Dest));
-            }
-        }
+    std::string marker_origin;
+    if(const char* marker = req->get("X-Rproxy-Origin")) {
+        marker_origin = marker;
     }
-    if(req->has("Sec-Fetch-Site")) {
-        req->set("Sec-Fetch-Site", "cross-site");
+    req->del("X-Rproxy-Origin"); //标记头不透传给目标站
+    std::string page_origin;
+    if(!marker_origin.empty() && req->has("Sec-Fetch-Site", "same-origin")
+       && origin_from_url(marker_origin, page_origin)) {
+        //标记头经Sec-Fetch-Site门控后可信
+    } else if(!rewritten_referer.empty() && origin_from_url(rewritten_referer, page_origin)) {
+        //门控未过或无标记头时，退回Referer推导
+    }
+    if(strcmp(req->Dest.protocol, "websocket") == 0) {
+        req->del("Origin");
+        req->del("Sec-Fetch-Site");
+        req->del("Sec-Fetch-Mode");
+        req->del("Sec-Fetch-Dest");
+        req->del("Sec-Fetch-User");
+    } else if(req->has("Origin") && !page_origin.empty()) {
+        req->set("Origin", page_origin);
+    }
+    if(req->has("Sec-Fetch-Site") && !req->has("Sec-Fetch-Site", "none")) {
+        req->set("Sec-Fetch-Site", page_origin == dumpDest(&req->Dest) ? "same-origin" : "cross-site");
     }
     const char* accept = req->get("Accept");
     bool is_document = req->ismethod("GET") && accept && strstr(accept, "text/html");
@@ -487,6 +471,7 @@ void distribute_rproxy(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRW
     req->set("X-Forwarded-For", dumpAuthority(&src));
     req->rproxy_name = rproxy_name;
     if(rproxy_name == "local") {
+        rewrite_rproxy_req(req);
         return distribute(req, rw);
     }
     if(!opt.rproxy_delegate_auth && !checkauth(rw->getSrc().hostname, req)){

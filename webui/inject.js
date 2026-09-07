@@ -75,6 +75,16 @@
         } else if (input && typeof input === 'object' && input.url) {
           input = new Request(rewrite(input.url), input);
         }
+        //Origin是禁止头无法直接设置，把页面真实源捎在标记头里，由服务端改写Origin
+        if (ctx && ctx.base) {
+          init = Object.assign({}, init);
+          //与fetch语义一致：init.headers存在时整体覆盖Request自带headers
+          var src = (init.headers !== undefined && init.headers !== null) ? init.headers
+            : ((input && typeof input === 'object' && input.headers) ? input.headers : undefined);
+          var headers = new Headers(src);
+          if (!headers.has('X-Rproxy-Origin')) headers.set('X-Rproxy-Origin', ctx.base.origin);
+          init.headers = headers;
+        }
       } catch (e) {}
       return origFetch.call(this, input, init);
     };
@@ -84,6 +94,14 @@
     XMLHttpRequest.prototype.open = function(method, url){
       try { url = rewrite(url); } catch (e) {}
       return origOpen.apply(this, arguments);
+    };
+    //setRequestHeader只能在open之后send之前调用，故在send前补标记头
+    var origSend = XMLHttpRequest.prototype.send;
+    XMLHttpRequest.prototype.send = function(){
+      try {
+        if (ctx && ctx.base) this.setRequestHeader('X-Rproxy-Origin', ctx.base.origin);
+      } catch (e) {}
+      return origSend.apply(this, arguments);
     };
   }
   var origWinOpen = window.open;
