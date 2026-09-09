@@ -204,76 +204,22 @@
     if (!ctx || !ctx.base || !ctx.prefix || scope.RProxy._windowPatched) {
       return;
     }
-    if (typeof scope.Location === 'undefined' || typeof scope.Document === 'undefined') {
+    if (typeof scope.Document === 'undefined') {
       return;
     }
     scope.RProxy._windowPatched = true;
 
-    var baseInfo = {
-      origin: ctx.base.origin,
-      host: ctx.base.host,
-      hostname: ctx.base.hostname,
-      protocol: ctx.base.protocol,
-      port: ctx.base.port,
-    };
-    var currentOrigin = scope.location ? scope.location.origin : '';
-    var unmask = function(u) {
-      if (!u || typeof u !== 'string') return u;
-      if (u.indexOf(ctx.prefix) === 0) {
-        var rest = u.slice(ctx.prefix.length);
-        if (rest.indexOf('http') === 0) return rest;
-        return baseInfo.origin + (rest[0] === '/' ? '' : '/') + rest;
-      }
-      if (currentOrigin && u.indexOf(currentOrigin + ctx.prefix) === 0) {
-        var rest = u.slice((currentOrigin + ctx.prefix).length);
-        if (rest.indexOf('http') === 0) return rest;
-        return baseInfo.origin + (rest[0] === '/' ? '' : '/') + rest;
-      }
-      return u;
-    };
     var unwrap = function(u) {
       if (!u || typeof u !== 'string') return u;
       var c = scope.RProxy.parseContext(u);
       if (c && c.base) return c.base.href;
       return u;
     };
-    var patch = function(obj, prop, getOnly) {
-      try {
-        var desc = Object.getOwnPropertyDescriptor(obj, prop);
-        if (!desc || !desc.get) return;
-        Object.defineProperty(obj, prop, {
-          configurable: true,
-          enumerable: true,
-          get: function() {
-            if (this === scope.location || this === document.location || this === document) {
-              if (baseInfo.hasOwnProperty(prop)) {
-                  return baseInfo[prop];
-              }
-            }
-            if ((this === scope.location || this === document.location) && (prop === 'pathname' || prop === 'search' || prop === 'hash')) {
-              try {
-                var full = unmask(scope.location.href);
-                return new URL(full)[prop];
-              } catch (e) {}
-            }
-            var v = desc.get.call(this);
-            if (this === scope.location || this === document.location || this === document || (this.tagName === 'A' && prop === 'href')) {
-              return unmask(v);
-            }
-            return v;
-          },
-          set: getOnly ? desc.set : function(v) { return desc.set.call(this, v); }
-        });
-      } catch (e) {}
-    };
-
-    ['href','origin','protocol','host','hostname','port','pathname','search','hash'].forEach(function(p){ patch(Location.prototype, p); });
-    ['URL','documentURI','baseURI','referrer'].forEach(function(p){ patch(Document.prototype, p, true); });
-    try {
-      Object.defineProperty(scope, 'origin', { configurable: true, enumerable: true, get: function() { return baseInfo.origin; } });
-    } catch (e) {}
-    // Hook Document extras (domain/cookie)
-    var docProps = ['URL', 'documentURI', 'baseURI', 'referrer', 'domain', 'cookie'];
+    // location.href/host等是[LegacyUnforgeable]属性(实例自有且不可配置)，无法被patch，
+    // 所有浏览器都一样；window.origin也保持原生值，避免与无法伪装的location.origin
+    // 不一致(如postMessage的targetOrigin匹配会失败)。document.baseURI定义在
+    // Node.prototype上，同样不在此处理。因此只伪装Document.prototype上存在的属性。
+    var docProps = ['URL', 'documentURI', 'referrer', 'domain', 'cookie'];
     docProps.forEach(function(prop) {
       var proto = Document.prototype;
       var desc = Object.getOwnPropertyDescriptor(proto, prop);
@@ -318,26 +264,6 @@
         });
       }
     });
-
-    // Hook window.origin
-    try {
-      var originDesc = Object.getOwnPropertyDescriptor(scope, 'origin');
-      if (originDesc && originDesc.get) {
-        Object.defineProperty(scope, 'origin', {
-          configurable: true,
-          get: function() { return scope.location ? scope.location.origin : baseInfo.origin; }
-        });
-      }
-    } catch (e) {}
-
-    // Hook Location.prototype.toString
-    var origLocToString = Location.prototype.toString;
-    Location.prototype.toString = function() {
-      if (this === scope.location || this === document.location) {
-        return this.href;
-      }
-      return origLocToString.call(this);
-    };
   };
 
   scope.RProxy.rewriteSrcset = function(value, ctx) {

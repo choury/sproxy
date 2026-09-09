@@ -40,9 +40,6 @@ function rewriteHtml(text, ctx) {
           if (win.__rproxy_patched) return;
           try {
               var History = win.History;
-              var Location = win.Location;
-              var history = win.history;
-              var location = win.location;
 
               function wrapHistory(proto, method) {
                   var orig = proto && proto[method];
@@ -57,15 +54,6 @@ function rewriteHtml(text, ctx) {
                     return orig.apply(this, args);
                   };
               }
-              function wrapLoc(proto, method) {
-                  var orig = proto && proto[method];
-                  if (!orig) return;
-                  return function(url) {
-                    if (typeof url === 'string') url = rewrite(url);
-                    else if (url && typeof url === 'object' && url.toString) url = rewrite(url.toString());
-                    return orig.call(this, url);
-                  };
-              }
 
               var proto = History && History.prototype;
               if (proto) {
@@ -76,31 +64,18 @@ function rewriteHtml(text, ctx) {
                   Object.defineProperty(proto, '__rproxy_patched', { value: true, enumerable: false });
               }
 
-              var locProto = Location && Location.prototype;
-              if (locProto) {
-                  var assign = wrapLoc(locProto, 'assign');
-                  var replaceLoc = wrapLoc(locProto, 'replace');
-                  if (assign) Object.defineProperty(locProto, 'assign', { configurable: true, writable: false, value: assign });
-                  if (replaceLoc) Object.defineProperty(locProto, 'replace', { configurable: true, writable: false, value: replaceLoc });
-                  Object.defineProperty(locProto, '__rproxy_patched', { value: true, enumerable: false });
-              }
-
+              // location.assign/replace是[LegacyUnforgeable]属性(实例自有不可配置)，无法patch；
+              // 导航改写由inject.js的navigation 'navigate'监听兜底
               if (win.navigation) {
-                    if (win.navigation.navigate) {
+                  if (win.navigation.navigate) {
                       var origNav = win.navigation.navigate;
                       win.navigation.navigate = function(url, opts) {
-                        if (typeof url === 'string') url = rewrite(url);
-                        else if (url && typeof url === 'object' && url.toString) url = rewrite(url.toString());
-                        return origNav.call(this, url, opts);
+                          if (typeof url === 'string') url = rewrite(url);
+                          else if (url && typeof url === 'object' && url.toString) url = rewrite(url.toString());
+                          return origNav.call(this, url, opts);
                       };
-                    }
-                    if (win.navigation.updateCurrentEntry) {
-                        var origUpdate = win.navigation.updateCurrentEntry;
-                        win.navigation.updateCurrentEntry = function(opts) {
-                            return origUpdate.call(this, opts);
-                        };
-                    }
-                    Object.defineProperty(win.navigation, '__rproxy_patched', { value: true, enumerable: false });
+                  }
+                  Object.defineProperty(win.navigation, '__rproxy_patched', { value: true, enumerable: false });
               }
 
               win.__rproxy_patched = true;
@@ -170,7 +145,27 @@ self.addEventListener('fetch', (event) => {
         const u = new URL(req.url);
         if (u.origin === self.location.origin && !u.pathname.startsWith('/rproxy/') && !u.pathname.startsWith('/webui/')) {
           const rewrittenUrl = clientCtx.prefix + clientCtx.base.origin + u.pathname + u.search + u.hash;
-          req = new Request(rewrittenUrl, req);
+          //带body的Request换URL后无法直接fetch：body流不能跨Request二次传输，缓冲成blob重建。
+          //不能直接new Request(rewrittenUrl, req)：init为Request对象时字典转换会从其getter
+          //捡到mode等成员，navigate模式会让构造器抛错；改写后URL与本SW同源，降级为same-origin
+          const init = {
+            method: req.method,
+            headers: req.headers,
+            mode: req.mode === 'navigate' ? 'same-origin' : req.mode,
+            credentials: req.credentials,
+            cache: req.cache,
+            redirect: req.redirect,
+            referrer: req.referrer,
+            referrerPolicy: req.referrerPolicy,
+            integrity: req.integrity,
+            keepalive: req.keepalive,
+            signal: req.signal,
+            priority: req.priority,
+          };
+          if (req.body) {
+            init.body = await req.blob();
+          }
+          req = new Request(rewrittenUrl, init);
           ctx = clientCtx;
         }
       }

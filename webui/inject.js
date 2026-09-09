@@ -68,22 +68,69 @@
   } catch (e) {}
   var origFetch = window.fetch;
   if (origFetch) {
+    //与fetch语义一致：init成员存在时覆盖Request的对应项
+    function mergeReqInit(req, init) {
+      var newInit = Object.assign({}, init);
+      ['method', 'mode', 'credentials', 'cache', 'redirect', 'referrer', 'referrerPolicy',
+       'integrity', 'keepalive', 'signal', 'priority'].forEach(function(k) {
+        if (newInit[k] === undefined && req[k] !== undefined) {
+          newInit[k] = req[k];
+        }
+      });
+      return newInit;
+    }
+    //Origin是禁止头无法直接设置，把页面真实源捎在标记头里，由服务端改写Origin
+    function markerHeaders(src) {
+      var headers = new Headers(src);
+      if (ctx && ctx.base && !headers.has('X-Rproxy-Origin')) {
+        headers.set('X-Rproxy-Origin', ctx.base.origin);
+      }
+      return headers;
+    }
     window.fetch = function(input, init){
       try {
         if (typeof input === 'string') {
           input = rewrite(input);
         } else if (input && typeof input === 'object' && input.url) {
-          input = new Request(rewrite(input.url), input);
+          var rewrittenUrl = rewrite(input.url);
+          if (!input.body) {
+            input = new Request(rewrittenUrl, input);
+          } else if (rewrittenUrl !== input.url) {
+            //URL要变且带body：body流不能跨Request二次传输(流式上传的fetch在
+            //Chromium上不可用)，缓冲成blob后以字符串URL+init重建；
+            //init.body为非null值时按覆盖语义无需缓冲(null与缺省一样保留原body)
+            var req = input;
+            var self = this;
+            var rebuild = function(blob) {
+              try {
+                var newInit = mergeReqInit(req, init);
+                if (blob !== null) newInit.body = blob;
+                var src = (init && init.headers !== undefined && init.headers !== null)
+                  ? init.headers : req.headers;
+                newInit.headers = markerHeaders(src);
+                return origFetch.call(self, rewrittenUrl, newInit);
+              } catch (e) {
+                //退回原生调用，按原生语义处理
+                return origFetch.call(self, req, init);
+              }
+            };
+            if (init && init.body !== undefined && init.body !== null) {
+              return rebuild(null);
+            }
+            return req.blob().then(rebuild, function() {
+              //body读取失败(已被使用等)时退回原生调用
+              return origFetch.call(self, req, init);
+            });
+          }
+          //URL无需改写的带body Request落空到下方公共逻辑：原Request直接透传
+          //(fetch(req,init)会保留body)，不重新缓冲
         }
-        //Origin是禁止头无法直接设置，把页面真实源捎在标记头里，由服务端改写Origin
         if (ctx && ctx.base) {
           init = Object.assign({}, init);
           //与fetch语义一致：init.headers存在时整体覆盖Request自带headers
           var src = (init.headers !== undefined && init.headers !== null) ? init.headers
             : ((input && typeof input === 'object' && input.headers) ? input.headers : undefined);
-          var headers = new Headers(src);
-          if (!headers.has('X-Rproxy-Origin')) headers.set('X-Rproxy-Origin', ctx.base.origin);
-          init.headers = headers;
+          init.headers = markerHeaders(src);
         }
       } catch (e) {}
       return origFetch.call(this, input, init);
@@ -339,9 +386,6 @@
               return entries;
           };
       }
-  }
-  if (window.XMLHttpRequest) {
-      patchProp(XMLHttpRequest.prototype, 'responseURL', function(v){return v;});
   }
   if (window.NavigationHistoryEntry) {
       patchGetter(NavigationHistoryEntry.prototype, 'url', unwrap);
