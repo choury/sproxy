@@ -844,6 +844,13 @@ QuicBase::FrameResult QuicBase::handleCryptoFrame(quic_context* context, const q
             return FrameResult::error;
         }
     }else {
+        int hsret = SSL_do_handshake(ssl);
+#ifdef HAVE_ECH
+        //必须在ssl_get_error之前peek(它会清空错误队列)；ECH被拒要等服务端
+        //flight到达此处才浮现，doSslConnect首次调用只产出ClientHello不会触发
+        bool ech_rejected = hsret <= 0 && ERR_GET_REASON(ERR_peek_error()) == SSL_R_ECH_REJECTED;
+#endif
+        //transport params要等本轮SSL_do_handshake消费掉EE/CH后才可见，只能每轮调用后取
         size_t olen = 0;
         const uint8_t* buff = nullptr;
         if(!hasParam && (SSL_get_peer_quic_transport_params(ssl, &buff, &olen), olen > 0)){
@@ -853,12 +860,6 @@ QuicBase::FrameResult QuicBase::handleCryptoFrame(quic_context* context, const q
             }
             hasParam = true;
         }
-        int hsret = SSL_do_handshake(ssl);
-#ifdef HAVE_ECH
-        //必须在ssl_get_error之前peek(它会清空错误队列)；ECH被拒要等服务端
-        //flight到达此处才浮现，doSslConnect首次调用只产出ClientHello不会触发
-        bool ech_rejected = hsret <= 0 && ERR_GET_REASON(ERR_peek_error()) == SSL_R_ECH_REJECTED;
-#endif
         if(ssl_get_error(ssl, hsret) == 1){
             LOGD(DQUIC, "SSL_do_handshake succeed\n");
 #ifdef HAVE_ECH
