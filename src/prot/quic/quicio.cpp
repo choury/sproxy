@@ -1479,9 +1479,10 @@ void QuicBase::resendFrames(pn_namespace* ns, quic_frame frame) {
 
 int QuicBase::handle1RttPacket(const quic_pkt_header* header, std::deque<quic_frame>& frames) {
     auto context = &contexts[ssl_encryption_application];
-    keepAlive_timer = UpdateJob(std::move(keepAlive_timer),
-                                [this]{keepAlive_action();},
-                                std::min(30000, std::max((int)max_idle_timeout/2, 5000)));
+    if(!SSL_is_server(ssl)) {
+        keepAlive_timer = UpdateJob(std::move(keepAlive_timer), [this]{keepAlive_action();},
+                                    std::min(30000, std::max((int)max_idle_timeout/2, 5000)));
+    }
     while(!frames.empty()) {
         auto frame = std::move(frames.front());
         frames.pop_front();
@@ -2573,8 +2574,7 @@ bool QuicRWer::triggerMigration() {
 
     LOGD(DQUIC, "Client migration successful to %s\n", storage_ntoa(&server_addr));
     qos->Migrated();
-    //迁移重试占用了keepAlive_timer，重臂探测新路径；若新路径仍不可达会再次触发迁移
-    //握手期没有应用层密钥(keepAlive_action会assert)，跳过，待首个1-RTT包正常重臂
+    //握手期没有应用层密钥(keepAlive_action会assert)，跳过，待首个1-RTT包后再发
     if(sslStats == SslStats::Established) {
         keepAlive_timer = UpdateJob(std::move(keepAlive_timer), [this]{keepAlive_action();}, 2000);
     }
