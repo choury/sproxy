@@ -61,6 +61,8 @@ private:
     std::unordered_map<const void*, std::shared_ptr<IHookCallback>> callbacks;
     std::unordered_map<const void*, std::string> hookers;
     std::unordered_map<const void*, std::vector<std::string>> param_names_map;
+
+    void AddHookSymbol(const void* addr, const char* mangled);
 };
 
 extern HookManager hookManager;

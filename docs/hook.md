@@ -14,15 +14,15 @@
 ### 静态发现（启动期）
 
 - **触发时机**：`sproxy` 启动期间，当 `HookManager` 构造完成。
-- **前置条件**：编译时启用了 `libelf`（`HAVE_ELF`）。
-- **执行方式**： `HookManager` 解析 `/proc/self/exe`，查找所有名称以 `__hook_registed` 结尾的 ELF 符号，并将其加入 Hook 列表。
+- **前置条件**：Linux 平台启用了 `libelf`（`HAVE_LIBELF`）；macOS 平台通过系统 Mach-O dyld 接口静态发现，无需 `libelf`。
+- **执行方式**：Linux 的 `HookManager` 解析 `/proc/self/exe`，查找所有名称以 `__hook_registed` 结尾的 ELF 符号，并将其加入 Hook 列表；macOS 通过 dyld 遍历主映像符号表。
 - **优点**：即便某段代码尚未运行，对应的 Hook 点也能被 `dump hookers` 命令立即列出，方便提前布置回调。
 
 ### 动态注册（运行期兜底）
 
 - **触发时机**：代码首次执行到某个 `HOOK_BPF(...)` 宏时。
 - **实现机制**：宏体内的静态布尔值初始为 `false`。第一次命中时，会调用 `HookManager::AddHooker` 注册 Hook 信息（函数名、位置、地址等），随后将布尔值置为 `true`，避免重复注册。
-- **适用场景**：在不支持 `libelf` 的平台（例如 macOS）或禁用了静态扫描的部署环境中，只要代码被执行过一次，Hook 点就能被捕获。
+- **适用场景**：在未安装 `libelf` 的 Linux 环境或禁用了静态扫描的部署环境中，只要代码被执行过一次，Hook 点就能被捕获。注：bpfvm 虚拟机沙箱在 Linux 下直接依赖系统的 `<elf.h>` 加载 BPF ELF 程序，不依赖 `libelf`。
 
 ## CLI 操作
 

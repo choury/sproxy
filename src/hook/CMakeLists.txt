@@ -14,7 +14,10 @@ add_library(hook_lib ${hook_src})
 
 if(HAVE_ELF)
     add_executable(hook_test hook_test.cpp)
-    target_link_libraries(hook_test PRIVATE hook_lib elf sproxy_headers)
+    target_link_libraries(hook_test PRIVATE hook_lib sproxy_headers)
+    if(HAVE_LIBELF)
+        target_link_libraries(hook_test PRIVATE ${LIBELF_LIBRARIES})
+    endif()
 
     if(CLANG_EXECUTABLE AND BPF_LD_EXECUTABLE)
         set(HOOK_BPF_MCPU v3)

@@ -13,7 +13,15 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <sys/mman.h>
+#if defined(__APPLE__)
+#include <libelf/libelf.h>
+#else
 #include <elf.h>   // Elf64_Ehdr / Elf64_Phdr（系统头，glibc/musl 都自带；BPF 固定 ELF64）
+#endif
+
+#ifndef EM_BPF
+#define EM_BPF 247
+#endif
 
 // ===== memmap =====
 

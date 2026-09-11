@@ -41,6 +41,10 @@ using JitCompilerImpl = StubJitCompiler;
 #include <mutex>
 #include <time.h>
 
+#if defined(__APPLE__)
+#include <stdlib.h>
+#endif
+
 
 std::mutex log_mutex;
 
@@ -1581,7 +1585,12 @@ bool vm::setup_stack(const std::vector<std::string>& argv,
     uint64_t execfn_ptr = (!argv.empty()) ? header[1] : (STACK_BASE + platform_off);
 
     // AT_RANDOM 指向的 16 字节随机数据
+#if defined(__APPLE__)
+    arc4random_buf(stack_base + cursor, kRandomBytes);
+    ssize_t got = kRandomBytes;
+#else
     ssize_t got = ::syscall(SYS_getrandom, stack_base + cursor, kRandomBytes, 0);
+#endif
     if(got != (ssize_t)kRandomBytes) {
         std::cerr << "Failed to get random bytes for AT_RANDOM" << std::endl;
         return false;
