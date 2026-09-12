@@ -640,7 +640,7 @@ static void query_host_real(int retries, const char* host, DNSCB func, std::shar
         if(error == ns_r_nxdomain) {
             return func(Host_Result{.param = std::move(param), .error = error});
         }
-        query_host_real(retries + 1, resolver->host, func, param, flags);
+        query_host_real(retries + 1, host, func, param, flags);
     }, qflags) < 0){
         delete resolver;
         return func(Host_Result{.param = std::move(param), .error = ns_r_servfail});
