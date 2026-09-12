@@ -7,58 +7,67 @@
 #include <string>
 
 Buffer::Buffer(size_t cap, uint64_t id):
-        ptr(malloc(cap + PRIOR_HEAD), free), off(PRIOR_HEAD), id(id), cap(cap + PRIOR_HEAD)
+        mem(buf_alloc(cap + PRIOR_HEAD)), off(PRIOR_HEAD), id(id), cap(cap + PRIOR_HEAD)
 {
-    assert(this->ptr != nullptr);
+    assert(this->mem != nullptr);
 }
 
 
 Buffer::Buffer(const void* data, size_t len, uint64_t id):
-        ptr(malloc(len + PRIOR_HEAD), free), off(PRIOR_HEAD), id(id), len(len), cap(len + PRIOR_HEAD)
+        mem(buf_alloc(len + PRIOR_HEAD)), off(PRIOR_HEAD), id(id), len(len), cap(len + PRIOR_HEAD)
 {
-    memcpy((char*)ptr.get() + PRIOR_HEAD, data, len);
+    memcpy((char*)mem + PRIOR_HEAD, data, len);
 }
 
 Buffer::Buffer(Block&& data, size_t len, uint64_t id):
-        ptr(data.base.release(), free), off(data.off), id(id), len(len), cap(len + data.off)
+        mem(data.base.release()), off(data.off), id(id), len(len), cap(len + data.off)
 {
-    assert(this->ptr != nullptr);
+    assert(this->mem != nullptr);
 }
 
 Buffer::Buffer(std::nullptr_t, uint64_t id): id(id){
 }
 
 Buffer::Buffer(Buffer&& b) noexcept{
-    assert(b.ptr != nullptr || b.len == 0);
+    assert(b.mem != nullptr || b.len == 0);
     id = b.id;
     len = b.len;
     cap = b.cap;
     off = b.off;
-    if(b.ptr){
-        ptr = std::move(b.ptr);
-    }
-    b.ptr = nullptr;
+    mem = b.mem;
+    b.mem = nullptr;
     b.cap = 0;
     b.len = 0;
     b.off = 0;
 }
 
-Buffer& Buffer::operator=(Buffer&& b) noexcept{
-    assert(b.ptr != nullptr || b.len == 0);
-    id = b.id;
-    len = b.len;
-    cap = b.cap;
-    off = b.off;
-    if(b.ptr){
-        ptr = std::move(b.ptr);
-    } else {
-        ptr.reset();
+Buffer::Buffer(const Buffer& b) noexcept:
+        mem(b.mem), off(b.off), id(b.id), len(b.len), cap(b.cap)
+{
+    if(mem){
+        addref();
     }
-    b.ptr = nullptr;
-    b.cap = 0;
-    b.len = 0;
-    b.off = 0;
+}
+
+Buffer& Buffer::operator=(Buffer&& b) noexcept{
+    assert(b.mem != nullptr || b.len == 0);
+    if(this != &b){
+        release();
+        id = b.id;
+        len = b.len;
+        cap = b.cap;
+        off = b.off;
+        mem = b.mem;
+        b.mem = nullptr;
+        b.cap = 0;
+        b.len = 0;
+        b.off = 0;
+    }
     return *this;
+}
+
+Buffer::~Buffer(){
+    release();
 }
 
 void Buffer::reserve(int p){
@@ -67,10 +76,10 @@ void Buffer::reserve(int p){
     }
     assert((int)len - p >= 0);
     len -= p;
-    if(ptr == nullptr) {
+    if(mem == nullptr) {
         assert(cap == 0);
         cap = len + PRIOR_HEAD;
-        ptr = std::shared_ptr<void>(malloc(cap), free);
+        mem = buf_alloc(cap);
         off = PRIOR_HEAD;
         return;
     }
@@ -78,9 +87,10 @@ void Buffer::reserve(int p){
         //头部预留空间不足，重新分配并把旧数据后移，避免向前越界
         off_t data_off = (off_t)PRIOR_HEAD - p; //p < 0，旧数据在新空间中的偏移
         cap = len + PRIOR_HEAD;
-        auto new_ptr = std::shared_ptr<void>(malloc(cap), free);
-        memcpy((char*)new_ptr.get() + data_off, (char*)ptr.get() + off, len + p);
-        ptr = std::move(new_ptr);
+        auto new_mem = buf_alloc(cap);
+        memcpy((char*)new_mem + data_off, (char*)mem + off, len + p);
+        release(); //共享时旧块仍由其他引用者持有
+        mem = new_mem;
         off = PRIOR_HEAD;
         return;
     }
@@ -89,21 +99,22 @@ void Buffer::reserve(int p){
 
 size_t Buffer::truncate(size_t left) {
     size_t origin = len;
-    if(ptr) {
+    if(mem) {
         if(off + left <= cap) {
             len = left;
             return origin;
         }
         off_t new_offset = std::max(off, (off_t)PRIOR_HEAD);
         cap = left + new_offset;
-        auto new_ptr = std::shared_ptr<void>(malloc(cap), free);
-        memcpy((char*)new_ptr.get() + new_offset, (char*)ptr.get() + off, len);
-        ptr = new_ptr;
+        auto new_mem = buf_alloc(cap);
+        memcpy((char*)new_mem + new_offset, (char*)mem + off, len);
+        release();
+        mem = new_mem;
         off = new_offset;
     } else {
         assert(len == 0 && cap == 0);
         cap = left + PRIOR_HEAD;
-        ptr = std::shared_ptr<void>(malloc(cap), free);
+        mem = buf_alloc(cap);
         off = PRIOR_HEAD;
     }
     len = left;
@@ -111,47 +122,41 @@ size_t Buffer::truncate(size_t left) {
 }
 
 const void* Buffer::data() const{
-    if(ptr == nullptr) {
+    if(mem == nullptr) {
         assert(len == 0 && cap == 0);
         return nullptr;
     }
-    return (char*)ptr.get() + off;
+    return (char*)mem + off;
 }
 
 void* Buffer::mutable_data() {
-    if(ptr == nullptr) {
+    if(mem == nullptr) {
         assert(len == 0 && cap == 0 && off == 0);
         return nullptr;
-    }else if(ptr.use_count() > 1) {
+    }else if(buf_refhead(mem)->refs.load(std::memory_order_acquire) > 1) {
         cap = len + off;
-        auto new_ptr = std::shared_ptr<void>(malloc(cap), free);
-        memcpy((char*)new_ptr.get() + off, (char*)ptr.get() + off, len);
-        LOGD(DRWER, "split buffer: %p -> %p: %zd\n", ptr.get(), new_ptr.get(), len);
-        ptr = new_ptr;
+        auto new_mem = buf_alloc(cap);
+        memcpy((char*)new_mem + off, (char*)mem + off, len);
+        LOGD(DRWER, "split buffer: %p -> %p: %zd\n", mem, new_mem, len);
+        release();
+        mem = new_mem;
     }
-    return (char*)ptr.get() + off;
+    return (char*)mem + off;
 }
 
-void* Buffer::end(size_t need) {
-    if(ptr == nullptr) {
-        return nullptr;
-    }
-    if((size_t)off + len + need > cap) {
-        return nullptr;
-    }
-    if(ptr.use_count() > 1) {
-        auto new_ptr = std::shared_ptr<void>(malloc(cap), free);
-        memcpy(new_ptr.get(), ptr.get(), off + len);
-        ptr = new_ptr;
-    }
-    return (char*)ptr.get() + off + len;
-}
-
-size_t Buffer::refs() {
-    if(ptr) {
-        return ptr.use_count();
+size_t Buffer::refs() const {
+    if(mem) {
+        return buf_refhead(mem)->refs.load(std::memory_order_acquire);
     }
     return 0;
+}
+
+size_t Buffer::room() const {
+    if(mem == nullptr || buf_refhead(mem)->refs.load(std::memory_order_acquire) > 1) {
+        return 0;
+    }
+    size_t used = (size_t)off + len;
+    return used < cap ? cap - used : 0;
 }
 
 size_t CBuffer::length() const{
@@ -185,26 +190,28 @@ ssize_t CBuffer::put(Buffer&& bb) {
     return (ssize_t)total_len;
 }
 
-ssize_t CBuffer::emplace(Buffer&& bb) {
-    if(total_len + bb.len > MAX_BUF_LEN){
-        return -1;
+std::span<char> CBuffer::tailRoom(uint64_t id) {
+    if(buffers.empty()){
+        return {};
     }
-
-    if(bb.len > 0 && !buffers.empty()){
-        Buffer& back = buffers.back();
-        if(back.id == bb.id){
-            if(void* room = back.end(bb.len)){
-                memcpy(room, bb.data(), bb.len);
-                back.len += bb.len;
-                total_len += bb.len;
-                return (ssize_t)total_len;
-            }
-        }
+    Buffer& back = buffers.back();
+    if(back.id != id){
+        return {};
     }
+    size_t room = back.room();
+    if(room == 0){
+        return {};
+    }
+    return {(char*)back.data() + back.len, room};
+}
 
-    total_len += bb.len;
-    buffers.push_back(std::move(bb));
-    return (ssize_t)total_len;
+void CBuffer::tailPush(size_t l) {
+    assert(!buffers.empty());
+    assert(total_len + l <= MAX_BUF_LEN);
+    Buffer& back = buffers.back();
+    assert(l <= back.room());
+    back.len += l;
+    total_len += l;
 }
 
 Buffer CBuffer::get(){

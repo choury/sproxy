@@ -174,6 +174,9 @@ Type Value	Frame Type Name         Definition  	Pkts	Spec
 size_t variable_encode_len(uint64_t value);
 
 class Buffer;
+//密钥材料与派生加密上下文:上下文由quic_secret_set_key/quic_generate_initial_key
+//随密钥一起创建(本进程单线程，无需加锁)，quic_secret_release统一释放。
+//内嵌上下文持有堆资源：重灌/丢弃前必须调quic_secret_release，勿浅拷贝
 struct quic_secret{
     const EVP_MD* md;
 #ifdef USE_BORINGSSL
@@ -185,7 +188,18 @@ struct quic_secret{
     char iv[12];
     char hp[32];
     char key[32];
+    //AEAD上下文随密钥经quic_secret_create_ctx统一预置(含retry临时secret)，
+    //aead_*直接使用不再判空;保持POD:声明时必须零初始化(quic_secret s{})
+#ifdef USE_BORINGSSL
+    EVP_AEAD_CTX     *aead_enc;
+    EVP_AEAD_CTX     *aead_dec;
+#else
+    EVP_CIPHER_CTX   *aead_enc;
+    EVP_CIPHER_CTX   *aead_dec;
+#endif
+    EVP_CIPHER_CTX   *hp_ctx;       // AES-ECB套件预置;chacha套件为空
 };
+void quic_secret_release(struct quic_secret* secret);
 
 int quic_generate_initial_key(int client, const char* id, uint8_t id_len, quic_secret* secret, uint32_t version);
 int quic_secret_set_key(quic_secret* secret, const char* key, uint32_t cipher, uint32_t version);

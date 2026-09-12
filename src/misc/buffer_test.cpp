@@ -317,101 +317,6 @@ void test_cbuffer_class() {
     std::cout << "✓ CBuffer class tests passed\n";
 }
 
-// Tests for CBuffer::emplace and Buffer::end
-void test_cbuffer_emplace() {
-    std::cout << "Testing CBuffer emplace...\n";
-
-    // 模拟ReadData的慢速滴灌: 每次分配大块、只写入少量数据后truncate
-    CBuffer cbuf;
-    const char* chunk = "0123456789";
-    for (int i = 0; i < 100; i++) {
-        Buffer bb{1024};
-        memcpy(bb.mutable_data(), chunk, 10);
-        bb.truncate(10);
-        cbuf.emplace(std::move(bb));
-    }
-    // 100次小数据应持续并入末尾块, 块数远小于次数(每个块可容纳~102个)
-    assert(cbuf.data().size() <= 2);
-    assert(cbuf.length() == 1000);
-    // 真实已分配字节数: 每个Buffer的cap(数据长度+PRIOR_HEAD)之和
-    assert(cbuf.mem_usage() == cbuf.data().size() * (1024 + PRIOR_HEAD));
-    Buffer merged = cbuf.get();
-    assert(merged.len == 1000);
-    for (size_t i = 0; i < 1000; i += 10) {
-        assert(memcmp((const char*)merged.data() + i, chunk, 10) == 0);
-    }
-
-    // room耗尽时新入队
-    Buffer big{1024};
-    memset(big.mutable_data(), 'Z', 1024);
-    big.truncate(1024);
-    cbuf.emplace(std::move(big));
-    assert(cbuf.data().size() == 2);
-    assert(cbuf.length() == 1000 + 1024);
-    Buffer tail = cbuf.data().back();
-    assert(tail.len == 1024);
-
-    // 消费后get按同id合并, 内容顺序正确
-    cbuf.consume(1000);
-    Buffer rest = cbuf.get();
-    assert(rest.len == 1024);
-
-    // 空CBuffer上emplace等价于put
-    CBuffer fresh;
-    Buffer first{"first", 5, 9};
-    fresh.emplace(std::move(first));
-    assert(fresh.data().size() == 1);
-    assert(fresh.length() == 5);
-
-    // 零长Buffer不并入, 作为EOF标记入队
-    Buffer eof_buf{nullptr, 9};
-    fresh.emplace(std::move(eof_buf));
-    assert(fresh.data().size() == 2);
-    assert(fresh.length() == 5);
-
-    // id不同不并入, 即使空间足够
-    Buffer other_id{"xx", 2, 88};
-    fresh.emplace(std::move(other_id));
-    assert(fresh.data().size() == 3);
-    assert(fresh.length() == 7);
-
-    // Buffer::end: 剩余空间足够时返回可写指针
-    Buffer eb{128};
-    memcpy(eb.mutable_data(), "abcd", 4);
-    eb.truncate(4);
-    void* room = eb.end(100);
-    assert(room != nullptr);
-    memcpy(room, "abcd", 4);
-    eb.len += 4;
-    assert(eb.len == 8);
-    assert(memcmp(eb.data(), "abcdabcd", 8) == 0);
-
-    // 剩余空间不足时返回nullptr
-    assert(eb.end(128 * 1024) == nullptr);
-
-    // 共享时end触发COW, 保留cap且不影响原持有者
-    Buffer shared_src{1024};
-    memcpy(shared_src.mutable_data(), "12345678", 8);
-    shared_src.truncate(8);
-    Buffer copy = shared_src;  // 共享底层内存
-    void* cow_room = copy.end(100);
-    assert(cow_room != nullptr);
-    memcpy(cow_room, "XY", 2);
-    copy.len += 2;
-    assert(memcmp(shared_src.data(), "12345678", 8) == 0);  // 原数据不受影响
-    assert(memcmp(copy.data(), "12345678XY", 10) == 0);
-    assert(copy.refs() == 1);
-
-    // 空Buffer(EOF标记)的end返回nullptr
-    Buffer null_buf{nullptr, 1};
-    assert(null_buf.end(1) == nullptr);
-
-    // 空CBuffer的mem_usage为0
-    CBuffer mem_empty;
-    assert(mem_empty.mem_usage() == 0);
-
-    std::cout << "✓ CBuffer emplace tests passed\n";
-}
 
 // Tests for negative reserve beyond headroom (e.g. socks5 udp relay with long domain,
 // which prepends up to 262 bytes of header, exceeding PRIOR_HEAD)
@@ -452,6 +357,87 @@ void test_buffer_reserve_overflow() {
     assert(memcmp((const char*)noshift.data(), "HEADERnocopy!!", 14) == 0);
 
     std::cout << "✓ Negative reserve overflow tests passed\n";
+}
+
+// Test for CBuffer tailRoom/tailPush and room()
+void test_cbuffer_tail_room() {
+    std::cout << "Testing CBuffer tail room...\n";
+
+    // 空队列没有可写空间
+    CBuffer cbuf;
+    assert(cbuf.mem_usage() == 0);
+    assert(cbuf.tailRoom(0).empty());
+
+    // 放入一个Buffer后，队尾有余量
+    Buffer first(100);
+    first.truncate(40);
+    assert(cbuf.put(std::move(first)) == 40);
+    auto room = cbuf.tailRoom(0);
+    assert(!room.empty());
+    assert(room.size() == 100 - 40);
+    assert(room.data() == (char*)cbuf.data().back().data() + 40);
+
+    // 直接写入并推进
+    memcpy(room.data(), "tail", 4);
+    cbuf.tailPush(4);
+    assert(cbuf.length() == 44);
+    assert(cbuf.data().back().len == 44);
+    assert(memcmp((const char*)cbuf.data().back().data() + 40, "tail", 4) == 0);
+
+    // id不匹配时不给写
+    assert(cbuf.tailRoom(7).empty());
+
+    // 队尾被共享时不给写(模拟消费者持有引用)
+    {
+        Buffer shared = cbuf.data().back(); // 拷贝共享
+        assert(shared.refs() == 2);
+        assert(cbuf.tailRoom(0).empty());
+        assert(cbuf.data().back().room() == 0);
+    } // 释放共享引用
+    assert(cbuf.data().back().refs() == 1);
+    assert(!cbuf.tailRoom(0).empty());
+
+    // 共享Buffer的room()为0，独占时等于cap-off-len；reserve只平移数据窗口不改变余量
+    Buffer solo(64);
+    assert(solo.room() == 64);
+    solo.truncate(10);
+    assert(solo.room() == 54);
+    solo.reserve(6);
+    assert(solo.room() == 54);
+
+    // 空Buffer没有可写空间
+    Buffer nullbuf(nullptr);
+    assert(nullbuf.room() == 0);
+
+    // 多缓冲时get()必须拼接交付全部同id数据：h2等消费方依赖一次拿到
+    // 尽量多的连续数据来处理跨缓冲的帧，即使队首已经很大也不能只返回队首
+    CBuffer bulk;
+    Buffer big1(BUF_LEN);
+    big1.truncate(BUF_LEN);
+    Buffer big2(16);
+    big2.truncate(9);
+    bulk.put(std::move(big1));
+    bulk.put(std::move(big2));
+    const void* small_data = bulk.data().back().data();
+    Buffer got = bulk.get();
+    assert(got.len == BUF_LEN + 9);
+    assert(memcmp((const char*)got.data() + BUF_LEN, small_data, 9) == 0); // 尾部小块被拼进来
+    bulk.consume(BUF_LEN + 9);
+    assert(bulk.empty());
+
+    // 队首较小仍走拼接
+    CBuffer trickle;
+    Buffer small1(16);
+    small1.truncate(8);
+    Buffer small2(16);
+    small2.truncate(8);
+    trickle.put(std::move(small1));
+    trickle.put(std::move(small2));
+    Buffer merged = trickle.get();
+    assert(merged.len == 16);
+    assert(memcmp((const char*)merged.data(), trickle.data().front().data(), 8) == 0);
+
+    std::cout << "✓ CBuffer tail room tests passed\n";
 }
 
 // Test for CBuffer with moved buffers
@@ -907,7 +893,7 @@ int main() {
         test_buffer_class();
         test_buffer_reserve_overflow();
         test_cbuffer_class();
-        test_cbuffer_emplace();
+        test_cbuffer_tail_room();
         test_cbuffer_move_semantics();
         test_ebuffer_class();
 

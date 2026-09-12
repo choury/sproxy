@@ -443,15 +443,26 @@ void StreamRWer::ReadData() {
         if (left <= 0) {
             break;
         }
-        Buffer bb{std::min((size_t)BUF_LEN * 2, left)};
-        ssize_t ret = read(getFd(), bb.mutable_data(), std::min((size_t)BUF_LEN * 2, left));
+        size_t want = std::min((size_t)BUF_LEN * 2, left);
+        auto room = rb.tailRoom(0);
+        ssize_t ret;
+        if(!room.empty()){
+            ret = read(getFd(), room.data(), std::min(want, room.size()));
+            if (ret > 0) {
+                rb.tailPush(ret);
+                continue;
+            }
+        }else{
+            Buffer bb{want};
+            ret = read(getFd(), bb.mutable_data(), want);
+            if (ret > 0) {
+                bb.truncate(ret);
+                rb.put(std::move(bb));
+                continue;
+            }
+        }
         LOGD(DRWER, "stream read %d: len: %zd, ret: %zd, cb: %ld\n", getFd(), left, ret, callback.use_count());
-        if (ret > 0) {
-            bb.truncate(ret);
-            rb.emplace(std::move(bb));
-            //ConsumeRData(0);
-            continue;
-        } else if (ret == 0) {
+        if (ret == 0) {
             stats = RWerStats::ReadEOF;
             delEvents(RW_EVENT::READ);
             break;
@@ -488,18 +499,18 @@ ssize_t PacketRWer::Write(std::set<uint64_t>& writed_list) {
         wbuff.clear();
         return ret;
     } else {
-        std::vector<iovec> iovs;
-        iovs.reserve(wbuff.size());
+        static iovec iovs[IOV_MAX];
+        size_t iovcnt = 0;
         for (const auto &bb: wbuff) {
-            iovs.emplace_back(iovec{(void *) bb.data(), bb.len});
-            if (iovs.size() >= IOV_MAX) {
+            iovs[iovcnt++] = iovec{(void *) bb.data(), bb.len};
+            if (iovcnt >= IOV_MAX) {
                 break;
             }
         }
-        ssize_t ret = writem(getFd(), iovs.data(), iovs.size());
+        ssize_t ret = writem(getFd(), iovs, (int)iovcnt);
         size_t len = 0;
         if (ret <= 0) {
-            LOGD(DRWER, "writem %d: iovs: %zd, ret: %zd\n", getFd(), iovs.size(), ret);
+            LOGD(DRWER, "writem %d: iovs: %zd, ret: %zd\n", getFd(), iovcnt, ret);
             return ret;
         }
         auto it = wbuff.begin();
@@ -515,7 +526,7 @@ ssize_t PacketRWer::Write(std::set<uint64_t>& writed_list) {
                 break;
             }
         }
-        LOGD(DRWER, "writem %d: iovs: %zd, ret: %zd/%zd\n", getFd(), iovs.size(), ret, len);
+        LOGD(DRWER, "writem %d: iovs: %zd, ret: %zd/%zd\n", getFd(), iovcnt, ret, len);
         return (ssize_t)len;
     }
 }
@@ -525,15 +536,15 @@ void PacketRWer::ReadData() {
     flags |= RWER_READING;
     defer([this]{ flags &= ~RWER_READING;});
 
-    Block blk(IOV_MAX * BUF_LEN);
-    std::vector<iovec> iov;
-    iov.resize(IOV_MAX);
-    for(size_t i = 0; i < iov.size(); i++) {
+    static Block blk(IOV_MAX * BUF_LEN);
+    static iovec iov[IOV_MAX];
+    //readm收包后会把iov_len改写为实际收到的长度，每次调用必须重填
+    for(size_t i = 0; i < IOV_MAX; i++) {
         iov[i].iov_base = (char*)blk.data() + i * BUF_LEN;
         iov[i].iov_len = BUF_LEN;
     }
-    ssize_t ret = readm(getFd(), iov.data(), iov.size());
-    LOGD(DRWER, "packet readm %d: iovcnt: %zd, ret: %zd, cb: %ld\n", getFd(), iov.size(), ret, callback.use_count());
+    ssize_t ret = readm(getFd(), iov, IOV_MAX);
+    LOGD(DRWER, "packet readm %d: iovcnt: %zd, ret: %zd, cb: %ld\n", getFd(), (size_t)IOV_MAX, ret, callback.use_count());
     if (ret > 0) {
         auto cb = callback.lock();
         if (!cb) {

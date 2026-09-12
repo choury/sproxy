@@ -11,8 +11,6 @@
 #include <assert.h>
 #include <unistd.h>
 
-#include <map>
-
 #ifdef __APPLE__
 #include <sys/event.h>
 #else
@@ -21,7 +19,41 @@
 #endif
 
 extern int efd;
-static std::map<Ep*, RW_EVENT> pending_events;
+
+//单轮事件循环最多等待的事件数，epoll_wait/kevent的批量和pending_events数组共用
+#define MAX_LOOP_EVENTS 200
+
+//单批事件用扁平数组暂存，替代std::map(原来每个事件一次树节点分配+平衡)
+//setFd/close时通过clear_pending把待处理事件置为NONE，防止同批内Ep被销毁后派发到悬垂指针
+struct PendingEvent {
+    Ep* ep;
+    RW_EVENT event;
+};
+static PendingEvent pending_events[MAX_LOOP_EVENTS];
+static size_t pending_count = 0;
+
+static void push_pending(Ep* ep, RW_EVENT event) {
+#ifdef __APPLE__
+    //kqueue会按filter把同一fd的读写拆成两条事件，需要合并
+    for(size_t i = 0; i < pending_count; i++){
+        if(pending_events[i].ep == ep){
+            pending_events[i].event = pending_events[i].event | event;
+            return;
+        }
+    }
+#endif
+    assert(pending_count < MAX_LOOP_EVENTS);
+    pending_events[pending_count++] = {ep, event};
+}
+
+static void clear_pending(Ep* ep) {
+    for(size_t i = 0; i < pending_count; i++){
+        if(pending_events[i].ep == ep){
+            LOGD(DEVENT, "%p remove pending_events\n", ep);
+            pending_events[i].event = RW_EVENT::NONE;
+        }
+    }
+}
 
 const char *events_string[]= {
         "nullptr",
@@ -121,9 +153,8 @@ void Ep::setFd(int fd){
         EV_SET(&event[1], this->fd, EVFILT_WRITE, EV_DELETE, 0, 0, nullptr);
         kevent(efd, event, 2, nullptr, 0, nullptr);
 #endif
-        if(pending_events.count(this)) {
-            LOGD(DEVENT, "%p remove pending_events\n", this);
-            pending_events[this] = RW_EVENT::NONE;
+        if(pending_count) {
+            clear_pending(this);
         }
         LOGD(DEVENT, "%p closed %d\n", this, this->fd);
         close(this->fd);
@@ -236,25 +267,26 @@ int Ep::checkSocket(const char* msg) const{
 int event_loop(uint32_t timeout_ms){
     int c;
 #if __linux__
-    struct epoll_event events[200];
-    if ((c = epoll_wait(efd, events, 200, timeout_ms)) <= 0) {
+    struct epoll_event events[MAX_LOOP_EVENTS];
+    if ((c = epoll_wait(efd, events, MAX_LOOP_EVENTS, timeout_ms)) <= 0) {
         if (c != 0 && errno != EINTR) {
             LOGE("epoll_wait: %s\n", strerror(errno));
             return -1;
         }
         return 0;
     }
+    //epoll已把同一fd的事件合并成一条，直接追加即可
     for(int i = 0; i < c; ++i){
         Ep *ep = (Ep *)events[i].data.ptr;
         RW_EVENT event = convertEpoll(events[i].events);
         LOGD(DEVENT, "pending event %d: %s\n", ep->getFd(), events_string[int(event)]);
-        pending_events[ep] = event;
+        push_pending(ep, event);
     }
 #endif
 #if __APPLE__
-    struct kevent events[200];
+    struct kevent events[MAX_LOOP_EVENTS];
     struct timespec timeout{timeout_ms/1000, (timeout_ms%1000)*1000000};
-    if((c = kevent(efd, nullptr, 0, events, 200, &timeout)) <= 0){
+    if((c = kevent(efd, nullptr, 0, events, MAX_LOOP_EVENTS, &timeout)) <= 0){
         if (c != 0 && errno != EINTR) {
             LOGE("kevent: %s\n", strerror(errno));
             return -1;
@@ -269,30 +301,26 @@ int event_loop(uint32_t timeout_ms){
         }
         RW_EVENT event = convertKevent(events[i]);
         LOGD(DEVENT, "pending event %d: %s\n", ep->getFd(), events_string[int(event)]);
-        if(pending_events.count(ep)){
-            pending_events[ep] = pending_events[ep] | event;
-        }else{
-            pending_events[ep] = event;
-        }
+        push_pending(ep, event);
     }
 #endif
-    for(auto& i: pending_events){
-        if(i.second == RW_EVENT::NONE){
+    for(size_t i = 0; i < pending_count; ++i){
+        if(pending_events[i].event == RW_EVENT::NONE){
             continue;
         }
-        Ep *ep = i.first;
-        if(!!(i.second & RW_EVENT::READEOF) && !(ep->events & RW_EVENT::READ)){
+        Ep *ep = pending_events[i].ep;
+        if(!!(pending_events[i].event & RW_EVENT::READEOF) && !(ep->events & RW_EVENT::READ)){
             LOGD(DEVENT, "filter READEOF without listen READ: %d\n", ep->getFd());
-            i.second = i.second & ~RW_EVENT::READEOF;
-            if(i.second == RW_EVENT::NONE){
+            pending_events[i].event = pending_events[i].event & ~RW_EVENT::READEOF;
+            if(pending_events[i].event == RW_EVENT::NONE){
                 ep->setNone();
                 continue;
             }
         }
-        LOGD(DEVENT, "handle event %p, %d: %s\n", ep, ep->getFd(), events_string[int(i.second)]);
-        (ep->*ep->handleEvent)(i.second);
+        LOGD(DEVENT, "handle event %p, %d: %s\n", ep, ep->getFd(), events_string[int(pending_events[i].event)]);
+        (ep->*ep->handleEvent)(pending_events[i].event);
     }
-    pending_events.clear();
+    pending_count = 0;
     return c;
 }
 

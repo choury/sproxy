@@ -174,33 +174,33 @@ err:
 }
 
 #ifdef USE_BORINGSSL
-static int aead_encrypt(const EVP_AEAD* aead,
+
+static EVP_AEAD_CTX* aead_ctx_new(const EVP_AEAD* aead, const unsigned char* key){
+    EVP_AEAD_CTX* ctx = EVP_AEAD_CTX_new(aead, key,
+                                         EVP_AEAD_key_length(aead), EVP_AEAD_DEFAULT_TAG_LENGTH);
+    if(ctx == nullptr){
+        LOGE("EVP_AEAD_CTX_new failed\n");
+        return nullptr;
+    }
+    return ctx;
+}
+
+static int aead_encrypt(const quic_secret* secret,
                        const cursor& plaintext,
                        const cursor& aad,
-                       const unsigned char *key,
                        const unsigned char *iv,
                        cursor& ciphertext)
 {
-    if (!aead) {
-        LOGE("aead_encrypt: aead is null\n");
-        return -1;
-    }
     if(ciphertext.length() < plaintext.length() + 16){
         LOGE("aead_encrypt: no space for ciphertext: %zd need %zd\n",
              ciphertext.length(), plaintext.length() + 16);
         return -1;
     }
+    assert(secret->aead_enc);
     size_t len = SIZE_MAX;
-    EVP_AEAD_CTX* ctx = EVP_AEAD_CTX_new(aead, key, EVP_AEAD_key_length(aead), EVP_AEAD_DEFAULT_TAG_LENGTH);
-    defer(EVP_AEAD_CTX_free, ctx);
-    if(!EVP_AEAD_CTX_init(ctx, aead, key, EVP_AEAD_key_length(aead), EVP_AEAD_DEFAULT_TAG_LENGTH, nullptr)){
-        LOGE("EVP_AEAD_CTX_init failed\n");
-        return -1;
-    }
-
-    if(!EVP_AEAD_CTX_seal(ctx,
+    if(!EVP_AEAD_CTX_seal(secret->aead_enc,
         ciphertext.mutable_data(), &len, len,
-        iv, EVP_AEAD_nonce_length(aead),
+        iv, EVP_AEAD_nonce_length(secret->cipher),
         plaintext.data(), plaintext.length(),
         aad.data(), aad.length()))
     {
@@ -211,11 +211,10 @@ static int aead_encrypt(const EVP_AEAD* aead,
     return len;
 }
 
-static int aead_decrypt(const EVP_AEAD* aead,
+static int aead_decrypt(const quic_secret* secret,
                           const cursor& ciphertext,
                           const cursor& aad,
-                          unsigned char* key,
-                          unsigned char* iv,
+                          const unsigned char* iv,
                           cursor& plaintext
 ) {
     if(ciphertext.length() < 16 || plaintext.length() + 16 < ciphertext.length()){
@@ -223,17 +222,11 @@ static int aead_decrypt(const EVP_AEAD* aead,
              ciphertext.length(), plaintext.length());
         return -1;
     }
-    EVP_AEAD_CTX* ctx = EVP_AEAD_CTX_new(aead, key, EVP_AEAD_key_length(aead), EVP_AEAD_DEFAULT_TAG_LENGTH);
-    defer(EVP_AEAD_CTX_free, ctx);
-    if(!EVP_AEAD_CTX_init(ctx, aead, key, EVP_AEAD_key_length(aead), EVP_AEAD_DEFAULT_TAG_LENGTH, nullptr)){
-        LOGE("EVP_AEAD_CTX_init failed\n");
-        return -1;
-    }
-
+    assert(secret->aead_dec);
     size_t len = 0;
-    if(!EVP_AEAD_CTX_open(ctx,
+    if(!EVP_AEAD_CTX_open(secret->aead_dec,
         plaintext.mutable_data(), &len, ciphertext.length() - 16,
-        iv, EVP_AEAD_nonce_length(aead),
+        iv, EVP_AEAD_nonce_length(secret->cipher),
         ciphertext.data(), ciphertext.length(),
         aad.data(), aad.length()))
     {
@@ -246,10 +239,40 @@ static int aead_decrypt(const EVP_AEAD* aead,
 
 #else
 
-static int aead_encrypt(const EVP_CIPHER* cipher,
+//预置GCM上下文(算法+IV长度+密钥)；每包仅重设IV即可复用
+static EVP_CIPHER_CTX* aead_enc_init(const EVP_CIPHER* cipher, const unsigned char* key){
+    EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+    if(ctx == nullptr){
+        return nullptr;
+    }
+    if(EVP_EncryptInit_ex(ctx, cipher, nullptr, nullptr, nullptr) != 1 ||
+       EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_SET_IVLEN, 12, nullptr) != 1 ||
+       EVP_EncryptInit_ex(ctx, nullptr, nullptr, key, nullptr) != 1)
+    {
+        EVP_CIPHER_CTX_free(ctx);
+        return nullptr;
+    }
+    return ctx;
+}
+
+static EVP_CIPHER_CTX* aead_dec_init(const EVP_CIPHER* cipher, const unsigned char* key){
+    EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+    if(ctx == nullptr){
+        return nullptr;
+    }
+    if(EVP_DecryptInit_ex(ctx, cipher, nullptr, nullptr, nullptr) != 1 ||
+       EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_SET_IVLEN, 12, nullptr) != 1 ||
+       EVP_DecryptInit_ex(ctx, nullptr, nullptr, key, nullptr) != 1)
+    {
+        EVP_CIPHER_CTX_free(ctx);
+        return nullptr;
+    }
+    return ctx;
+}
+
+static int aead_encrypt(const quic_secret* secret,
                        const cursor& plaintext,
                        const cursor& aad,
-                       const unsigned char *key,
                        const unsigned char *iv,
                        cursor& ciphertext)
 {
@@ -258,26 +281,12 @@ static int aead_encrypt(const EVP_CIPHER* cipher,
              ciphertext.length(), plaintext.length() + 16);
         return -1;
     }
-    EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+    assert(secret->aead_enc);
+    EVP_CIPHER_CTX *ctx = secret->aead_enc;
     int len, ciphertext_len;
 
-    /* Create and initialise the context */
-    if(ctx == nullptr)
-        return -1;
-    defer(EVP_CIPHER_CTX_free, ctx);
-    /* Initialise the encryption operation. */
-    if(EVP_EncryptInit_ex(ctx, cipher, nullptr, nullptr, nullptr) != 1) {
-        LOGE("EVP_EncryptInit_ex failed\n");
-        return -1;
-    }
-
-    if(EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_SET_IVLEN, 12, nullptr) != 1) {
-        LOGE("EVP_CIPHER_Ctx_Ctrl IVLEN failed\n");
-        return -1;
-    }
-
-    /* Initialise key and IV */
-    if(EVP_EncryptInit_ex(ctx, nullptr, nullptr, key, iv) != 1) {
+    /* Initialise the encryption operation: reuse the context, reset the nonce */
+    if(EVP_EncryptInit_ex(ctx, nullptr, nullptr, nullptr, iv) != 1) {
         LOGE("EVP_EncryptInit_ex failed\n");
         return -1;
     }
@@ -319,11 +328,10 @@ static int aead_encrypt(const EVP_CIPHER* cipher,
 }
 
 
-static int aead_decrypt(const EVP_CIPHER* cipher,
+static int aead_decrypt(const quic_secret* secret,
                        const cursor& ciphertext,
                        const cursor& aad,
-                       unsigned char *key,
-                       unsigned char *iv,
+                       const unsigned char *iv,
                        cursor& plaintext)
 {
     if(ciphertext.length() < 16 || plaintext.length() + 16 < ciphertext.length()){
@@ -331,24 +339,13 @@ static int aead_decrypt(const EVP_CIPHER* cipher,
              ciphertext.length(), plaintext.length());
         return -1;
     }
-    EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+    assert(secret->aead_dec);
+    EVP_CIPHER_CTX *ctx = secret->aead_dec;
     int len, plaintext_len;
 
-    /* Create and initialise the context */
-    if(ctx == nullptr) {
-        LOGE("EVP_CIPHER_CTX_new failed\n");
-        return -1;
-    }
-    defer(EVP_CIPHER_CTX_free, ctx);
-
-    /* Initialise the decryption operation. */
-    if(EVP_DecryptInit_ex(ctx, cipher, nullptr, nullptr, nullptr) != 1) {
+    /* Initialise the decryption operation: reuse the context, reset the nonce */
+    if(EVP_DecryptInit_ex(ctx, nullptr, nullptr, nullptr, iv) != 1) {
         LOGE("EVP_DecryptInit_ex failed\n");
-        return -1;
-    }
-
-    if(EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_SET_IVLEN, 12, nullptr) != 1) {
-        LOGE("EVP_CIPHER_Ctx_Ctrl IVLEN failed\n");
         return -1;
     }
 
@@ -359,15 +356,8 @@ static int aead_decrypt(const EVP_CIPHER* cipher,
         return -1;
     }
 
-    /* Initialise key and IV */
-    if(EVP_DecryptInit_ex(ctx, nullptr, nullptr, key, iv) != 1) {
-        LOGE("EVP_DecryptInit_ex failed\n");
-        return -1;
-    }
-
     /*
-     * Provide any AAD data. This can be called zero or more times as
-     * required
+     * Provide any AAD data.
      */
     if(EVP_DecryptUpdate(ctx, nullptr, &len, aad.data(), aad.length()) != 1) {
         LOGE("EVP_DecryptUpdate failed\n");
@@ -376,7 +366,6 @@ static int aead_decrypt(const EVP_CIPHER* cipher,
 
     /*
      * Provide the message to be decrypted, and obtain the plaintext output.
-     * EVP_DecryptUpdate can be called multiple times if necessary
      */
     if(EVP_DecryptUpdate(ctx, plaintext.mutable_data(), &len, ciphertext.data(), ciphertext.length() - 16) != 1) {
         LOGE("EVP_DecryptUpdate failed\n");
@@ -390,6 +379,7 @@ static int aead_decrypt(const EVP_CIPHER* cipher,
      * anything else is a failure - the plaintext is not trustworthy.
      */
     if(EVP_DecryptFinal_ex(ctx, plaintext.mutable_data() + len, &len) != 1) {
+        //Final失败只是tag不匹配,不污染ctx:每包开头的重设IV即完整重置,ctx可继续复用
         LOGE("EVP_DecryptFinal_ex failed\n");
         return -1;
     }
@@ -401,9 +391,61 @@ static int aead_decrypt(const EVP_CIPHER* cipher,
 
 #endif
 
+//头保护上下文:预置算法+密钥;只用于AES-ECB(无链式状态,逐块独立,可跨包直接复用)
+static EVP_CIPHER_CTX* hp_ctx_init(const EVP_CIPHER* hcipher, const unsigned char* key){
+    EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
+    if(ctx == nullptr){
+        return nullptr;
+    }
+    if(EVP_EncryptInit_ex(ctx, hcipher, nullptr, key, nullptr) != 1 ||
+       EVP_CIPHER_CTX_set_padding(ctx, 0) != 1)
+    {
+        EVP_CIPHER_CTX_free(ctx);
+        return nullptr;
+    }
+    return ctx;
+}
+
+//创建全部派生上下文, 任一失败则释放全部并返回-1
+static int quic_secret_create_ctx(struct quic_secret* secret){
+#ifdef USE_BORINGSSL
+    secret->aead_enc = aead_ctx_new(secret->cipher, (const unsigned char*)secret->key);
+    secret->aead_dec = aead_ctx_new(secret->cipher, (const unsigned char*)secret->key);
+#else
+    secret->aead_enc = aead_enc_init(secret->cipher, (const unsigned char*)secret->key);
+    secret->aead_dec = aead_dec_init(secret->cipher, (const unsigned char*)secret->key);
+#endif
+    if(secret->hcipher){
+        secret->hp_ctx = hp_ctx_init(secret->hcipher, (const unsigned char*)secret->hp);
+    }
+    if(secret->aead_enc == nullptr || secret->aead_dec == nullptr ||
+       (secret->hcipher && secret->hp_ctx == nullptr))
+    {
+        quic_secret_release(secret);
+        return -1;
+    }
+    return 0;
+}
+
+//释放上下文并清空全部密钥材料;secret丢弃或重灌前必须调用
+void quic_secret_release(struct quic_secret* secret){
+    if(secret == nullptr){
+        return;
+    }
+#ifdef USE_BORINGSSL
+    EVP_AEAD_CTX_free(secret->aead_enc);
+    EVP_AEAD_CTX_free(secret->aead_dec);
+#else
+    EVP_CIPHER_CTX_free(secret->aead_enc);
+    EVP_CIPHER_CTX_free(secret->aead_dec);
+#endif
+    EVP_CIPHER_CTX_free(secret->hp_ctx);
+    memset(secret, 0, sizeof(*secret));
+}
+
 //头部保护掩码：对sample游标处16字节采样加密得到掩码；采样不足16字节返回-1
-static int hp_encode(const EVP_CIPHER* cipher,
-                      const unsigned char* key,
+//AES套件用随secret预置的ECB上下文(无链式状态,可跨包直接复用);chacha套件无预置上下文，现算
+static int hp_encode(const quic_secret* secret,
                       const cursor& sample,
                       unsigned char* out)
 {
@@ -412,29 +454,20 @@ static int hp_encode(const EVP_CIPHER* cipher,
         return -1;
     }
     const unsigned char* data = sample.data();
-    if(cipher) {
-        EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
-        if(ctx == nullptr)
-            return -1;
-        defer(EVP_CIPHER_CTX_free, ctx);
-        if(EVP_EncryptInit_ex(ctx, cipher, nullptr, key, nullptr) != 1)
-            return -1;
-
-        if(EVP_CIPHER_CTX_set_padding(ctx, 0) != 1)
-            return -1;
-
+    if(secret->hcipher) {
         int len;
-        if(EVP_EncryptUpdate(ctx, out, &len, data, 16) != 1)
+        if(EVP_EncryptUpdate(secret->hp_ctx, out, &len, data, 16) != 1)
             return -1;
         int outlen = len;
 
-        if(EVP_EncryptFinal_ex(ctx, out+outlen, &len) != 1)
+        if(EVP_EncryptFinal_ex(secret->hp_ctx, out+outlen, &len) != 1)
             return -1;
 
         outlen += len;
         return outlen;
     } else {
         unsigned char _stub[5] = { 0, 0, 0, 0, 0, };
+        const unsigned char* key = (const unsigned char*)secret->hp;
 #ifdef USE_BORINGSSL
         const uint8_t *nonce;
         uint32_t counter;
@@ -446,6 +479,7 @@ static int hp_encode(const EVP_CIPHER* cipher,
         nonce = data + sizeof(counter);
         CRYPTO_chacha_20(out, _stub, 5, key, nonce, counter);
 #else
+        //sample前4字节作计数器、后12字节作nonce,拼成16字节IV
         EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
         if(ctx == nullptr)
             return -1;
@@ -466,6 +500,7 @@ static int hp_encode(const EVP_CIPHER* cipher,
 }
 
 int quic_generate_initial_key(int client, const char* id, uint8_t id_len, struct quic_secret* secret, uint32_t version){
+    quic_secret_release(secret);
     char prk[32];
     if(HKDF_Extract(id, id_len, prk, version) < 0){
         LOGE("initial_secret failed: %.*s\n", id_len, id);
@@ -507,48 +542,60 @@ int quic_generate_initial_key(int client, const char* id, uint8_t id_len, struct
         LOGE("quic hp failed\n");
         return -1;
     }
-    return 0;
+    return quic_secret_create_ctx(secret);
 }
 
 int quic_secret_set_key(struct quic_secret* secret, const char* key, uint32_t cipher, uint32_t version){
-    size_t key_len;
+#ifdef USE_BORINGSSL
+    const EVP_AEAD* cipher_ptr = nullptr;
+#else
+    const EVP_CIPHER* cipher_ptr = nullptr;
+#endif
+    const EVP_CIPHER* hcipher = nullptr;
+    const EVP_MD* md = nullptr;
     switch (cipher) {
     case TLS1_3_CK_AES_128_GCM_SHA256:
 #ifdef USE_BORINGSSL
-        secret->cipher = EVP_aead_aes_128_gcm();
+        cipher_ptr = EVP_aead_aes_128_gcm();
+        hcipher = EVP_aes_128_ecb();
 #else
-        secret->cipher = EVP_aes_128_gcm();
+        cipher_ptr = EVP_aes_128_gcm();
+        hcipher = EVP_aes_128_ecb();
 #endif
-        secret->hcipher = EVP_aes_128_ecb();
-        secret->md = EVP_sha256();
+        md = EVP_sha256();
         break;
     case TLS1_3_CK_AES_256_GCM_SHA384:
 #ifdef USE_BORINGSSL
-        secret->cipher = EVP_aead_aes_256_gcm();
+        cipher_ptr = EVP_aead_aes_256_gcm();
+        hcipher = EVP_aes_256_ecb();
 #else
-        secret->cipher = EVP_aes_256_gcm();
+        cipher_ptr = EVP_aes_256_gcm();
+        hcipher = EVP_aes_256_ecb();
 #endif
-        secret->hcipher = EVP_aes_256_ecb();
-        secret->md = EVP_sha384();
+        md = EVP_sha384();
         break;
     case TLS1_3_CK_CHACHA20_POLY1305_SHA256:
 #ifdef USE_BORINGSSL
-        secret->cipher = EVP_aead_chacha20_poly1305();
+        cipher_ptr = EVP_aead_chacha20_poly1305();
 #else
-        secret->cipher = EVP_chacha20_poly1305();
+        cipher_ptr = EVP_chacha20_poly1305();
 #endif
-        secret->hcipher = nullptr;
-        secret->md = EVP_sha256();
+        hcipher = nullptr;
+        md = EVP_sha256();
         break;
     default:
         LOGE("unknown cipher: 0x%X\n", cipher);
         return -1;
     }
 #ifdef USE_BORINGSSL
-    key_len = EVP_AEAD_key_length(secret->cipher);
+    size_t key_len = EVP_AEAD_key_length(cipher_ptr);
 #else
-    key_len = EVP_CIPHER_key_length(secret->cipher);
+    size_t key_len = EVP_CIPHER_key_length(cipher_ptr);
 #endif
+    quic_secret_release(secret);
+    secret->cipher = cipher_ptr;
+    secret->hcipher = hcipher;
+    secret->md = md;
     const char* key_label = (version == QUIC_VERSION_2) ? "quicv2 key" : "quic key";
     const char* iv_label = (version == QUIC_VERSION_2) ? "quicv2 iv" : "quic iv";
     const char* hp_label = (version == QUIC_VERSION_2) ? "quicv2 hp" : "quic hp";
@@ -565,7 +612,7 @@ int quic_secret_set_key(struct quic_secret* secret, const char* key, uint32_t ci
         LOGE("quic hp failed\n");
         return -1;
     }
-    return 0;
+    return quic_secret_create_ctx(secret);
 }
 
 //写出PN字段(pn_length字节)并推进游标；空间不足返回false
@@ -689,10 +736,9 @@ size_t encode_packet(cursor plaintext, const quic_pkt_header* header,
 
     cursor aad(base, header_len);
     int ciphertext_len = aead_encrypt(
-            secret->cipher,
+            secret,
             plaintext,
             aad,
-            (const unsigned char*)secret->key,
             (const unsigned char*)iv,
             out);
     if(ciphertext_len < 0){
@@ -704,7 +750,7 @@ size_t encode_packet(cursor plaintext, const quic_pkt_header* header,
     memset(mask, 0, 128);
     //PN字段是头部最后写出的内容，HP采样点固定为其后4字节起的16字节
     unsigned char* pn_pos = base + header_len - pn_length;
-    if(hp_encode(secret->hcipher, (const unsigned char*)secret->hp, cursor(pn_pos + 4, 16), mask) < 0){
+    if(hp_encode(secret, cursor(pn_pos + 4, 16), mask) < 0){
         LOGE("hp_encode failed\n");
         return 0;
     }
@@ -1658,7 +1704,7 @@ static bool unprotect(QuicCursor& pkt, quic_pkt_header* header, const quic_secre
         }
 
         //HP采样点固定在PN字段后4字节起的16字节
-        if(hp_encode(secret->hcipher, (const unsigned char*)secret->hp, cursor(data + hlen + 4, 16), mask) < 0){
+        if(hp_encode(secret, cursor(data + hlen + 4, 16), mask) < 0){
             LOGE("hp_encode failed\n");
             return false;
         }
@@ -1684,7 +1730,7 @@ static bool unprotect(QuicCursor& pkt, quic_pkt_header* header, const quic_secre
             return false;
         }
 
-        if(hp_encode(secret->hcipher, (const unsigned char*)secret->hp, cursor(data + hlen + 4, 16), mask) < 0){
+        if(hp_encode(secret, cursor(data + hlen + 4, 16), mask) < 0){
             LOGE("hp_encode failed\n");
             return false;
         }
@@ -1737,10 +1783,9 @@ quic_decode_status decode_packet(Buffer pkt, quic_pkt_header* header,
     cursor aad(data, pos + header->pn_length);
     cursor plain(data + pos + header->pn_length, len - pos - header->pn_length);
     int plaintext_len = aead_decrypt(
-            secret->cipher,
+            secret,
             pktc,
             aad,
-            (unsigned char*)secret->key,
             (unsigned char*)iv,
             plain);
     if(plaintext_len < 0){
@@ -2040,31 +2085,21 @@ static int retry_aead_encrypt_decrypt(const char* key, const char* nonce,
                                      const cursor& aad,
                                      const cursor& input,
                                      cursor& output, bool encrypt) {
+    quic_secret secret{};
 #ifdef USE_BORINGSSL
-    const EVP_AEAD* aead = EVP_aead_aes_128_gcm();
-    if (encrypt) {
-        return aead_encrypt(aead, input, aad,
-                           (const unsigned char*)key,
-                           (const unsigned char*)nonce,
-                           output);
-    }
-    return aead_decrypt(aead, input, aad,
-                       (unsigned char*)key,
-                       (unsigned char*)nonce,
-                       output);
+    secret.cipher = EVP_aead_aes_128_gcm();
 #else
-    const EVP_CIPHER* cipher = EVP_aes_128_gcm();
-    if (encrypt) {
-        return aead_encrypt(cipher, input, aad,
-                           (const unsigned char*)key,
-                           (const unsigned char*)nonce,
-                           output);
-    }
-    return aead_decrypt(cipher, input, aad,
-                       (unsigned char*)key,
-                       (unsigned char*)nonce,
-                       output);
+    secret.cipher = EVP_aes_128_gcm();
 #endif
+    memcpy(secret.key, key, 16);
+    if(quic_secret_create_ctx(&secret) < 0){
+        return -1;
+    }
+    defer(quic_secret_release, &secret);
+    if (encrypt) {
+        return aead_encrypt(&secret, input, aad, (const unsigned char*)nonce, output);
+    }
+    return aead_decrypt(&secret, input, aad, (const unsigned char*)nonce, output);
 }
 
 bool verify_retry_integrity_tag(const void* retry_packet, size_t packet_len,

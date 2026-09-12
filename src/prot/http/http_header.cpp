@@ -23,7 +23,13 @@ HttpHeader::HttpHeader() {
 
 
 HttpHeader* HttpHeader::set(const std::string& header, const string& value) {
-    headers[toLower(header)] = value;
+    string key;
+    if(std::any_of(header.begin(), header.end(), [](char c){ return isupper((unsigned char)c); })){
+        key = toLower(header);
+    }else{
+        key = header;
+    }
+    headers[std::move(key)] = value;
     return this;
 }
 
@@ -55,28 +61,24 @@ HttpHeader* HttpHeader::append(const std::string& header, const string& value){
 }
 
 HttpHeader* HttpHeader::del(const std::string& header) {
-    headers.erase(toLower(header));
+    headers.erase(header);
     return this;
 }
 
 const char* HttpHeader::get(const std::string& header) const{
-    if(headers.count(toLower(header))) {
-        return headers.at(toLower(header)).c_str();
-    }
-    return nullptr;
+    auto it = headers.find(header);
+    return it == headers.end() ? nullptr : it->second.c_str();
 }
 
 bool HttpHeader::has(const std::string& header, const std::string& value) const {
-    if (!headers.contains(toLower(header))) {
+    auto it = headers.find(header);
+    if (it == headers.end()) {
         return false;
     }
-    if (value.empty()) {
-        return true;
-    }
-    return headers.at(toLower(header)) == value;
+    return value.empty() || it->second == value;
 }
 
-const std::map<std::string, std::string>& HttpHeader::getall() const {
+const std::map<std::string, std::string, CaseInsensitiveCompare>& HttpHeader::getall() const {
     return headers;
 }
 
@@ -122,7 +124,7 @@ HttpReqHeader::HttpReqHeader(HeaderMap&& headers) {
     }
 
     for(const auto& i: headers){
-        if(toLower(i.first) == "cookie"){
+        if(strcasecmp(i.first.c_str(), "cookie") == 0){
             std::string cookiebuff = i.second;
             std::istringstream iss(cookiebuff);
             std::string token;
@@ -431,7 +433,7 @@ std::string Cookie::toString() const {
 
 HttpResHeader::HttpResHeader(HeaderMap&& headers) {
     for(const auto& i: headers){
-        if(toLower(i.first) == "set-cookie"){
+        if(strcasecmp(i.first.c_str(), "set-cookie") == 0){
             cookies.insert(i.second);
         }else{
             set(i.first, i.second);

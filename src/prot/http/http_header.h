@@ -76,9 +76,23 @@ static inline std::string ltrim(std::string s) {
     return s;
 }
 
+struct CaseInsensitiveCompare {
+    bool operator()(const std::string& a, const std::string& b) const {
+        const size_t len = std::min(a.length(), b.length());
+        for(size_t i = 0; i < len; i++){
+            unsigned char ca = tolower((unsigned char)a[i]);
+            unsigned char cb = tolower((unsigned char)b[i]);
+            if(ca != cb){
+                return ca < cb;
+            }
+        }
+        return a.length() < b.length();
+    }
+};
+
 class HttpHeader{
 protected:
-    std::map<std::string, std::string> headers;
+    std::map<std::string, std::string, CaseInsensitiveCompare> headers;
 public:
     uint64_t request_id = 0;
     std::set<std::string> cookies;
@@ -89,7 +103,7 @@ public:
     HttpHeader* del(const std::string& header);
     [[nodiscard]] const char* get(const std::string& header) const;
     [[nodiscard]] bool has(const std::string& header, const std::string& value = "") const;
-    [[nodiscard]] const std::map<std::string, std::string>& getall() const;
+    [[nodiscard]] const std::map<std::string, std::string, CaseInsensitiveCompare>& getall() const;
 
     [[nodiscard]] virtual bool no_body() const = 0;
     [[nodiscard]] virtual bool no_end() const = 0;
@@ -103,6 +117,8 @@ public:
     }
 };
 
+typedef std::multimap<std::string, std::string, CaseInsensitiveCompare> HeaderMap;
+
 struct Range{
     ssize_t begin;
     ssize_t end;
@@ -110,18 +126,6 @@ struct Range{
         reflect_all(begin, end);
     }
 };
-
-struct CaseInsensitiveCompare {
-    bool operator()(const std::string& a, const std::string& b) const {
-        std::string lowerA(a);
-        std::string lowerB(b);
-        std::transform(a.begin(), a.end(), lowerA.begin(), ::tolower);
-        std::transform(b.begin(), b.end(), lowerB.begin(), ::tolower);
-        return lowerA < lowerB;
-    }
-};
-
-typedef std::multimap<std::string, std::string, CaseInsensitiveCompare> HeaderMap;
 
 class HttpReqHeader: public HttpHeader{
 public:

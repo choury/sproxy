@@ -64,8 +64,8 @@ ssize_t RWer::Write(std::set<uint64_t>& writed_list) {
             hasEof = true;
         }
     } else {
-        std::vector<iovec> iovs;
-        iovs.reserve(data.size());
+        static iovec iovs[IOV_MAX];
+        size_t iovcnt = 0;
         size_t max_len = sndbufLeft();
         if(unlikely(max_len == 0)) {
             LOGD(DRWER, "sndbuf full %d: sndbuf: %zu, buffsize: %zu, require: %zu\n",
@@ -79,21 +79,21 @@ ssize_t RWer::Write(std::set<uint64_t>& writed_list) {
                 hasEof = true;
                 break;
             }
-            if (bb.len > max_len && !iovs.empty()) {
+            if (bb.len > max_len && iovcnt != 0) {
                 break;
             }
-            iovs.emplace_back(iovec{(void *) bb.data(), bb.len});
+            iovs[iovcnt++] = iovec{(void *) bb.data(), bb.len};
             len += bb.len;
-            if (unlikely(iovs.size() >= IOV_MAX || len >= MAX_BUF_LEN)) {
+            if (unlikely(iovcnt >= IOV_MAX || len >= MAX_BUF_LEN)) {
                 break;
             }
             max_len -= bb.len;
         }
 
-        ret = writev(getFd(), iovs.data(), iovs.size());
+        ret = writev(getFd(), iovs, (int)iovcnt);
         last_errno = errno;
         if(ret > 0) {
-            LOGD(DRWER, "writev %d: iovs: %zd, ret: %zd/%zd\n", getFd(), iovs.size(), ret, len);
+            LOGD(DRWER, "writev %d: iovs: %zd, ret: %zd/%zd\n", getFd(), iovcnt, ret, len);
         } else if (last_errno != EAGAIN && last_errno != ENOBUFS && last_errno != EINTR) {
             LOGE("writev %d error: %s\n", getFd(), strerror(last_errno));
         } else {

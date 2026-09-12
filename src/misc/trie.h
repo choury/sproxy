@@ -26,7 +26,12 @@ template<typename T, typename V>
 class Trie: public TrieType<V> {
     bool isEndpoint = false;
     std::map<T, Trie<T,V>*> children;
-    std::map<std::string, Trie<T, V>*> regexChildren;
+    //正则规则在insert时预编译，避免find热路径上反复构造std::regex
+    struct RegexChild{
+        std::regex reg;
+        Trie<T, V>* next = nullptr;
+    };
+    std::map<std::string, RegexChild> regexChildren;
 public:
     ~Trie(){
         clear();
@@ -38,8 +43,17 @@ public:
                 this->value = v;
                 return;
             }
-            regexChildren[reg] = new Trie<T, V>();
-            regexChildren[reg]->insert({}, v, "");
+            try{
+                auto& child = regexChildren[reg];
+                child.reg = std::regex(reg);
+                delete child.next;
+                child.next = new Trie<T, V>();
+                child.next->insert({}, v, "");
+            }catch(std::regex_error&) {
+                //非法正则：规则作废(等效于find时永远不匹配)
+                regexChildren.erase(reg);
+                return;
+            }
             return;
         }
         auto top = token.front();
@@ -51,14 +65,9 @@ public:
     }
     const TrieType<V>* find(std::list<T>&& token, std::string ext = "") const{
         if(token.empty()) {
-            for (auto i: regexChildren) {
-                try{
-                    std::regex reg(i.first);
-                    if (std::regex_match(ext, reg)) {
-                        return i.second->find({}, "");
-                    }
-                }catch(std::regex_error&) {
-                    continue;
+            for (const auto& i: regexChildren) {
+                if (std::regex_match(ext, i.second.reg)) {
+                    return i.second.next->find({}, "");
                 }
             }
             if (isEndpoint) {
@@ -85,8 +94,8 @@ public:
             if(isEndpoint){
                 result.push_back(this);
             }
-            for(auto i: regexChildren){
-                result.push_back(i.second);
+            for(auto& [_, child]: regexChildren){
+                result.push_back(child.next);
             }
             return result;
         }
@@ -127,8 +136,8 @@ public:
             delete child.second;
         }
         children.clear();
-        for(auto regexChild: regexChildren) {
-            delete regexChild.second;
+        for(auto& [_, regexChild]: regexChildren) {
+            delete regexChild.next;
         }
         this->isEndpoint = false;
         regexChildren.clear();
@@ -147,12 +156,12 @@ public:
             std::cout<<i.first<<": ";
             i.second->dump(tab+1);
         }
-        for(auto& i: regexChildren){
+        for(auto& [reg, child]: regexChildren){
             for(int j=0; j < tab; j++){
                 std::cout<<"  ";
             }
-            std::cout<<"reg:"<<i.first<<": ";
-            i.second->dump(tab+1);
+            std::cout<<"reg:"<<reg<<": ";
+            child.next->dump(tab+1);
         }
     }
 #endif
@@ -166,9 +175,9 @@ public:
             tokens_.emplace_back(child.first);
             result.splice(result.end(), child.second->dump(tokens_));
         }
-        for(auto regexChild: regexChildren){
+        for(auto& regexChild: regexChildren){
             auto tokens_ = tokens;
-            result.splice(result.end(), regexChild.second->dump(tokens_));
+            result.splice(result.end(), regexChild.second.next->dump(tokens_));
         }
         return result;
     }

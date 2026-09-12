@@ -50,8 +50,8 @@ void QuicBase::dropkey(OSSL_ENCRYPTION_LEVEL level) {
     }
     LOGD(DQUIC, "drop key for level: %d\n", level);
     contexts[level].hasKey = false;
-    memset(&contexts[level].read_secret, 0, sizeof(quic_secret));
-    memset(&contexts[level].write_secret, 0, sizeof(quic_secret));
+    quic_secret_release(&contexts[level].read_secret);
+    quic_secret_release(&contexts[level].write_secret);
     qos->KeyLost(level);
 }
 
@@ -414,8 +414,12 @@ void QuicBase::generateCid() {
 
     if(ctx) {
         //only client has init secret now.
-        quic_generate_initial_key(1, hisid.data(), hisid.length(), &contexts[0].write_secret, chosen_version);
-        quic_generate_initial_key(0, hisid.data(), hisid.length(), &contexts[0].read_secret, chosen_version);
+        if(quic_generate_initial_key(1, hisid.data(), hisid.length(), &contexts[0].write_secret, chosen_version) ||
+           quic_generate_initial_key(0, hisid.data(), hisid.length(), &contexts[0].read_secret, chosen_version))
+        {
+            LOGE("Quic generate initial key failed\n");
+            return;
+        }
         qos->KeyGot(ssl_encryption_initial);
         contexts[0].hasKey = true;
     }
@@ -774,6 +778,10 @@ QuicBase::~QuicBase(){
     SSL_free(ssl);
     if(ctx){
         SSL_CTX_free(ctx);
+    }
+    for(auto& context: contexts){
+        quic_secret_release(&context.read_secret);
+        quic_secret_release(&context.write_secret);
     }
 }
 
@@ -2218,14 +2226,13 @@ bool QuicRWer::IsConnected() {
 
 void QuicRWer::ReadData() {
     Block blk(IOV_MAX*max_datagram_size);
-    std::vector<iovec> iov;
-    iov.resize(IOV_MAX);
-    for(size_t i = 0; i < iov.size(); i++) {
+    static iovec iov[IOV_MAX];
+    for(size_t i = 0; i < IOV_MAX; i++) {
         iov[i].iov_base = (char*)blk.data() + i * max_datagram_size;
         iov[i].iov_len = max_datagram_size;
     }
-    ssize_t ret = readm(getFd(), iov.data(), iov.size());
-    LOGD(DQUIC, "readm from %d, size: %zd ret:%d\n", getFd(), iov.size(), (int)ret);
+    ssize_t ret = readm(getFd(), iov, IOV_MAX);
+    LOGD(DQUIC, "readm from %d, size: %zd ret:%d\n", getFd(), (size_t)IOV_MAX, (int)ret);
     if (ret < 0 && errno == EAGAIN) {
         return;
     }

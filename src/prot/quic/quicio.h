@@ -103,8 +103,8 @@ protected:
     std::unique_ptr<QuicQos> qos;
     struct quic_context{
         OSSL_ENCRYPTION_LEVEL  level;
-        struct quic_secret     write_secret;
-        struct quic_secret     read_secret;
+        struct quic_secret     write_secret{};
+        struct quic_secret     read_secret{};
         bool     hasKey = false;
         size_t   crypto_offset = 0;
         EBuffer  crypto_rb;

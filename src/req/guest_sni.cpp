@@ -7,6 +7,7 @@
 
 #ifdef HAVE_QUIC
 #include "prot/quic/quicio.h"
+#include "misc/defer.h"
 #include "guest3.h"
 #endif
 
@@ -219,11 +220,13 @@ size_t Guest_sni::sniffer_quic(Buffer&& bb) {
             LOGE("[%s] QUIC sni packet type is not initial: 0x%x\n", dumpDest(rwer->getSrc()).c_str(), header.type);
             goto Forward;
         }
-        quic_secret secret;
+        quic_secret secret{};
         if(quic_generate_initial_key(1, header.dcid.c_str(), header.dcid.size(), &secret, header.version) < 0){
             LOGE("[%s] Quic sni faild to generate initial key\n", dumpDest(rwer->getSrc()).c_str());
             goto Forward;
         }
+        //secret内嵌的加密上下文持有资源,离作用域(含goto Forward)时统一释放
+        defer(quic_secret_release, &secret);
         std::deque<quic_frame> frames;
         if(decode_packet(Buffer(ib), &header, &secret, &frames) != quic_decode_status::ok){
             LOGE("[%s] Quic sni decode packet failed\n", dumpDest(rwer->getSrc()).c_str());

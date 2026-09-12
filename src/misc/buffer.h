@@ -12,6 +12,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <atomic>
 #include <sys/types.h>
 
 #include <string>
@@ -21,6 +22,34 @@
 #include <set>
 
 #define PRIOR_HEAD 128
+
+//数据块统一布局: [RefHead][PRIOR_HEAD预留][数据]
+//引用计数内嵌在分配头部，Buffer拷贝只做原子加减，不再额外分配shared_ptr控制块
+struct RefHead{
+    std::atomic<uint32_t> refs;
+    uint64_t pad; //凑满16字节，保证数据区16字节对齐
+};
+static_assert(sizeof(RefHead) == 16, "RefHead must keep data 16-byte aligned");
+
+//返回数据区基址(预留区起点)，失败返回nullptr，引用计数初始化为1
+inline void* buf_alloc(size_t memcap){
+    char* raw = (char*)malloc(sizeof(RefHead) + memcap);
+    if(raw == nullptr){
+        return nullptr;
+    }
+    ((RefHead*)raw)->refs.store(1, std::memory_order_relaxed);
+    return raw + sizeof(RefHead);
+}
+
+inline void buf_free(void* mem){
+    if(mem){
+        free((char*)mem - sizeof(RefHead));
+    }
+}
+
+inline RefHead* buf_refhead(void* mem){
+    return (RefHead*)((char*)mem - sizeof(RefHead));
+}
 
 /*
  * 这个类维护一个缓冲区，但是申请的时候会多申请一个固定长度的头部（作为预留部分）
@@ -34,10 +63,10 @@ public:
     Block& operator=(const Block&) = delete;
 
     explicit Block(size_t size, off_t prior = PRIOR_HEAD):
-        base(malloc(size + prior), free), off(prior){
+        base(buf_alloc(size + prior), buf_free), off(prior){
     }
     explicit Block(const void* ptr, size_t size, off_t prior = PRIOR_HEAD):
-        base(malloc(size + prior), free), off(prior)
+        base(buf_alloc(size + prior), buf_free), off(prior)
     {
         if(size == 0){
             return;
@@ -72,8 +101,19 @@ public:
 //reserve的参数为负数，truncate 需要扩展空间，调用mutable_data()
 //因此每次调用返回的指针地址不可cache
 class Buffer{
-    std::shared_ptr<void> ptr = nullptr;
+    void* mem = nullptr; //数据区基址(含预留区)，其前16字节为RefHead引用计数
     off_t off = 0;
+
+    void addref(){
+        buf_refhead(mem)->refs.fetch_add(1, std::memory_order_relaxed);
+    }
+    void release(){
+        if(mem && buf_refhead(mem)->refs.fetch_sub(1, std::memory_order_release) == 1){
+            std::atomic_thread_fence(std::memory_order_acquire);
+            buf_free(mem);
+        }
+        mem = nullptr;
+    }
 public:
     uint64_t id = 0;
     size_t len = 0;
@@ -83,18 +123,18 @@ public:
     Buffer(Block&& data, size_t len, uint64_t id = 0);
     Buffer(std::nullptr_t, uint64_t id = 0);
     Buffer(Buffer&& b) noexcept;
-    Buffer(const Buffer&) noexcept = default;
-    Buffer& operator=(Buffer&&) noexcept;
+    Buffer(const Buffer& b) noexcept;
+    Buffer& operator=(Buffer&& b) noexcept;
+    ~Buffer();
     // 增加/减少预留空间 off 为正增加，为负减少
     void reserve(int p);
     // 从末尾截断/扩展数据, 返回截断前的长度
     size_t truncate(size_t left);
     [[nodiscard]] const void* data() const;
     void* mutable_data();
-    // 返回末尾数据之后的位置，可写；共享时COW(保留cap，否则没有可写空间)
-    // 剩余可写空间小于need时返回nullptr
-    void* end(size_t need);
-    size_t refs();
+    size_t refs() const;
+    // 末尾剩余可写空间(独占时)，共享或无数据时为0，不触发COW
+    [[nodiscard]] size_t room() const;
     void reflect(IVisitor& v) {
         reflect_named("data", std::span<const std::byte>((const std::byte*)data(), len));
         reflect_all(id, len, cap);
@@ -107,8 +147,11 @@ class CBuffer {
     size_t total_len = 0;
 public:
     ssize_t put(Buffer&& bb);
-    // 末尾Buffer有足够可写空间时把数据并入，否则入队
-    ssize_t emplace(Buffer&& bb);
+    // 返回队尾Buffer末尾的可写空间(供直接读入数据，不触发COW)
+    // 队列为空、队尾id不匹配或队尾被共享时返回空span
+    std::span<char> tailRoom(uint64_t id);
+    // 向tailRoom返回的空间写入了l字节后，推进队尾
+    void tailPush(size_t l);
 
     //for get
     [[nodiscard]] size_t length() const;

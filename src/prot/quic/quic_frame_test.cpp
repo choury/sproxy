@@ -459,7 +459,7 @@ int main() {
         //QUIC密钥按发送方派生：服务端解收客户端Initial用客户端密钥(guest_sni同此)
     {
         const char dcid[] = "12345678";
-        quic_secret csecret, ssecret;
+        quic_secret csecret{}, ssecret{};
         if(quic_generate_initial_key(1, dcid, 8, &csecret, QUIC_VERSION_1) != 0 ||
            quic_generate_initial_key(0, dcid, 8, &ssecret, QUIC_VERSION_1) != 0)
         {
@@ -556,6 +556,133 @@ int main() {
                       == quic_decode_status::conn_error, "malformed frame in authed packet");
             }
         }
+        quic_secret_release(&csecret);
+        quic_secret_release(&ssecret);
+
+        //---- 上下文随secret创建：多包复用、失败不污染、release后重建确定 ----
+        {
+            const char dcid[] = "12345678";
+            quic_secret csecret{};
+            check(quic_generate_initial_key(1, dcid, 8, &csecret, QUIC_VERSION_1) == 0,
+                  "eager ctx: initial key");
+            check(csecret.aead_enc && csecret.aead_dec && csecret.hp_ctx,
+                  "eager ctx: created with key");
+            quic_pkt_header header;
+            header.type = QUIC_PACKET_INITIAL;
+            header.dcid = dcid;
+            header.scid = dcid;
+            header.version = QUIC_VERSION_1;
+            header.token = "";
+            header.pn_length = 4;
+            header.pn_base = 0;
+
+            char payload[8];
+            QuicCursor pc(payload, sizeof(payload));
+            quic_frame ping{QUIC_FRAME_PING};
+            pc.put_frame(ping);
+            quic_frame md{QUIC_FRAME_MAX_DATA};
+            md.extra = 777;
+            pc.put_frame(md);
+            size_t plen = sizeof(payload) - pc.length();
+
+            bool multi_ok = true;
+            char packet[256], first[256] = {0};
+            size_t last_len = 0;
+            for(uint64_t pn = 100; pn < 105; pn++){
+                header.pn = pn;
+                //同一secret的上下文连续加密/解密多个不同pn的包
+                QuicCursor cc(packet, sizeof(packet));
+                size_t clen = encode_packet(cursor(payload, plen), &header, &csecret, cc);
+                if(clen == 0){
+                    multi_ok = false;
+                    break;
+                }
+                last_len = clen;
+                if(pn == 100){
+                    memcpy(first, packet, clen);
+                }
+                quic_pkt_header rx;
+                static_cast<quic_meta&>(rx) = quic_meta{};
+                QuicCursor mc(packet, clen);
+                auto meta = unpack_meta(mc, 0);
+                if(meta){
+                    static_cast<quic_meta&>(rx) = std::move(*meta);
+                }
+                rx.pn_base = pn;
+                std::deque<quic_frame> frames;
+                if(!meta || decode_packet(Buffer(packet, clen), &rx, &csecret, &frames)
+                             != quic_decode_status::ok
+                   || frames.size() != 2 || frames.back().extra != 777)
+                {
+                    multi_ok = false;
+                }
+            }
+            check(multi_ok, "eager ctx encrypts/decrypts consecutive packets");
+
+            //release后以相同密钥重建,相同pn的密文必须逐字节一致(重建确定性)
+            quic_secret_release(&csecret);
+            check(quic_generate_initial_key(1, dcid, 8, &csecret, QUIC_VERSION_1) == 0,
+                  "eager ctx: regenerate key");
+            header.pn = 100;
+            char rebuild[256] = {0};
+            QuicCursor rc(rebuild, sizeof(rebuild));
+            size_t rlen = encode_packet(cursor(payload, plen), &header, &csecret, rc);
+            check(rlen > 0 && memcmp(first, rebuild, rlen) == 0,
+                  "eager ctx rebuild produces identical ciphertext");
+
+            //解密失败(篡改tag)不污染上下文,同一secret须继续正确解密
+            char corrupted[256];
+            memcpy(corrupted, packet, last_len);
+            corrupted[last_len - 1] ^= 0xff; //末字节是AEAD tag
+            quic_pkt_header rx;
+            static_cast<quic_meta&>(rx) = quic_meta{};
+            QuicCursor mc(corrupted, last_len);
+            auto meta = unpack_meta(mc, 0);
+            bool recover_ok = false;
+            if(meta){
+                static_cast<quic_meta&>(rx) = std::move(*meta);
+                rx.pn_base = 104;
+                std::deque<quic_frame> junk;
+                if(decode_packet(Buffer(corrupted, last_len), &rx, &csecret, &junk)
+                   == quic_decode_status::drop)
+                {
+                    static_cast<quic_meta&>(rx) = quic_meta{};
+                    QuicCursor mc2(packet, last_len);
+                    auto meta2 = unpack_meta(mc2, 0);
+                    if(meta2){
+                        static_cast<quic_meta&>(rx) = std::move(*meta2);
+                        rx.pn_base = 104;
+                        std::deque<quic_frame> good;
+                        recover_ok = decode_packet(Buffer(packet, last_len), &rx, &csecret, &good)
+                                     == quic_decode_status::ok && good.size() == 2;
+                    }
+                }
+            }
+            check(recover_ok, "eager ctx recovers after decrypt failure");
+            quic_secret_release(&csecret);
+            quic_secret_release(&csecret); //重复release必须无害
+        }
+    }
+
+    //---- retry integrity tag：add/verify往返(覆盖预置上下文的retry临时secret) ----
+    {
+        char retry_pkt[64];
+        memset(retry_pkt, 0x5a, 40);
+        const std::string dcid = "origdcid";
+        size_t with_tag = add_retry_integrity_tag(retry_pkt, 40, dcid, QUIC_VERSION_1);
+        check(with_tag == 40 + 16, "retry tag: added");
+        check(verify_retry_integrity_tag(retry_pkt, with_tag, dcid, QUIC_VERSION_1),
+              "retry tag: verified");
+        retry_pkt[0] ^= 0xff;
+        check(!verify_retry_integrity_tag(retry_pkt, with_tag, dcid, QUIC_VERSION_1),
+              "retry tag: tampered rejected");
+        //每次调用独立预置/释放临时secret，连续调用互不影响
+        char retry_pkt2[64];
+        memset(retry_pkt2, 0xa5, 40);
+        size_t with_tag2 = add_retry_integrity_tag(retry_pkt2, 40, dcid, QUIC_VERSION_1);
+        check(with_tag2 == 40 + 16 &&
+              verify_retry_integrity_tag(retry_pkt2, with_tag2, dcid, QUIC_VERSION_1),
+              "retry tag: second call independent");
     }
 
     //---- chaos protect：随机切分/乱序后必须语义等价、总字节精确 ----
