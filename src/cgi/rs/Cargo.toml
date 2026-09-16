@@ -2,7 +2,7 @@
 name = "sproxy_cgi"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.78.0"
+rust-version = "1.88.0"
 
 [lib]
 crate-type = ["staticlib"]

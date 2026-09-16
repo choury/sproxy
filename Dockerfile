@@ -1,6 +1,6 @@
 FROM debian:13 as builder
 
-LABEL maintainer="zhouwei400@gmail.com"
+LABEL maintainer="chouryzh@gmail.com"
 
 
 COPY . /root/sproxy

@@ -1,6 +1,6 @@
 FROM debian:13
 
-LABEL maintainer="zhouwei400@gmail.com"
+LABEL maintainer="chouryzh@gmail.com"
 
 # 安装sproxy运行时和测试所需的依赖
 RUN apt-get update && \

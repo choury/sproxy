@@ -27,9 +27,9 @@
 //引用计数内嵌在分配头部，Buffer拷贝只做原子加减，不再额外分配shared_ptr控制块
 struct RefHead{
     std::atomic<uint32_t> refs;
-    uint64_t pad; //凑满16字节，保证数据区16字节对齐
+    char pad[12];
 };
-static_assert(sizeof(RefHead) == 16, "RefHead must keep data 16-byte aligned");
+static_assert(sizeof(RefHead) == 16, "RefHead must be fixed 16 bytes and keep data as aligned as malloc's return");
 
 //返回数据区基址(预留区起点)，失败返回nullptr，引用计数初始化为1
 inline void* buf_alloc(size_t memcap){
