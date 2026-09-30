@@ -6,6 +6,7 @@
 #include "prot/memio.h"
 #include "cgi.h"
 #include "doh.h"
+#include "mesh/mesh_manager.h"
 
 #include <fstream>
 #include <sstream>
@@ -350,6 +351,11 @@ void File::getfile(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> 
             return response(rw, sheader, "[[Authorization needed]]\n");
         }
         return Doh::GetInstance()->request(req, rw);
+    }else if(filename == "mesh" || startwith(filename.c_str(), "mesh/")) {
+        if(!MeshManager::Started()) {
+            return response(rw, HttpResHeader::create(S404, sizeof(S404), id), "[[mesh not enabled]]\n");
+        }
+        return MeshManager::Instance()->handle_local(req, rw, filename);
     }else if(filename == "rproxy/sw") {
         filename = "webui/sw.html";
     }else if(filename == "rproxy/sw.js") {

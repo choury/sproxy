@@ -13,6 +13,7 @@
 #include "ping.h"
 #include "uhost.h"
 #include "rproxy2.h"
+#include "mesh/mesh_manager.h"
 
 #include <string.h>
 #include <assert.h>
@@ -164,6 +165,14 @@ void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw)
     if(check_result == CheckResult::NoPort)
         return response(rw, HttpResHeader::create(S400, sizeof(S400), id), "[[no port]]\n");
 
+    //mesh 前置步骤：必须在 check_header 之后、getBackend 之前，
+    //否则 mesh 凭据的 identifier 会被当作 rproxy 后端名
+    if(MeshManager::HasMeshHeaders(req)) {
+        if(!MeshManager::Forward(req, rw)) {
+            return;
+        }
+    }
+
     strategy stra{Strategy::none, ""};
     std::string backend = getBackend(req);
     if(!backend.empty()){
@@ -206,6 +215,11 @@ void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw)
             return response(rw, HttpResHeader::create(S404, sizeof(S404), id), "[[host not found]]\n");
         }
     }
+    //mesh://<本节点名> 的出口即本机（如全网共享的 sites.list 引用自身），归一化为 direct
+    const bool mesh_target = stra.s == Strategy::proxy && startwith(stra.ext.c_str(), MESH_SCHEME);
+    if(mesh_target && MeshManager::IsSelfExit(stra.ext.c_str() + strlen(MESH_SCHEME))) {
+        stra.s = Strategy::direct;
+    }
     req->set(STRATEGY, getstrategystring(stra.s));
     if(stra.s == Strategy::block){
         return response(rw, HttpResHeader::create(S403, sizeof(S403), id),
@@ -216,6 +230,9 @@ void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw)
     Destination dest;
     switch(stra.s){
     case Strategy::proxy:
+        if(mesh_target) {
+            return MeshManager::Dispatch(req, rw, stra.ext);
+        }
         memcpy(&dest, &opt.Server, sizeof(dest));
         if(!stra.ext.empty() && parseDest(stra.ext.c_str(), &dest)){
             return response(rw, HttpResHeader::create(S500, sizeof(S500), id), "[[ext misformat]]\n");

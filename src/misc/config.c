@@ -41,6 +41,8 @@ static char* ech_options[] = {"disable", "enable", "grease", NULL};
 static char* server_string = NULL;
 static char* policy_file = NULL;
 static struct arg_list secrets = {NULL, NULL};
+static struct arg_list mesh_peer_list = {NULL, NULL};
+static char* mesh_secret = NULL;
 static struct arg_list debug_list = {NULL, NULL};
 static struct arg_list http_listens = {NULL, NULL};
 static struct arg_list ssl_listens = {NULL, NULL};
@@ -234,6 +236,11 @@ static struct option long_options[] = {
     {"request-header",required_argument, NULL,  0 },
     {"forward-header",required_argument, NULL,  0 },
     {"mimic",         no_argument,       NULL,  0 },
+    {"mesh",          required_argument, NULL,  0 },
+    {"mesh-secret",   required_argument, NULL,  0 },
+    {"mesh-peer",     required_argument, NULL,  0 },
+    {"mesh-maxhops",  required_argument, NULL,  0 },
+    {"mesh-probe-interval", required_argument, NULL, 0 },
 #if __linux__
     {"tun",           no_argument,       NULL,  0 },
     {"tap",           no_argument,       NULL,  0 },
@@ -292,6 +299,11 @@ static struct option_detail option_detail[] = {
     {"key", "Private key file name (ssl/quic)", option_string, &keyfile, NULL},
     {"mimic", "Make sproxy mimic a standard web server.", option_bool, &opt.mimic, (void*)true},
     {"mitm", "Mitm mode for https request ([auto], enable, disable), require cakey", option_enum, &opt.mitm_mode, auto_options},
+    {"mesh", "enable mesh with node name (must be the cert domain for reachable nodes)", option_string, &opt.mesh_name, NULL},
+    {"mesh-secret", "shared secret for mesh network (credential user is 'mesh')", option_string, &mesh_secret, NULL},
+    {"mesh-peer", "bootstrap mesh peer, e.g. https://node.example.com[:443] (can be set multiple times)", option_list, &mesh_peer_list, NULL},
+    {"mesh-maxhops", "max hops for mesh forwarding (default 4)", option_uint64, &opt.mesh_maxhops, NULL},
+    {"mesh-probe-interval", "mesh probe interval in seconds (default 10)", option_uint64, &opt.mesh_probe_interval, NULL},
     {"pcap", "Save packets in pcap file for vpn", option_string, &opt.pcap_file, NULL},
     {"pcap-len", "Max packet length to save in pcap file", option_uint64, &opt.pcap_len, NULL},
     {"pidfile", "Write pid to this file", option_string, &opt.pidfile, NULL},
@@ -993,6 +1005,48 @@ void postConfig(){
     for(struct arg_list* p = secrets.next; p != NULL; p = p->next){
         addsecret(p->arg);
     }
+    if(opt.mesh_name) {
+        //凭据 identifier 容量为 AUTHLIMIT，节点名超长会在 encodeCredit 处被截断
+        if(strlen(opt.mesh_name) >= AUTHLIMIT || strchr(opt.mesh_name, '/')
+           || strchr(opt.mesh_name, '+')) {
+            LOGE("invalid mesh node name: %s\n", opt.mesh_name);
+            exit(1);
+        }
+        if(!mesh_secret) {
+            LOGE("mesh require mesh-secret\n");
+            exit(1);
+        }
+        if(strlen(mesh_secret) >= AUTHLIMIT) {
+            LOGE("mesh-secret too long (max %d)\n", AUTHLIMIT - 1);
+            exit(1);
+        }
+        if(opt.ignore_cert_error) {
+            LOGE("mesh can not work with insecure mode\n");
+            exit(1);
+        }
+        if(opt.restrict_local) {
+            LOGE("mesh can not work with restrict-local (probe and local exit rely on local strategy)\n");
+            exit(1);
+        }
+        if(secrexists("mesh")) {
+            LOGE("mesh-secret conflicts with user 'mesh' in secret\n");
+            exit(1);
+        }
+        char mesh_secret_arg[AUTHLIMIT * 2 + 2] = {0};
+        snprintf(mesh_secret_arg, sizeof(mesh_secret_arg), "mesh:%s", mesh_secret);
+        addsecret(mesh_secret_arg);
+        opt.mesh_secret = mesh_secret;
+        opt.mesh_peers = mesh_peer_list.next;
+        if(opt.mesh_maxhops == 0) {
+            opt.mesh_maxhops = 4;
+        }
+        if(opt.mesh_probe_interval == 0) {
+            opt.mesh_probe_interval = 10;
+        }
+    } else if(mesh_secret || mesh_peer_list.next || opt.mesh_maxhops || opt.mesh_probe_interval) {
+        LOGE("mesh-secret/mesh-peer/mesh-maxhops/mesh-probe-interval require mesh node name\n");
+        exit(1);
+    }
     for(struct arg_list* p = debug_list.next; p != NULL; p = p->next){
         if(!debugon(p->arg, true)){
             LOGE("set debug on %s failed\n", p->arg);
@@ -1192,6 +1246,7 @@ struct debug_flags_map debug[] = {
         {"HTTP3", false},
         {"RWER", false},
         {"SOCKS", false},
+        {"MESH", false},
         {NULL, false},
 };
 

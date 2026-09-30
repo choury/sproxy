@@ -9,6 +9,7 @@
 extern "C" {
 #endif
 void addsecret(const char* secret);
+bool secrexists(const char* user);
 bool decodeauth(const char* auth, struct Credit* credit);
 bool checksecret(const char* auth, const struct Credit* credit);
 bool checktoken(const char* token);

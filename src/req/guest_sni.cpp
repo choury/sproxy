@@ -63,6 +63,11 @@ bool should_sniff_sni(std::shared_ptr<const HttpReqHeader> req, Requester* src) 
     if(req->Dest.port != HTTPSPORT) {
         return false;
     }
+    //mesh 中继/出口流量透明转发：嗅探会改写 Dest 破坏转发，也不做 MITM。
+    //按头存在性而非 mesh 凭据判定：普通客户端伪造此头只会关闭对自己的嗅探（自我降级），无安全后果
+    if(req->has("X-Mesh-Exit")) {
+        return false;
+    }
     if(opt.mimic || !req->ismethod("CONNECT")) {
         return false;
     }

@@ -136,6 +136,8 @@ public:
     std::vector<Range> ranges;
     bool chain_proxy  = false;
     bool skip_authorize = false;
+    //请求已作为 mesh 出口落地过，再遇 mesh 目标即为配置级环路（进程内转发链标记，不跨节点传输）
+    bool mesh_exited = false;
     std::string rproxy_name;
     std::vector<std::tuple<std::string, uint32_t>> tracker;
     explicit HttpReqHeader(HeaderMap&& headers);
@@ -160,7 +162,7 @@ public:
     virtual size_t mem_usage() override;
     void reflect(IVisitor& v) {
         HttpHeader::reflect(v);
-        reflect_all(method, Dest, path, filename, ranges, chain_proxy);
+        reflect_all(method, Dest, path, filename, ranges, chain_proxy, mesh_exited);
     }
 };
 

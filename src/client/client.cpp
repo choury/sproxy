@@ -275,7 +275,7 @@ static void com_hooker(SproxyClient* c, const std::vector<std::string>& args){
 
 
 static char* generator_dump(const char* text, int state) {
-    static const char *dump_cmds[] = {"status", "dns", "sites", "usage", "hookers", "listens"};
+    static const char *dump_cmds[] = {"status", "dns", "mesh", "sites", "usage", "hookers", "listens"};
     static const int nb_elements = (sizeof(dump_cmds)/sizeof(dump_cmds[0]));
     COMPLETION_SKELETON(dump_cmds, nb_elements);
 }
@@ -293,6 +293,11 @@ static void com_dump(SproxyClient* c, const std::vector<std::string>& args) {
     }
     case "dns"_hash: {
         auto r = c->DumpDns();
+        std::cout << r.get_future().get() << std::endl;
+        break;
+    }
+    case "mesh"_hash: {
+        auto r = c->DumpMesh();
         std::cout << r.get_future().get() << std::endl;
         break;
     }
@@ -388,7 +393,7 @@ COMMAND commands[] = {
         { "test", com_test, "<host>\tTest strategy for host", nullptr},
         { "flush", com_flush, "<cgi|dns|strategy|cert|net>", generator_flush},
         { "switch", com_switch, "<proxy>\tSet proxy server", nullptr},
-        { "dump", com_dump, "<status|dns|sites|usage|hookers|listens>", generator_dump},
+        { "dump", com_dump, "<status|dns|mesh|sites|usage|hookers|listens>", generator_dump},
         { "kill", com_kill, "\tKill connection", nullptr},
         { "hooker", com_hooker, "\tload/unload BPF hooker from .elf", generator_add},
         { "exit", com_exit, "\tQuit the program", nullptr},

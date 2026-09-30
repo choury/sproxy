@@ -294,6 +294,136 @@ function test_rproxy(){
     wait %2
 }
 
+#mesh Phase 1 冒烟：B(3371,出口,名=$HOSTNAME)与A(3370,入口,名=localhost)静态组网。
+#节点名取自 peer URL 主机名；A 经 mesh://$HOSTNAME 转发、B 以 local/direct 应答；
+#mesh-loop.local 在 B 上指回 A 验证出口重入拒绝（508 在 B 本机由 mesh_exited 拦下）；
+#CONNECT 用端口特定规则($HOSTNAME:3334)压过主机名的自动 local 规则；全程不依赖外网
+function test_mesh(){
+    pkill -f "mesh-secret=mesh-pass" 2>/dev/null
+    sleep 1
+    rm -f mesh_out
+    cat > mesh.conf << EOF
+root-dir .
+policy-file /dev/null
+debug all
+EOF
+    cat > mesh_b.list << EOF
+mesh-ok.local local
+mesh-loop.local proxy mesh://localhost
+$HOSTNAME:3334 direct
+EOF
+    cat > mesh_a.list << EOF
+mesh-ok.local proxy mesh://$HOSTNAME
+mesh-loop.local proxy mesh://$HOSTNAME
+bad-mesh.net proxy mesh://nosuch.node
+mesh-auto.net proxy mesh://auto
+$HOSTNAME:3334 proxy mesh://$HOSTNAME
+$HOSTNAME:3333 proxy mesh://localhost
+EOF
+    ./sproxy -c mesh.conf --mesh=$HOSTNAME --mesh-secret=mesh-pass \
+        --bind 3371 -P mesh_b.list --mesh-peer=http://localhost:3370 \
+        --admin unix:${sp}meshb.sock > mesh_b.log 2>&1 &
+    local bpid=$!
+    ./sproxy -c mesh.conf --mesh=localhost --mesh-secret=mesh-pass \
+        --bind 3370 --secret=client:pass -P mesh_a.list \
+        --mesh-peer=http://$HOSTNAME:3371 \
+        --admin unix:${sp}mesha.sock > mesh_a.log 2>&1 &
+    local apid=$!
+    wait_tcp_port 3370
+    wait_tcp_port 3371
+
+    #等 A 对 B 的首次探测成功（DNS 失败重试下可能要到第三拍）
+    local count=0
+    while ! printf "dump mesh" | ./scli -s ${sp}mesha.sock | grep -q "probes=[1-9]/"; do
+        count=$((count + 1))
+        if [ $count -ge 40 ]; then
+            echo "mesh test 1 failed: no probe result"
+            exit 1
+        fi
+        sleep 1
+    done
+
+    #经 mesh 转发：A -> B(出口) -> local /status
+    curl -s -m 10 -x client:pass@127.0.0.1:3370 http://mesh-ok.local/status -o mesh_out
+    grep -q "Proxy server" mesh_out
+    [ $? -ne 0 ] && echo "mesh test 2 failed: forward via mesh" && exit 1
+
+    #CONNECT 隧道（https 经 mesh 中继）：A -> B(出口) -> direct -> 本测试的 https 服务
+    curl -sf -m 10 -k -x client:pass@127.0.0.1:3370 https://$HOSTNAME:3334/sites.list -o mesh_out \
+        && [ -s mesh_out ]
+    [ $? -ne 0 ] && echo "mesh test 3 failed: CONNECT tunnel via mesh" && exit 1
+
+    #伪造 X-Mesh-* 头不影响正常转发
+    curl -s -m 10 -x client:pass@127.0.0.1:3370 -H "X-Mesh-Exit: evil" -H "X-Mesh-Hops: 0" \
+        http://mesh-ok.local/status -o mesh_out
+    grep -q "Proxy server" mesh_out
+    [ $? -ne 0 ] && echo "mesh test 4 failed: forged X-Mesh-* must not break forward" && exit 1
+
+    curl -s -m 10 -x client:pass@127.0.0.1:3370 http://bad-mesh.net/ | grep -q "\[\[mesh: unknown node\]\]"
+    [ $? -ne 0 ] && echo "mesh test 5 failed: unknown node" && exit 1
+
+    #B 出口后本机策略指回 A：出口重入 mesh 即拒绝
+    curl -s -m 10 -x client:pass@127.0.0.1:3370 http://mesh-loop.local/ | grep -q "\[\[mesh: loop detected\]\]"
+    [ $? -ne 0 ] && echo "mesh test 6 failed: loop detected" && exit 1
+
+    #合法 mesh 凭据但出口是第三方节点：Phase 1 无中继，显式拒绝
+    curl -s -m 10 -x 127.0.0.1:3371 \
+        -H "Proxy-Authorization: Basic $(echo -n mesh+third.node:mesh-pass | base64)" \
+        -H "X-Mesh-Exit: third.node" http://mesh-ok.local/ | grep -q "\[\[mesh: relay is not supported\]\]"
+    [ $? -ne 0 ] && echo "mesh test 7 failed: relay rejected" && exit 1
+
+    #mesh://auto 在 Phase 1 显式报错
+    curl -s -m 10 -x client:pass@127.0.0.1:3370 http://mesh-auto.net/ | grep -q "\[\[mesh: auto exit is not supported\]\]"
+    [ $? -ne 0 ] && echo "mesh test 8 failed: auto rejected" && exit 1
+
+    #mesh://<本节点名> 归一化为 direct：请求直连主服务器的 /mesh/ping（其未启用 mesh，应答 404）
+    curl -s -m 10 -x client:pass@127.0.0.1:3370 http://$HOSTNAME:3333/mesh/ping | grep -q "\[\[mesh not enabled\]\]"
+    [ $? -ne 0 ] && echo "mesh test 9 failed: mesh://self should fall to direct" && exit 1
+
+    #控制面端点仅接受 mesh 凭据
+    [ "$(curl -s -m 5 --noproxy "*" http://127.0.0.1:3371/mesh/ping -o /dev/null -w "%{http_code}")" != "401" ] \
+        && echo "mesh test 10 failed: expect 401" && exit 1
+    curl -s -m 5 --noproxy "*" -H "Proxy-Authorization: Basic $(echo -n mesh:mesh-pass | base64)" \
+        http://127.0.0.1:3371/mesh/ping | grep -q pong
+    [ $? -ne 0 ] && echo "mesh test 10 failed: ping" && exit 1
+
+    #h2(https) peer 路径：探测与转发走 Proxy2 复用连接，客户端以 SSL_CERT_FILE 信任测试 CA
+    ./sproxy -c mesh.conf --mesh=$HOSTNAME --mesh-secret=mesh-pass \
+        --bind "4471 ssl" --cert localhost.crt --key localhost.key \
+        -P mesh_b.list --admin unix:${sp}meshb2.sock > mesh_b2.log 2>&1 &
+    local b2pid=$!
+    SSL_CERT_FILE=$PWD/ca.crt ./sproxy -c mesh.conf --mesh=localhost2.local --mesh-secret=mesh-pass \
+        --bind 3372 --secret=client:pass -P mesh_a.list \
+        --mesh-peer=https://$HOSTNAME:4471 \
+        --admin unix:${sp}mesha2.sock > mesh_a2.log 2>&1 &
+    local a2pid=$!
+    count=0
+    while ! printf "dump mesh" | ./scli -s ${sp}mesha2.sock | grep -q "probes=[1-9]/"; do
+        count=$((count + 1))
+        if [ $count -ge 40 ]; then
+            echo "mesh test 11 failed: no h2 probe result"
+            break
+        fi
+        sleep 1
+    done
+    curl -sf -m 10 -x client:pass@127.0.0.1:3372 http://mesh-ok.local/status -o mesh_out \
+        && grep -q "Proxy server" mesh_out
+    [ $? -ne 0 ] && echo "mesh test 11 failed: forward via h2 peer" && exit 1
+    grep -q "AddressSanitizer" mesh_a2.log && echo "mesh test 11 failed: asan report" && exit 1
+
+    kill -SIGINT $b2pid $a2pid
+    wait $b2pid $a2pid
+
+    #出口失联：杀 B 后入口应返回连接错误
+    kill -SIGINT $bpid
+    wait $bpid
+    curl -s -m 10 -x client:pass@127.0.0.1:3370 http://mesh-ok.local/status | grep -q "\[\[connect failed\]\]"
+    [ $? -ne 0 ] && echo "mesh test 12 failed: exit down" && exit 1
+
+    kill -SIGINT $apid
+    wait $apid
+}
+
 #DoH服务(/dns-query)验证：独立实例 + 公共DoH上游(cloudflare-dns.com)。
 #1) type-65应答透传ech参数；2) 被MITM的域名(block子域触发mayBeBlocked)
 #应答剥离ech；3) curl以sproxy为DoH解析器并经代理访问，验证真实DoH客户端兼容
@@ -941,6 +1071,9 @@ kill -SIGUSR1 %1
 
 echo "test doh strip"
 test_doh_strip
+
+echo "test mesh"
+test_mesh
 
 if [ "$run_extended_tests" = true ]; then
     echo "test tproxy"
