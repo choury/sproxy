@@ -244,6 +244,7 @@ static struct option long_options[] = {
     {"mesh-probe-interval", required_argument, NULL, 0 },
     {"mesh-gossip-interval", required_argument, NULL, 0 },
     {"mesh-exit",     required_argument, NULL,  0 },
+    {"mesh-relay",    required_argument, NULL,  0 },
 #if __linux__
     {"tun",           no_argument,       NULL,  0 },
     {"tap",           no_argument,       NULL,  0 },
@@ -309,6 +310,7 @@ static struct option_detail option_detail[] = {
     {"mesh-probe-interval", "mesh probe interval in seconds (default 10)", option_uint64, &opt.mesh_probe_interval, NULL},
     {"mesh-gossip-interval", "mesh node table exchange interval in seconds (default 30)", option_uint64, &opt.mesh_gossip_interval, NULL},
     {"mesh-exit", "allow this node to be a mesh exit ([on], off)", option_enum, &opt.mesh_exit, mesh_options},
+    {"mesh-relay", "allow this node to relay mesh traffic ([on], off)", option_enum, &opt.mesh_relay, mesh_options},
     {"pcap", "Save packets in pcap file for vpn", option_string, &opt.pcap_file, NULL},
     {"pcap-len", "Max packet length to save in pcap file", option_uint64, &opt.pcap_len, NULL},
     {"pidfile", "Write pid to this file", option_string, &opt.pidfile, NULL},
@@ -1052,7 +1054,8 @@ void postConfig(){
             opt.mesh_gossip_interval = 30;
         }
     } else if(mesh_secret || mesh_peer_list.next || opt.mesh_maxhops
-              || opt.mesh_probe_interval || opt.mesh_gossip_interval || opt.mesh_exit) {
+              || opt.mesh_probe_interval || opt.mesh_gossip_interval
+              || opt.mesh_exit || opt.mesh_relay) {
         LOGE("mesh options require mesh node name\n");
         exit(1);
     }

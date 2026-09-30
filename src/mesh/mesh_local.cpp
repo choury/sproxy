@@ -79,6 +79,11 @@ void MeshLocal::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemR
             res->set("Content-Type", "application/json");
             return response(rw, res, MeshManager::Instance()->export_entries_json());
         }
+        if(req->filename == "mesh/metrics") {
+            auto res = HttpResHeader::create(S200, sizeof(S200), id);
+            res->set("Content-Type", "application/json");
+            return response(rw, res, MeshManager::Instance()->own_metrics_json());
+        }
         failed_count++;
         return response(rw, HttpResHeader::create(S404, sizeof(S404), id),
                         "[[mesh: unknown endpoint]]\n");

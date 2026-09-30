@@ -193,26 +193,124 @@ static bool parse_entry(json_object* jentry, MeshEntry& e) {
 }
 
 std::vector<MeshEntry> parse_entries(const std::string& body) {
-    std::vector<MeshEntry> es;
+    return parse_payload(body).entries;
+}
+
+static json_object* link_report_to_json_obj(const LinkReport& r) {
+    json_object* jrep = json_object_new_object();
+    json_object_object_add(jrep, "name", json_object_new_string(r.name.c_str()));
+    json_object_object_add(jrep, "ts", json_object_new_int64(r.ts));
+    json_object* jlinks = json_object_new_array();
+    for(auto& [peer, rtt] : r.links) {
+        json_object* jlink = json_object_new_object();
+        json_object_object_add(jlink, "peer", json_object_new_string(peer.c_str()));
+        json_object_object_add(jlink, "rtt", json_object_new_double(rtt));
+        json_object_array_add(jlinks, jlink);
+    }
+    json_object_object_add(jrep, "links", jlinks);
+    return jrep;
+}
+
+std::string link_report_json(const LinkReport& r) {
+    json_object* jrep = link_report_to_json_obj(r);
+    std::string body = json_object_to_json_string(jrep);
+    json_object_put(jrep);
+    return body;
+}
+
+static bool parse_link_report(json_object* jrep, LinkReport& r) {
+    if(json_object_get_type(jrep) != json_type_object) {
+        return false;
+    }
+    json_object* jname = json_object_object_get(jrep, "name");
+    json_object* jts = json_object_object_get(jrep, "ts");
+    json_object* jlinks = json_object_object_get(jrep, "links");
+    if(!jname || json_object_get_type(jname) != json_type_string
+       || !jts || json_object_get_type(jts) != json_type_int
+       || !jlinks || json_object_get_type(jlinks) != json_type_array) {
+        return false;
+    }
+    r = LinkReport{};
+    r.name = json_object_get_string(jname);
+    r.ts = json_object_get_int64(jts);
+    for(size_t i = 0; i < json_object_array_length(jlinks); i++) {
+        json_object* jlink = json_object_array_get_idx(jlinks, i);
+        json_object* jpeer = json_object_object_get(jlink, "peer");
+        json_object* jrtt = json_object_object_get(jlink, "rtt");
+        if(json_object_get_type(jlink) != json_type_object
+           || !jpeer || json_object_get_type(jpeer) != json_type_string
+           || !jrtt || json_object_get_type(jrtt) != json_type_double) {
+            continue; //单条坏链路不否定整份上报
+        }
+        r.links[json_object_get_string(jpeer)] = json_object_get_double(jrtt);
+    }
+    return true;
+}
+
+GossipPayload parse_payload(const std::string& body) {
+    GossipPayload p;
     json_object* jroot = json_tokener_parse(body.c_str());
     if(!jroot) {
-        return es;
+        return p;
     }
     if(json_object_get_type(jroot) == json_type_array) {
         for(size_t i = 0; i < json_object_array_length(jroot); i++) {
             MeshEntry e;
             if(parse_entry(json_object_array_get_idx(jroot, i), e)) {
-                es.push_back(e);
+                p.entries.push_back(e);
             }
         }
-    } else {
-        MeshEntry e;
-        if(parse_entry(jroot, e)) {
-            es.push_back(e);
+        json_object_put(jroot);
+        return p;
+    }
+    if(json_object_get_type(jroot) == json_type_object) {
+        json_object* jnodes = json_object_object_get(jroot, "nodes");
+        if(!jnodes && !json_object_object_get(jroot, "metrics")) {
+            //无载荷键的对象按单条目处理（announce 请求体形态）
+            MeshEntry e;
+            if(parse_entry(jroot, e)) {
+                p.entries.push_back(e);
+            }
+            json_object_put(jroot);
+            return p;
+        }
+        if(jnodes && json_object_get_type(jnodes) == json_type_array) {
+            for(size_t i = 0; i < json_object_array_length(jnodes); i++) {
+                MeshEntry e;
+                if(parse_entry(json_object_array_get_idx(jnodes, i), e)) {
+                    p.entries.push_back(e);
+                }
+            }
+        }
+        json_object* jmetrics = json_object_object_get(jroot, "metrics");
+        if(jmetrics && json_object_get_type(jmetrics) == json_type_array) {
+            for(size_t i = 0; i < json_object_array_length(jmetrics); i++) {
+                LinkReport r;
+                if(parse_link_report(json_object_array_get_idx(jmetrics, i), r)) {
+                    p.metrics.push_back(r);
+                }
+            }
         }
     }
     json_object_put(jroot);
-    return es;
+    return p;
+}
+
+std::string build_payload(const GossipPayload& p) {
+    json_object* jroot = json_object_new_object();
+    json_object* jnodes = json_object_new_array();
+    for(auto& e : p.entries) {
+        json_object_array_add(jnodes, entry_to_json_obj(e));
+    }
+    json_object_object_add(jroot, "nodes", jnodes);
+    json_object* jmetrics = json_object_new_array();
+    for(auto& r : p.metrics) {
+        json_object_array_add(jmetrics, link_report_to_json_obj(r));
+    }
+    json_object_object_add(jroot, "metrics", jmetrics);
+    std::string body = json_object_to_json_string(jroot);
+    json_object_put(jroot);
+    return body;
 }
 
 }

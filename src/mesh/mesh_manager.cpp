@@ -1,4 +1,5 @@
 #include "mesh_manager.h"
+#include "mesh_route.h"
 
 #include "misc/config.h"
 #include "misc/strategy.h"
@@ -7,6 +8,7 @@
 #include "res/responser.h"
 #include "res/host.h"
 
+#include <json.h>
 #include <string.h>
 #include <inttypes.h>
 #include <time.h>
@@ -153,15 +155,22 @@ void MeshManager::dispatch(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<M
         return response(rw, HttpResHeader::create(S502, sizeof(S502), id),
                         "[[mesh: unknown node]]\n");
     }
-    // Phase 2 只有直连出口：dest 即出口节点，无中继
-    Destination dest = node_it->second.dest;
+    //逐跳路由：下一跳可能是出口自身（直连）或中继节点
+    std::string nexthop = route_to(name);
+    auto hop_it = nodes.find(nexthop);
+    if(hop_it == nodes.end()) {
+        return response(rw, HttpResHeader::create(S502, sizeof(S502), id),
+                        "[[mesh: no route]]\n");
+    }
+    Destination dest = hop_it->second.dest;
     snprintf(dest.credit.identifier, sizeof(dest.credit.identifier), "%s", name.c_str());
     req->chain_proxy = true;
     req->set("Proxy-Authorization", encodeCredit(&dest.credit));
     req->set("X-Mesh-Exit", name);
-    //Phase 2 无中继，hops 仅预埋，Phase 3 起由中继逐跳递减
     req->set("X-Mesh-Hops", opt.mesh_maxhops);
-    LOGD(DMESH, "mesh dispatch: %s exit=%s direct\n", req->geturl().c_str(), name.c_str());
+    LOGD(DMESH, "mesh dispatch: %s exit=%s via=%s\n",
+         req->geturl().c_str(), name.c_str(),
+         nexthop == name ? "direct" : nexthop.c_str());
     Host::distribute(req, dest, rw);
 }
 
@@ -182,9 +191,36 @@ bool MeshManager::forward(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<Me
         LOGD(DMESH, "mesh exit: %s\n", req->geturl().c_str());
         return true;
     }
-    // Phase 2 不支持中继：收到发往其他节点的 mesh 请求即为配置错误
-    response(rw, HttpResHeader::create(S502, sizeof(S502), req->request_id),
-             "[[mesh: relay is not supported]]\n");
+    //中继路径：本节点不是出口，按路由把请求送往下一跳
+    if(opt.mesh_relay != 0) { //off
+        response(rw, HttpResHeader::create(S403, sizeof(S403), req->request_id),
+                 "[[mesh: relay disabled]]\n");
+        return false;
+    }
+    //缺失/非数字的 hops 视为 0
+    const char* hops_str = req->get("X-Mesh-Hops");
+    int hops = hops_str ? atoi(hops_str) : 0;
+    if(hops <= 0) {
+        response(rw, HttpResHeader::create(S508, sizeof(S508), req->request_id),
+                 "[[mesh: hop limit exceeded]]\n");
+        return false;
+    }
+    std::string nexthop = route_to(cr.identifier);
+    auto hop_it = nodes.find(nexthop);
+    if(hop_it == nodes.end()) {
+        response(rw, HttpResHeader::create(S502, sizeof(S502), req->request_id),
+                 "[[mesh: no route]]\n");
+        return false;
+    }
+    //下一跳由最短路选出，天然满足 dist(下一跳→出口) < dist(本节点→出口) 的防环递减
+    Destination dest = hop_it->second.dest;
+    snprintf(dest.credit.identifier, sizeof(dest.credit.identifier), "%s", cr.identifier);
+    req->chain_proxy = true;
+    req->set("Proxy-Authorization", encodeCredit(&dest.credit));
+    req->set("X-Mesh-Hops", (uint64_t)(hops - 1));
+    LOGD(DMESH, "mesh relay: %s exit=%s via=%s hops=%d\n",
+         req->geturl().c_str(), cr.identifier, nexthop.c_str(), hops - 1);
+    Host::distribute(req, dest, rw);
     return false;
 }
 
@@ -227,15 +263,15 @@ std::string MeshManager::own_entry_json() {
 }
 
 std::string MeshManager::export_entries_json() {
-    std::vector<MeshEntry> es;
-    es.push_back(own_entry());
+    GossipPayload payload;
+    payload.entries.push_back(own_entry());
     int64_t now = time(NULL);
     for(auto& [name, node] : nodes) {
         if(node.entry.seen != 0) {
             //已有该节点自宣的条目（含静态互联的），原样转发其签名条目；
             //不新鲜的不再扩散（peer 可能已死）
             if(MeshGossip::fresh_entry(node.entry, now)) {
-                es.push_back(node.entry);
+                payload.entries.push_back(node.entry);
             }
             continue;
         }
@@ -249,11 +285,24 @@ std::string MeshManager::export_entries_json() {
         if(node.exit_cap) {
             e.caps = {"exit"};
         }
-        e.seen = time(NULL);
+        e.seen = now;
         MeshGossip::sign_entry(e, opt.mesh_secret);
-        es.push_back(e);
+        payload.entries.push_back(e);
     }
-    return MeshGossip::entries_to_json(es);
+    //链路状态随载荷传递性泛洪：分区拓扑下两跳以外的边否则永远进不了入口的图
+    payload.metrics.push_back(own_metrics());
+    int64_t ttl = (int64_t)opt.mesh_gossip_interval * 20;
+    for(auto& [reporter, links] : link_states) {
+        auto ts = link_ts.find(reporter);
+        if(ts != link_ts.end() && now - ts->second <= ttl) {
+            LinkReport r;
+            r.name = reporter;
+            r.ts = ts->second;
+            r.links = links;
+            payload.metrics.push_back(std::move(r));
+        }
+    }
+    return MeshGossip::build_payload(payload);
 }
 
 std::pair<size_t, size_t> MeshManager::learn_entries(std::vector<MeshEntry> es) {
@@ -277,23 +326,15 @@ std::pair<size_t, size_t> MeshManager::learn_entries(std::vector<MeshEntry> es) 
         }
         auto it = nodes.find(e.name);
         if(it != nodes.end()) {
-            if(e.seen <= it->second.entry.seen) {
-                continue; //合法但非更新
-            }
-            if(it->second.is_static) {
-                //静态优先仅限地址（dest/url 不被覆盖），能力与新鲜度照常学习，
-                //否则 --mesh-exit=off 对静态互联的邻居永不生效
-                it->second.entry = e;
-                it->second.exit_cap = e.has_cap("exit");
-                accepted++;
-                continue;
-            }
-            if(it->second.entry.addrs != e.addrs) {
-                //同名条目在仍新鲜时变更地址：命名冲突可能性，按设计放弃后到者；
-                //真实迁移靠旧条目 TTL 过期后自然收敛
+            //同名异址优先于 seen 单调检查告警：命名冲突的判定不应被同秒时间戳吞掉。
+            //按设计放弃后到者；真实迁移靠旧条目 TTL 过期后自然收敛
+            if(it->second.entry.seen != 0 && it->second.entry.addrs != e.addrs) {
                 LOGE("(%s) mesh: entry %s changed addrs while fresh, keep stored\n",
                      opt.mesh_name, e.name.c_str());
                 continue;
+            }
+            if(e.seen <= it->second.entry.seen) {
+                continue; //合法但非更新
             }
             it->second.entry = e;
             it->second.exit_cap = e.has_cap("exit");
@@ -484,7 +525,9 @@ void MeshManager::gossip_cycle() {
         request(it->second.dest, "GET", "/mesh/nodes", "",
                 [this](int status, std::string body) {
             if(status == 200) {
-                learn_entries(MeshGossip::parse_entries(body));
+                auto payload = MeshGossip::parse_payload(body);
+                learn_entries(std::move(payload.entries));
+                learn_metrics(std::move(payload.metrics));
             }
         });
         request(it->second.dest, "POST", "/mesh/announce", own,
@@ -493,6 +536,109 @@ void MeshManager::gossip_cycle() {
         });
     }
     gossip_offset = (gossip_offset + batch) % names.size();
+}
+
+//自身链路 = 近期探测成功过的邻居（与判活同口径），有向：仅本节点→对端
+LinkReport MeshManager::own_metrics() {
+    LinkReport r;
+    r.name = opt.mesh_name;
+    r.ts = time(NULL);
+    for(auto& [name, node] : nodes) {
+        if(node.rtt_ms > 0 && alive(node)) {
+            r.links[name] = node.rtt_ms;
+        }
+    }
+    return r;
+}
+
+std::string MeshManager::own_metrics_json() {
+    return MeshGossip::link_report_json(own_metrics());
+}
+
+void MeshManager::learn_metrics(std::vector<LinkReport> reports) {
+    int64_t now = time(NULL);
+    //边 TTL（20× gossip 周期，默认 600s，docs/mesh.md 6.1）：从上报时间起算，
+    //泛洪逐跳携带原始 ts，死节点停止续报后其边全网过期
+    int64_t ttl = (int64_t)opt.mesh_gossip_interval * 20;
+    for(auto& r : reports) {
+        if(r.name == opt.mesh_name || !nodes.count(r.name)) {
+            continue; //只采信已知节点的上报
+        }
+        if(r.ts <= 0 || now - r.ts > ttl || r.ts - now > 300) {
+            continue; //过期或时钟超前的上报不采信
+        }
+        //只接受比已存更新鲜的同源上报
+        auto ts_it = link_ts.find(r.name);
+        if(ts_it != link_ts.end() && r.ts < ts_it->second) {
+            continue;
+        }
+        link_states[r.name] = std::move(r.links);
+        link_ts[r.name] = r.ts;
+    }
+}
+
+//近期（5 个探测周期内）探测成功过；失联节点的残留 rtt 不可信
+bool MeshManager::alive(const MeshNode& node) const {
+    return node.last_ok_ms != 0
+           && getmtime() - node.last_ok_ms < (uint64_t)probe_interval_ms * 5;
+}
+
+std::string MeshManager::route_to(const std::string& exit_name, double* cost_out) {
+    //组图：自身探测（与判活同口径，残留 rtt 不算边）+ 新鲜的链路状态上报。
+    //图为有向：A→B 的边只来自 A 的上报，死节点的陈旧自宣无法虚构出指向它的边
+    std::map<std::string, std::map<std::string, double>> links;
+    int64_t now = time(NULL);
+    int64_t ttl = (int64_t)opt.mesh_gossip_interval * 20;
+    for(auto it = link_states.begin(); it != link_states.end();) {
+        auto ts = link_ts.find(it->first);
+        if(ts == link_ts.end() || now - ts->second > ttl || !nodes.count(it->first)) {
+            if(ts != link_ts.end()) {
+                link_ts.erase(ts);
+            }
+            it = link_states.erase(it);
+            continue;
+        }
+        links[it->first] = it->second;
+        it++;
+    }
+    LinkReport mine = own_metrics();
+    links[opt.mesh_name] = std::move(mine.links);
+    std::set<std::string> routable;
+    for(auto& [name, node] : nodes) {
+        routable.insert(name);
+    }
+    auto [nexthop, cost] = MeshRoute::shortest_path(
+        links, opt.mesh_name, exit_name, routable, opt.mesh_maxhops);
+    //路由滞回（代价棘轮）：旧下一跳在当前图中仍可达出口、且新路径对旧路径的
+    //实时代价改善不足 20% 时保持原选择；否则切换。
+    //旧路径代价按当前图实时计算（含本节点→旧下一跳的边），历史缓存值不参与比较
+    auto cached = route_cache.find(exit_name);
+    if(cached != route_cache.end() && !cached->second.nexthop.empty()
+       && nexthop != cached->second.nexthop && !nexthop.empty()
+       && routable.count(cached->second.nexthop)) {
+        double via_old = 0;
+        auto& my_edges = links[opt.mesh_name];
+        auto edge = my_edges.find(cached->second.nexthop);
+        if(edge != my_edges.end()) {
+            auto [old_nh, old_dist] = MeshRoute::shortest_path(
+                links, cached->second.nexthop, exit_name, routable, opt.mesh_maxhops);
+            if(!old_nh.empty()) {
+                via_old = edge->second + old_dist;
+            }
+        }
+        if(via_old > 0 && cost > via_old * 0.8) {
+            route_cache[exit_name] = RouteChoice{cached->second.nexthop, via_old};
+            if(cost_out) {
+                *cost_out = via_old;
+            }
+            return cached->second.nexthop;
+        }
+    }
+    route_cache[exit_name] = RouteChoice{nexthop, cost};
+    if(cost_out) {
+        *cost_out = cost;
+    }
+    return nexthop;
 }
 
 void MeshManager::expire_learned() {
@@ -504,38 +650,39 @@ void MeshManager::expire_learned() {
             continue;
         }
         LOG("(%s) mesh: node %s expired\n", opt.mesh_name, it->first.c_str());
+        route_cache.erase(it->first);
         it = nodes.erase(it);
     }
 }
 
 std::string MeshManager::pick_auto_exit() {
     uint64_t now = getmtime();
-    //存活 = 近期探测成功过（5 个探测周期内），失联节点的残留 rtt 不参与选择
-    auto alive = [&](const MeshNode& n) {
-        return n.exit_cap && n.last_ok_ms != 0
-               && now - n.last_ok_ms < (uint64_t)probe_interval_ms * 5;
-    };
+    //候选 = 有出口能力且当前有路可达的节点（路径可经中继），代价取最短路
     std::string best;
     double best_rtt = 0;
     for(auto& [name, node] : nodes) {
-        if(!alive(node)) {
+        if(!node.exit_cap) {
             continue;
         }
-        if(best.empty() || node.rtt_ms < best_rtt) {
+        double cost = 0;
+        if(route_to(name, &cost).empty()) {
+            continue;
+        }
+        if(best.empty() || cost < best_rtt) {
             best = name;
-            best_rtt = node.rtt_ms;
+            best_rtt = cost;
         }
     }
     if(best.empty()) {
         auto_exit.clear();
         return "";
     }
-    auto cur = nodes.find(auto_exit);
-    bool cur_alive = cur != nodes.end() && alive(cur->second);
-    //切换滞回：现任失联立即切；否则需新路径比现任实时代价改善超过 20% 且距上次切换 >30s
-    double cur_rtt = cur_alive ? cur->second.rtt_ms : 0;
+    double cur_cost = 0;
+    bool cur_alive = !auto_exit.empty() && !route_to(auto_exit, &cur_cost).empty();
+    //切换滞回：现任失联立即切；否则需新路径比现任当前路由代价改善超过 20%
+    //且距上次切换 >30s（用路由代价而非直连 rtt，避免陈旧直连样本卡死切换）
     if(auto_exit.empty() || !cur_alive
-       || (best != auto_exit && best_rtt < cur_rtt * 0.8
+       || (best != auto_exit && best_rtt < cur_cost * 0.8
            && now - auto_switch_ms > 30000)) {
         if(auto_exit.empty()) {
             LOG("(%s) mesh: auto exit picked %s (%.1fms)\n",
@@ -568,6 +715,23 @@ void MeshManager::dump_stat(Dumper dp, void* param) {
     }
     if(!auto_exit.empty()) {
         dp(param, "  auto exit: %s (%.1fms)\n", auto_exit.c_str(), auto_rtt);
+    }
+    for(auto& [reporter, peers] : link_states) {
+        auto ts = link_ts.find(reporter);
+        if(ts == link_ts.end()) {
+            continue;
+        }
+        dp(param, "  links from %s (age=%llds):\n", reporter.c_str(),
+           (long long)(time(NULL) - ts->second));
+        for(auto& [peer, rtt] : peers) {
+            dp(param, "    %s: %.2fms\n", peer.c_str(), rtt);
+        }
+    }
+    for(auto& [exit_name, choice] : route_cache) {
+        if(!choice.nexthop.empty()) {
+            dp(param, "  route %s via %s (%.1fms)\n",
+               exit_name.c_str(), choice.nexthop.c_str(), choice.cost);
+        }
     }
     dp(param, "======================================\n");
 }

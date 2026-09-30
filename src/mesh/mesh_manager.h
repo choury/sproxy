@@ -53,6 +53,11 @@ public:
     // /mesh/* 端点（MeshLocal 分发）使用的查询
     std::string own_entry_json();
     std::string export_entries_json();
+    std::string own_metrics_json();
+    // 自身链路状态（有向，与判活同口径）
+    LinkReport own_metrics();
+    // 合并收到的链路状态（按上报时间戳过期，未知上报者忽略）
+    void learn_metrics(std::vector<LinkReport> reports);
     // 合并收到的条目（校验签名/新鲜度/结构），发现新节点即加入探测；
     // 返回 {采纳数, 验签有效数}，announce 以此区分 200（含合法但非更新）与 400
     std::pair<size_t, size_t> learn_entries(std::vector<MeshEntry> es);
@@ -78,8 +83,13 @@ private:
     void gossip_cycle();
     void expire_learned();
     const MeshEntry& own_entry();
+    //到出口的路由（含滞回）：组图（自身探测 + 收到的链路状态）后跑最短路。
+    //返回下一跳（== exit 即直连），不可达返回空串；cost_out 可空
+    std::string route_to(const std::string& exit_name, double* cost_out = nullptr);
     //mesh://auto 出口选择（含滞回），无可用出口返回空串
     std::string pick_auto_exit();
+    //近期探测成功过（5 个探测周期内），失联节点的残留 rtt 不可信
+    bool alive(const MeshNode& node) const;
 
     //MemRWer 只持回调的 weak_ptr，cb 必须自持到请求结束
     struct Inflight {
@@ -91,6 +101,15 @@ private:
     std::set<std::string> probe_inflight;
     std::map<uint64_t, Inflight> ctl_inflight;
     uint64_t ctl_seq = 1;
+    //收到的链路状态：上报者 → (对端 → rtt)；link_ts 为上报的 Unix 秒（泛洪原样携带）
+    std::map<std::string, std::map<std::string, double>> link_states;
+    std::map<std::string, int64_t> link_ts;
+    //每出口的路由滞回缓存（cost 为当前图下所选路径的实时代价）
+    struct RouteChoice {
+        std::string nexthop;
+        double cost = 0;
+    };
+    std::map<std::string, RouteChoice> route_cache;
     Job probe_job = nullptr;
     Job gossip_job = nullptr;
     size_t gossip_offset = 0;

@@ -74,6 +74,30 @@ int main() {
     assert(e.has_cap("exit"));
     assert(!e.has_cap("relay"));
 
+    //gossip 载荷（节点表 + 链路状态）构建/解析往返，含三种兼容形态与坏元素
+    LinkReport rep;
+    rep.name = "node-a.example.com";
+    rep.ts = 1727654100;
+    rep.links = {{"node-b.example.com", 3.5}};
+    GossipPayload in;
+    in.entries = {e};
+    in.metrics = {rep};
+    auto out = MeshGossip::parse_payload(MeshGossip::build_payload(in));
+    assert(out.entries.size() == 1 && out.metrics.size() == 1);
+    assert(out.entries[0].name == e.name && MeshGossip::verify_entry(out.entries[0], secret));
+    assert(out.metrics[0].name == rep.name && out.metrics[0].ts == rep.ts);
+    assert(out.metrics[0].links.at("node-b.example.com") == 3.5);
+    //旧形态：纯条目数组
+    auto payload_arr = MeshGossip::parse_payload(MeshGossip::entries_to_json({e, e2}));
+    assert(payload_arr.entries.size() == 2 && payload_arr.metrics.empty());
+    //坏元素：nodes 类型错、links 混入非对象、rtt 非 double、metrics 混入坏项
+    auto payload_bad = MeshGossip::parse_payload(
+        "{\"nodes\":\"x\",\"metrics\":[{\"name\":\"n\",\"ts\":1,\"links\":[{\"peer\":\"p\",\"rtt\":\"x\"},{\"peer\":\"q\"},\"str\"]},\"junk\"]}");
+    assert(payload_bad.entries.empty() && payload_bad.metrics.size() == 1);
+    assert(payload_bad.metrics[0].links.empty());
+    //单对象（announce 形态）
+    assert(MeshGossip::parse_payload("{\"nobody\":1}").entries.empty());
+
     //name/via 字符集：分隔符字符与歧义字符被拒
     MeshEntry tok = e;
     tok.via = "node_b.example.com";
