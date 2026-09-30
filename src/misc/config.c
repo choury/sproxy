@@ -38,6 +38,7 @@
 static char** main_argv = NULL;
 static char* auto_options[] = {"disable", "enable", "auto", NULL};
 static char* ech_options[] = {"disable", "enable", "grease", NULL};
+static char* mesh_options[] = {"on", "off", NULL};
 static char* server_string = NULL;
 static char* policy_file = NULL;
 static struct arg_list secrets = {NULL, NULL};
@@ -241,6 +242,8 @@ static struct option long_options[] = {
     {"mesh-peer",     required_argument, NULL,  0 },
     {"mesh-maxhops",  required_argument, NULL,  0 },
     {"mesh-probe-interval", required_argument, NULL, 0 },
+    {"mesh-gossip-interval", required_argument, NULL, 0 },
+    {"mesh-exit",     required_argument, NULL,  0 },
 #if __linux__
     {"tun",           no_argument,       NULL,  0 },
     {"tap",           no_argument,       NULL,  0 },
@@ -304,6 +307,8 @@ static struct option_detail option_detail[] = {
     {"mesh-peer", "bootstrap mesh peer, e.g. https://node.example.com[:443] (can be set multiple times)", option_list, &mesh_peer_list, NULL},
     {"mesh-maxhops", "max hops for mesh forwarding (default 4)", option_uint64, &opt.mesh_maxhops, NULL},
     {"mesh-probe-interval", "mesh probe interval in seconds (default 10)", option_uint64, &opt.mesh_probe_interval, NULL},
+    {"mesh-gossip-interval", "mesh node table exchange interval in seconds (default 30)", option_uint64, &opt.mesh_gossip_interval, NULL},
+    {"mesh-exit", "allow this node to be a mesh exit ([on], off)", option_enum, &opt.mesh_exit, mesh_options},
     {"pcap", "Save packets in pcap file for vpn", option_string, &opt.pcap_file, NULL},
     {"pcap-len", "Max packet length to save in pcap file", option_uint64, &opt.pcap_len, NULL},
     {"pidfile", "Write pid to this file", option_string, &opt.pidfile, NULL},
@@ -1043,8 +1048,12 @@ void postConfig(){
         if(opt.mesh_probe_interval == 0) {
             opt.mesh_probe_interval = 10;
         }
-    } else if(mesh_secret || mesh_peer_list.next || opt.mesh_maxhops || opt.mesh_probe_interval) {
-        LOGE("mesh-secret/mesh-peer/mesh-maxhops/mesh-probe-interval require mesh node name\n");
+        if(opt.mesh_gossip_interval == 0) {
+            opt.mesh_gossip_interval = 30;
+        }
+    } else if(mesh_secret || mesh_peer_list.next || opt.mesh_maxhops
+              || opt.mesh_probe_interval || opt.mesh_gossip_interval || opt.mesh_exit) {
+        LOGE("mesh options require mesh node name\n");
         exit(1);
     }
     for(struct arg_list* p = debug_list.next; p != NULL; p = p->next){

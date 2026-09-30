@@ -310,6 +310,7 @@ EOF
     cat > mesh_b.list << EOF
 mesh-ok.local local
 mesh-loop.local proxy mesh://localhost
+mesh-auto.net local
 $HOSTNAME:3334 direct
 EOF
     cat > mesh_a.list << EOF
@@ -372,9 +373,10 @@ EOF
         -H "X-Mesh-Exit: third.node" http://mesh-ok.local/ | grep -q "\[\[mesh: relay is not supported\]\]"
     [ $? -ne 0 ] && echo "mesh test 7 failed: relay rejected" && exit 1
 
-    #mesh://auto 在 Phase 1 显式报错
-    curl -s -m 10 -x client:pass@127.0.0.1:3370 http://mesh-auto.net/ | grep -q "\[\[mesh: auto exit is not supported\]\]"
-    [ $? -ne 0 ] && echo "mesh test 8 failed: auto rejected" && exit 1
+    #mesh://auto：唯一出口 B 被选中并成功应答
+    curl -sf -m 10 -x client:pass@127.0.0.1:3370 http://mesh-auto.net/status -o mesh_out \
+        && grep -q "Proxy server" mesh_out
+    [ $? -ne 0 ] && echo "mesh test 8 failed: auto exit" && exit 1
 
     #mesh://<本节点名> 归一化为 direct：请求直连主服务器的 /mesh/ping（其未启用 mesh，应答 404）
     curl -s -m 10 -x client:pass@127.0.0.1:3370 http://$HOSTNAME:3333/mesh/ping | grep -q "\[\[mesh not enabled\]\]"
@@ -422,6 +424,136 @@ EOF
 
     kill -SIGINT $apid
     wait $apid
+}
+
+#mesh Phase 2：gossip 发现 + auto 出口。A(3370)只配种子 B(3371)，
+#C(3373,名=ip6-localhost)只与 B 互联；A 应经 B 的节点表发现 C 并直连转发；
+#auto 出口在 B/C 间选择，杀掉被选中的节点后应切换到另一个
+function test_mesh_gossip(){
+    pkill -f "mesh-secret=mesh-pass" 2>/dev/null
+    sleep 1
+    rm -f mesh_out
+    cat > meshg.conf << EOF
+root-dir .
+policy-file /dev/null
+debug all
+mesh-gossip-interval 2
+mesh-probe-interval 1
+EOF
+    cat > meshg_c.list << EOF
+mesh-c.local local
+mesh-auto.net local
+EOF
+    cat > meshg_b.list << EOF
+mesh-ok.local local
+mesh-auto.net local
+EOF
+    cat > meshg_a.list << EOF
+mesh-c.local proxy mesh://ip6-localhost
+mesh-auto.net proxy mesh://auto
+EOF
+    ./sproxy -c meshg.conf --mesh=ip6-localhost --mesh-secret=mesh-pass \
+        --bind 3373 -P meshg_c.list --mesh-peer=http://$HOSTNAME:3371 \
+        --admin unix:${sp}meshc.sock > mesh_c.log 2>&1 &
+    local cpid=$!
+    ./sproxy -c meshg.conf --mesh=$HOSTNAME --mesh-secret=mesh-pass \
+        --bind 3371 -P meshg_b.list --mesh-peer=http://localhost:3370 \
+        --mesh-peer=http://ip6-localhost:3373 \
+        --admin unix:${sp}meshb.sock > mesh_b.log 2>&1 &
+    local bpid=$!
+    ./sproxy -c meshg.conf --mesh=localhost --mesh-secret=mesh-pass \
+        --bind 3370 --secret=client:pass -P meshg_a.list \
+        --mesh-peer=http://$HOSTNAME:3371 \
+        --admin unix:${sp}mesha.sock > mesh_a.log 2>&1 &
+    local apid=$!
+    wait_tcp_port 3370
+    wait_tcp_port 3371
+    wait_tcp_port 3373
+
+    #发现：A 的节点表应出现 C（仅经 gossip 学得，无静态配置）
+    local count=0
+    while ! printf "dump mesh" | ./scli -s ${sp}mesha.sock | grep -q "ip6-localhost"; do
+        count=$((count + 1))
+        if [ $count -ge 30 ]; then
+            echo "mesh gossip test 1 failed: no discovery"
+            exit 1
+        fi
+        sleep 1
+    done
+    #经发现的节点转发：A -> C(出口) -> local /status（status 含 C 的 mesh dump）
+    curl -sf -m 10 -x client:pass@127.0.0.1:3370 http://mesh-c.local/status -o mesh_out \
+        && grep -q "mesh node: ip6-localhost" mesh_out
+    [ $? -ne 0 ] && echo "mesh gossip test 2 failed: forward to discovered node" && exit 1
+
+    #控制面 nodes 端点鉴权：普通凭据拒绝
+    [ "$(curl -s -m 5 --noproxy "*" -H "Proxy-Authorization: Basic $(echo -n client:pass|base64)" \
+        http://127.0.0.1:3370/mesh/nodes -o /dev/null -w "%{http_code}")" = "401" ]
+    [ $? -ne 0 ] && echo "mesh gossip test 3 failed: nodes must require mesh credential" && exit 1
+
+    #同名冲突：D 与 C 同名(ip6-localhost)不同地址，A 应告警并保留既有条目
+    ./sproxy -c meshg.conf --mesh=ip6-localhost --mesh-secret=mesh-pass \
+        --bind 3374 --mesh-peer=http://localhost:3370 \
+        --admin unix:${sp}meshd.sock > mesh_d.log 2>&1 &
+    local dpid=$!
+    count=0
+    while ! grep -q "changed addrs" mesh_a.log; do
+        count=$((count + 1))
+        if [ $count -ge 20 ]; then
+            echo "mesh gossip test 4 failed: no conflict alarm"
+            break
+        fi
+        sleep 1
+    done
+    grep -q "changed addrs" mesh_a.log
+    [ $? -ne 0 ] && echo "mesh gossip test 4 failed: conflict alarm" && exit 1
+    kill -SIGINT $dpid; wait $dpid
+
+    #mesh-exit=off：E 自宣无 exit 能力位，A 的节点表不应标记其为出口
+    ./sproxy -c meshg.conf --mesh=noexit.local --mesh-secret=mesh-pass --mesh-exit=off \
+        --bind 3375 --mesh-peer=http://localhost:3370 \
+        --admin unix:${sp}meshe.sock > mesh_e.log 2>&1 &
+    local epid=$!
+    count=0
+    while ! printf "dump mesh" | ./scli -s ${sp}mesha.sock | grep -q "noexit.local"; do
+        count=$((count + 1))
+        if [ $count -ge 20 ]; then
+            echo "mesh gossip test 5 failed: no discovery of noexit node"
+            break
+        fi
+        sleep 1
+    done
+    printf "dump mesh" | ./scli -s ${sp}mesha.sock | grep "noexit.local" | grep -qv " exit"
+    [ $? -ne 0 ] && echo "mesh gossip test 5 failed: exit cap should be off" && exit 1
+    kill -SIGINT $epid; wait $epid
+
+    #auto 出口：记录当前选中的节点（B 或 C），杀掉后应自动切换到另一个
+    curl -sf -m 10 -x client:pass@127.0.0.1:3370 http://mesh-auto.net/status -o mesh_out
+    [ $? -ne 0 ] && echo "mesh gossip test 6 failed: auto exit" && exit 1
+    local remaining=""
+    if grep -q "mesh node: ip6-localhost" mesh_out; then
+        kill -SIGINT $cpid; wait $cpid; other="mesh node: $HOSTNAME"; remaining=$bpid
+    else
+        kill -SIGINT $bpid; wait $bpid; other="mesh node: ip6-localhost"; remaining=$cpid
+    fi
+    count=0
+    while ! curl -sf -m 5 -x client:pass@127.0.0.1:3370 http://mesh-auto.net/status -o mesh_out \
+        || ! grep -q "$other" mesh_out; do
+        count=$((count + 1))
+        if [ $count -ge 60 ]; then
+            echo "mesh gossip test 7 failed: auto exit switch"
+            break
+        fi
+        sleep 1
+    done
+    grep -q "$other" mesh_out
+    [ $? -ne 0 ] && echo "mesh gossip test 7 failed: auto exit switch" && exit 1
+
+    #剩余出口也失联（入口 A 保留）：auto 应显式报错而非挂起
+    kill -SIGINT $remaining; wait $remaining
+    sleep 6
+    curl -s -m 10 -x client:pass@127.0.0.1:3370 http://mesh-auto.net/status | grep -q "\[\[mesh: no exit\]\]"
+    [ $? -ne 0 ] && echo "mesh gossip test 8 failed: expect no exit" && exit 1
+    kill -SIGINT $apid; wait $apid
 }
 
 #DoH服务(/dns-query)验证：独立实例 + 公共DoH上游(cloudflare-dns.com)。
@@ -1075,6 +1207,9 @@ test_doh_strip
 echo "test mesh"
 test_mesh
 
+echo "test mesh gossip"
+test_mesh_gossip
+
 if [ "$run_extended_tests" = true ]; then
     echo "test tproxy"
     test_tproxy 4333
@@ -1124,6 +1259,7 @@ run_test $buildpath/prot/http3/qpack_test
 run_test $buildpath/prot/quic/quic_frame_test
 run_test $buildpath/misc/trie_test
 run_test $buildpath/misc/buffer_test
+run_test $buildpath/mesh/mesh_gossip_test
 if [ $ker == 'Linux' ];then
     run_test $buildpath/hook/hook_test $buildpath/hook/hook_bpf.elf
 fi
