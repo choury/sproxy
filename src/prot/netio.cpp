@@ -114,7 +114,7 @@ SocketRWer::~SocketRWer() {
 
 void SocketRWer::Dnscallback(const Host_Result& result) {
     std::shared_ptr<SocketRWer> rwer = std::static_pointer_cast<SocketRWer>(result.param);
-    HOOK_BPF(rwer, rwer->hostname, result.error, result.addrs);
+    HOOK_BPF(rwer, result.error, result.addrs);
     rwer->resolved_time = getmtime();
     if(rwer->flags & RWER_CLOSING){
         return;

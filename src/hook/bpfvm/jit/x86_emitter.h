@@ -33,7 +33,10 @@
 //   - TLB miss 慢速路径：push/pop 6 个 caller-saved（callee-saved 自动存活）
 //   - Safepoint：flush_to_vm + call + reload_caller_saved
 //   - Syscall：flush_to_vm + call + reload_from_vm（syscall 可能改任意寄存器）
-//   - BPF CALL / EXIT：flush_to_vm + jmp vm_exit（重新进入 JIT 循环）
+//   - BPF CALL：快速路径直接进入已编译 callee；未编译/慢路径 flush_to_vm + jmp
+//     vm_exit（重新进入 JIT 循环）
+//   - EXIT：帧弹出后选择性写回（返回路径恢复调用者 r6-r9/r10）+ jmp vm_exit；
+//     顶层退出（哨兵帧）flush_to_vm 写回全部寄存器，r0 即退出码
 //
 // ═══════════════════════════════════════════════════════════════════
 
@@ -157,7 +160,7 @@ private:
     // --- BPF register access ---
     //     所有 BPF 寄存器都在 x86 物理寄存器中，load/store 只做 reg-to-reg mov
     void load_bpf(uint8_t bpf_reg, uint8_t x86_dst);
-    void store_bpf(uint8_t bpf_reg, uint8_t x86_src, bool is_64);
+    void store_bpf(uint8_t bpf_reg, uint8_t x86_src);
 
     // --- Register flush/reload for helper calls ---
     //     flush: 写回 vm->reg[]  reload: 从 vm->reg[] 加载

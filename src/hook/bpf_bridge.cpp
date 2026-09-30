@@ -116,12 +116,21 @@ BpfCallback::BpfCallback(const std::string& elf_path, std::string& msg)
     info = v->load_elf(fd, elf_path.c_str(), {});
     if (info.entry == 0) {
         msg = "Failed to load BPF ELF: " + elf_path;
+        return;
     }
+    // fd=-1：hook 程序不读 /proc/self/exe，重装镜像无需真 fd
+    vmImg = std::make_shared<vmImage>(info.entry, info.app_load_base, elf_path, -1);
 }
 
 void BpfCallback::OnCall(void* args) {
     if (info.entry == 0) return;
     auto* bpf_args = static_cast<BpfCallArgs*>(args);
+
+    // vm::run() 退出时按 exec 语义清空镜像，而 hook 回调在同一个 vm 上反复执行，
+    // 每次触发前重装构造期备好的镜像
+    if (!v->image()) {
+        v->set_image(vmImg);
+    }
 
     // Install syscall handler
     vmOptions options{};

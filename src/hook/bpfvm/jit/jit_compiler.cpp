@@ -137,7 +137,7 @@ void JitCompiler<EmitterT>::helper_call_indirect(vm* v, uint64_t ret_gpa, uint64
     if (!v->push_frame(ret_gpa)) {
         return;
     }
-    if (!v->mmu(target)) {
+    if (!v->mmu(target, sizeof(bpf_insn))) {
         v->log_mem_violation("call", target);
         v->flags.fetch_or(vm::VM_KILLED, std::memory_order_release);
         return;
@@ -151,7 +151,7 @@ void JitCompiler<EmitterT>::helper_call_bpf(vm* v, uint64_t ret_gpa, uint64_t ca
         v->flags.fetch_or(vm::VM_EXITED, std::memory_order_release);
         return;
     }
-    if (!v->mmu(callee_gpa)) {
+    if (!v->mmu(callee_gpa, sizeof(bpf_insn))) {
         v->log_mem_violation("call", callee_gpa);
         v->flags.fetch_or(vm::VM_KILLED, std::memory_order_release);
         return;
@@ -161,7 +161,7 @@ void JitCompiler<EmitterT>::helper_call_bpf(vm* v, uint64_t ret_gpa, uint64_t ca
 
 template<typename EmitterT>
 int JitCompiler<EmitterT>::helper_return_to_caller(vm* v, uint64_t ret_gpa) {
-    if (!v->mmu(ret_gpa)) {
+    if (!v->mmu(ret_gpa, sizeof(bpf_insn))) {
         v->log_mem_violation("return", ret_gpa);
         v->flags.fetch_or(vm::VM_KILLED, std::memory_order_release);
         return -1;
@@ -512,7 +512,7 @@ JitEntry* JitCompiler<EmitterT>::compile(vm* v, uint64_t gpa) {
     auto mark_failed = [&] { it->second.kind = JitEntryKind::Failed; };
 
     // gpa 是 guest 入口地址；编译期需要 host 指针遍历指令，mmu 取一次（编译期无 CoW）
-    const bpf_insn* entry_pc = (const bpf_insn*)v->mmu(gpa);
+    const bpf_insn* entry_pc = (const bpf_insn*)v->mmu(gpa, sizeof(bpf_insn));
     if (!entry_pc) return nullptr;
     uint64_t entry_gpa = gpa;
 

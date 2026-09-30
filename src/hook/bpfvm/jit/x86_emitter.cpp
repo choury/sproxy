@@ -103,12 +103,10 @@ void X86Emitter::load_bpf(uint8_t bpf_reg, uint8_t x86_dst) {
     }
 }
 
-void X86Emitter::store_bpf(uint8_t bpf_reg, uint8_t x86_src, bool is_64) {
+// 调用方保证 x86_src 已满足 w32 零扩展语义（32 位指令写目标寄存器自动清零高位；
+// 例外路径须自行补 mov r32,r32）。
+void X86Emitter::store_bpf(uint8_t bpf_reg, uint8_t x86_src) {
     uint8_t mapped = BPF_REG_MAP[bpf_reg];
-    if (!is_64) {
-        // 32 位结果需要零扩展到 64 位：mov r32, r32
-        mov_r32(x86_src, x86_src);
-    }
     if (mapped != x86_src) {
         mov_r64(mapped, x86_src);
     }
@@ -527,6 +525,8 @@ void X86Emitter::emit_inline_div(bool is_64, bool is_unsigned, bool is_mod) {
         if (is_mod) {
             if (is_64) emit8(0x48);
             emit8(0x31); emit8(0xC0);  // xor eax, eax
+        } else if (!is_64) {
+            emit8(0x89); emit8(0xC0);  // mov eax, eax: w32 结果零扩展高位
         }
         // 跳过实际除法，直接到 .done
         size_t jmp_done = size();
@@ -588,8 +588,10 @@ void X86Emitter::emit_inline_div(bool is_64, bool is_unsigned, bool is_mod) {
         // DIV by zero: result = 0
         if (is_64) emit8(0x48);
         emit8(0x31); emit8(0xC0);  // xor eax, eax
+    } else if (!is_64) {
+        // MOD by zero: result = original dst，w32 需零扩展高位
+        emit8(0x89); emit8(0xC0);  // mov eax, eax
     }
-    // MOD by zero: result = original dst (RAX already holds it)
     // fall through to .restore
 
     // .restore: 恢复 BPF r5 (RDX)
@@ -651,6 +653,10 @@ MemAccessContext X86Emitter::begin_mem_access(uint8_t base_x86_reg,
     // 使用 RCX（scratch）而非 RDX（BPF r5），避免破坏 BPF 寄存器
     emit8(0x48); emit8(0x8D); emit8(0x88);                   // lea rcx, [rax + disp32]
     emit32((uint32_t)access_size);
+    // 回绕检查：addr+size 溢出 2^64 时 rcx 反而变小，仅凭范围比较会误判命中
+    emit8(0x48); emit8(0x39); emit8(0xC1);                   // cmp rcx, rax
+    ctx.miss_jumps.push_back(size());
+    emit8(0x0F); emit8(0x82); emit32(0);                     // JB .slow
     // cmp rcx, [rbp + r11 + guest_end]
     emit8(0x4A); emit8(0x3B);
     emit8(0x8C);  // ModRM: mod=10, reg=RCX(1), rm=100(SIB)
@@ -739,7 +745,7 @@ bool X86Emitter::emit_alu(const bpf_insn* insn, bool is_64) {
         load_bpf(insn->src_reg, X86::RCX);
     };
     auto store_dst = [&]() {
-        store_bpf(insn->dst_reg, X86::RAX, is_64);
+        store_bpf(insn->dst_reg, X86::RAX);
     };
 
     // ── MOV (off == 0) ──
@@ -859,12 +865,12 @@ bool X86Emitter::emit_alu(const bpf_insn* insn, bool is_64) {
     }
 
     // ── Peephole: no-op operations ──
+    // RFC 9669 的 w32 形式即使 no-op 也要求 dst = (u32)(dst op imm)，跳过时须就地零扩展
     if (!is_x) {
-        if (insn->imm == 0 && (op == BPF_ADD || op == BPF_SUB || op == BPF_OR ||
-            op == BPF_XOR || op == BPF_LSH || op == BPF_RSH || op == BPF_ARSH)) {
-            return true;
-        }
-        if (insn->imm == 1 && (op == BPF_MUL || op == BPF_DIV)) {
+        if ((insn->imm == 0 && (op == BPF_ADD || op == BPF_SUB || op == BPF_OR ||
+             op == BPF_XOR || op == BPF_LSH || op == BPF_RSH || op == BPF_ARSH)) ||
+            (insn->imm == 1 && (op == BPF_MUL || op == BPF_DIV))) {
+            if (!is_64) mov_r32(BPF_REG_MAP[insn->dst_reg], BPF_REG_MAP[insn->dst_reg]);
             return true;
         }
     }
@@ -919,8 +925,9 @@ bool X86Emitter::emit_alu(const bpf_insn* insn, bool is_64) {
     }
     case BPF_MOD: {
         if (!is_x) {
-            // 模常量 0：结果为 dst（不变，RAX 已有 dst 值）
+            // 模常量 0：ALU64 结果为 dst 不变；ALU（w32）按 RFC 9669 零扩展高位
             if (insn->imm == 0) {
+                if (!is_64) mov_r32(BPF_REG_MAP[insn->dst_reg], BPF_REG_MAP[insn->dst_reg]);
                 return true;
             }
             // 无符号模 2 的幂（正数）：用 AND 掩码代替
@@ -1098,14 +1105,10 @@ bool X86Emitter::emit_stx_atomic(const bpf_insn* insn,
     // 从映射寄存器加载源值到 RCX（BPF 映射寄存器在 begin_mem_access 后安全）
     load_bpf(insn->src_reg, X86::RCX);
 
-    // RDX = host pointer (save RAX which holds host ptr)
-    // 注意：RDX 是 BPF r5 的映射！但这里我们正在做原子操作，
-    // 而 RDX 在 begin_mem_access 的 bounds check 中已经被 lea rdx, [rax+size] 踩了。
-    // 需要用另一个 scratch 寄存器保存 host ptr。
-    // 用 R11 (scratch) 保存 host pointer
+    // host 指针转移到 R11：RAX 留作 cmpxchg 的隐式比较寄存器，RDX 是 BPF r5 的映射
     emit8(0x49); emit8(0x89); emit8(0xC3);  // mov r11, rax
 
-    // 保存 RDX (BPF r5) 到 vm->reg[5] — CAS 循环会用 RDX 做临时寄存器
+    // CAS 循环（or/and/xor|fetch）拿 RDX 做临时寄存器，先写回 vm->reg[5]
     store_r64((int32_t)(off_reg_ + 5 * 8), X86::RDX);
 
     int32_t atom_op = insn->imm;
@@ -1149,14 +1152,14 @@ bool X86Emitter::emit_stx_atomic(const bpf_insn* insn,
         data()[loop_end - 1] = (uint8_t)rel;
 
         // FETCH: 将旧值 (RAX) 写入 src_reg
-        store_bpf(insn->src_reg, X86::RAX, true);
+        store_bpf(insn->src_reg, X86::RAX);
     } else switch (atom_op) {
     case BPF_ADD | BPF_FETCH:
         // lock xadd [r11], rcx
         emit8(0xF0);
         if (is_dw) emit8(0x49); else emit8(0x41);
         emit8(0x0F); emit8(0xC1); emit8(0x0B);  // xadd [r11], rcx
-        store_bpf(insn->src_reg, X86::RCX, true);
+        store_bpf(insn->src_reg, X86::RCX);
         break;
     case BPF_ADD:
         // lock add [r11], rcx
@@ -1181,7 +1184,7 @@ bool X86Emitter::emit_stx_atomic(const bpf_insn* insn,
         // xchg [r11], rcx
         if (is_dw) emit8(0x49); else emit8(0x41);
         emit8(0x87); emit8(0x0B);  // xchg [r11], rcx
-        store_bpf(insn->src_reg, X86::RCX, true);
+        store_bpf(insn->src_reg, X86::RCX);
         break;
 
     case BPF_CMPXCHG:
@@ -1190,8 +1193,12 @@ bool X86Emitter::emit_stx_atomic(const bpf_insn* insn,
         emit8(0xF0);
         if (is_dw) emit8(0x49); else emit8(0x41);
         emit8(0x0F); emit8(0xB1); emit8(0x0B);  // lock cmpxchg [r11], rcx
+        if (!is_dw) {
+            // 成功路径 RAX 不被写，需按 RFC 9669 零扩展（失败路径 eax<-mem 硬件已清零，幂等）
+            emit8(0x89); emit8(0xC0);  // mov eax, eax
+        }
         // 结果回写 r0
-        store_bpf(0, X86::RAX, true);
+        store_bpf(0, X86::RAX);
         break;
 
     default:
@@ -1628,7 +1635,8 @@ bool X86Emitter::emit_call_softfp(const bpf_insn* insn) {
 // fast path（flags==0、callee 已缓存）零 C 调用、零 flush/reload：
 //   flags-check -> 内联 push_frame -> inline cache -> 命中 call r11 进 entry_fast
 //   -> callee 经 vm_exit ret 回 .cont（只 reload r10 + flag-check + pc-check）。
-//   r0=R8（vm_exit 不 pop）、r6-r9/RBP（callee-saved 由 pop 还原）、r1-r5 失效，故无 reload。
+//   r0=R8（vm_exit 不 pop）、r6-r9/RBP（callee-saved 由 pop 还原）；r1-r5 是
+//   caller-saved，物理连续性直接携带 callee 终值（EXIT 亦写回 vm->reg[]，两边一致），故无 reload。
 //
 // .slow_resolve（cache miss）：spill r0-r5 护参 -> helper_resolve_and_cache（查 callee、
 //   命中填槽）-> restore -> call r11。
@@ -1801,9 +1809,9 @@ void X86Emitter::emit_exit(std::vector<AbortPatchInfo>& abort_patches, int bpf_i
     // -  内联 pop_frame：读 frame[0..12]（104B，覆盖普通 64B + 信号 128B 的 r0..r5）。
     auto ctx = begin_mem_access(X86::R15, 0, 104, /*is_write=*/false);  // RAX = frame host
     emit8(0x48); emit8(0x8B); emit8(0x48); emit8(0x10);   // mov rcx, [rax+0x10]  (ret_addr = frame[2])
-    emit8(0x48); emit8(0x8B); emit8(0x50); emit8(0x08);   // mov rdx, [rax+0x08]  (old_sp = frame[1])
     emit8(0x4C); emit8(0x8B); emit8(0x18);               // mov r11, [rax]      (frame[0] flags，检测 is_signal)
-    store_r64((int32_t)off_scratch_, X86::RAX);           // 暂存 frame host（下文 store 复用 RAX）
+    store_r64((int32_t)off_scratch_, X86::RAX);           // 暂存 frame host（正常返回路径复用）
+    emit8(0x48); emit8(0x8B); emit8(0x40); emit8(0x08);   // mov rax, [rax+0x08]  (old_sp = frame[1]，RAX 中转；不碰 RDX=BPF r5)
     finish_mem_access(ctx, abort_patches, bpf_index);
 
     // -  栈底检查：ret_addr==0 -> 哨兵帧（程序退出），置 VM_EXITED。
@@ -1811,9 +1819,15 @@ void X86Emitter::emit_exit(std::vector<AbortPatchInfo>& abort_patches, int bpf_i
     size_t stack_bottom_jz = size();
     emit8(0x0F); emit8(0x84); emit32(0);                  // JZ .stack_bottom
 
-    // -  vm->pc_ = ret_addr；vm->reg[0]=r0；r6..r9/10 从帧取写 vm->reg[]。
+    // -  vm->pc_ = ret_addr；vm->reg[0..5]=物理寄存器终值（r1-r5 是 caller-saved，
+    //    调用者可见被调函数的写入——与解释器的全局寄存器语义一致，慢速调用路径
+    //    经 vm_exit 重载后才能看到）；r6..r9/10 从帧取写 vm->reg[]（callee-saved 恢复）。
     store_r64((int32_t)off_pc_, X86::RCX);                 // vm->pc_ = ret_addr
     store_r64((int32_t)(off_reg_ + 0 * 8), X86::R8);       // vm->reg[0] = r0（信号帧下方覆盖）
+    for (int i = 1; i <= 5; i++) {
+        store_r64((int32_t)(off_reg_ + i * 8), BPF_REG_MAP[i]);
+    }
+    store_r64((int32_t)(off_reg_ + 10 * 8), X86::RAX);     // vm->reg[10] = old_sp(RAX 中转，见前)
     load_r64(X86::RAX, (int32_t)off_scratch_);             // RAX = frame host
     emit8(0x48); emit8(0x8B); emit8(0x48); emit8(0x18);   // mov rcx, [rax+0x18]  (r6)
     store_r64((int32_t)(off_reg_ + 6 * 8), X86::RCX);
@@ -1823,7 +1837,6 @@ void X86Emitter::emit_exit(std::vector<AbortPatchInfo>& abort_patches, int bpf_i
     store_r64((int32_t)(off_reg_ + 8 * 8), X86::RCX);
     emit8(0x48); emit8(0x8B); emit8(0x48); emit8(0x30);   // mov rcx, [rax+0x30]  (r9)
     store_r64((int32_t)(off_reg_ + 9 * 8), X86::RCX);
-    store_r64((int32_t)(off_reg_ + 10 * 8), X86::RDX);     // vm->reg[10] = old_sp(frame[1])
 
     // -  信号帧：r0..r5 从 frame[7..12](@+0x38..0x60) 覆盖写 vm->reg[0..5]。
     //    is_signal = frame[0] bit32。普通帧（bit32=0）跳过。
@@ -1850,10 +1863,11 @@ void X86Emitter::emit_exit(std::vector<AbortPatchInfo>& abort_patches, int bpf_i
     emit8(0xE9); emit32(0);
     patch_branch_uncond(exit_jmp, vm_exit_offset);
 
-    // -  .stack_bottom：flush r0(退出码) + 置 VM_EXITED + vm_exit
+    // -  .stack_bottom：flush 全部寄存器（顶层退出无调用者需要恢复，物理寄存器
+    //    即程序终值，run() 之后的 r() 检查依赖此写回）+ 置 VM_EXITED + vm_exit
     size_t stack_bottom = size();
     patch_branch_cond(stack_bottom_jz, stack_bottom);
-    store_r64((int32_t)(off_reg_ + 0 * 8), X86::R8);       // vm->reg[0] = 退出码
+    flush_to_vm();
     emit8(0xF0); emit8(0x83); emit8(0x8D); emit32((uint32_t)off_flags_); emit8(0x01);
     size_t sb_jmp = size();
     emit8(0xE9); emit32(0);

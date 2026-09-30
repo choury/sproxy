@@ -245,6 +245,13 @@ bool map_segment(const Seg& s, const ElfFile& ef, memmap& m_out) {
     size_t map_size = page_end - page_start;
     size_t head_off = s.vaddr - page_start;  // 段在页内的起始偏移
 
+    // p_filesz 由文件控制而映射大小由 p_memsz 决定，不钳制则 pread 越过宿主 mmap 边界
+    if(s.filesz > s.memsz || head_off + s.filesz > map_size) {
+        std::cerr << "[load_elf] PT_LOAD filesz exceeds mapping for " << guest_view(ef.path)
+                  << " @0x" << std::hex << s.vaddr << std::dec << std::endl;
+        return false;
+    }
+
     void* host = mmap(nullptr, map_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     if (host == MAP_FAILED) {
         std::cerr << "[load_elf] mmap failed for " << guest_view(ef.path)

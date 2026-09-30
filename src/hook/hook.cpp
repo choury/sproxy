@@ -175,30 +175,7 @@ void HookManager::AddHookSymbol(const void* addr, const char* mangled) {
     free(name);
 }
 
-// Normalize a parameter name string for BPF path access.
-// e.g. "  & obj " -> "obj", "** ptr" -> "ptr", "obj->field" -> "obj.field"
-static std::string trim_param(std::string s) {
-    auto not_strip = [](char c) { return c != ' ' && c != '\t' && c != '&' && c != '*'; };
-    // trim right whitespace
-    auto end = std::find_if(s.rbegin(), s.rend(), [](char c) { return c != ' ' && c != '\t'; }).base();
-    s.erase(end, s.end());
-    // strip leading whitespace, &, *
-    auto start = std::find_if(s.begin(), s.end(), not_strip);
-    s.erase(s.begin(), start);
-    if (s.empty()) return {};
-    // replace "->" with "."
-    for (size_t pos = 0; (pos = s.find("->", pos)) != std::string::npos; pos += 1)
-        s.replace(pos, 2, ".");
-    return s;
-}
-
-bool HookManager::AddHooker(bool* hooker, std::string func, const char* line, std::vector<std::string> names) {
+bool HookManager::AddHooker(bool* hooker, std::string func, const char* line) {
     hookers[hooker] = func + ":" + line;
-
-    for (auto& name : names) {
-        name = trim_param(std::move(name));
-    }
-    param_names_map[hooker] = std::move(names);
-
     return *hooker = true;
 }

@@ -557,6 +557,10 @@ MemAccessContext AArch64Emitter::begin_mem_access(uint8_t base_reg, int16_t offs
 
     // Bounds check 2: addr + size <= guest_end
     add_imm(X2, X0, access_size, true);
+    // 回绕检查：addr+size 溢出 2^64 时 X2 反而变小，仅凭范围比较会误判命中
+    cmp_reg(X2, X0, true);
+    ctx.miss_jumps.push_back(size());
+    emit_insn(0x54000000u | ARMCond::CC); // B.cc (end < addr -> slow)
     ldr_imm(X1, X15, off_ge, true);
     cmp_reg(X2, X1, true);
     ctx.miss_jumps.push_back(size());
@@ -692,11 +696,15 @@ bool AArch64Emitter::emit_alu(const bpf_insn* insn, bool is_64) {
         store_dst(); return true;
     }
 
-    // Peephole: skip no-op
+    // Peephole: skip no-op。RFC 9669 的 w32 形式即使 no-op 也要求
+    // dst = (u32)(dst op imm)，跳过时须就地零扩展（W 形 mov）
     if (!is_x) {
-        if (insn->imm == 0 && (op == BPF_ADD || op == BPF_SUB || op == BPF_OR ||
-            op == BPF_XOR || op == BPF_LSH || op == BPF_RSH || op == BPF_ARSH)) return true;
-        if (insn->imm == 1 && (op == BPF_MUL || op == BPF_DIV)) return true;
+        if ((insn->imm == 0 && (op == BPF_ADD || op == BPF_SUB || op == BPF_OR ||
+             op == BPF_XOR || op == BPF_LSH || op == BPF_RSH || op == BPF_ARSH)) ||
+            (insn->imm == 1 && (op == BPF_MUL || op == BPF_DIV))) {
+            if (!is_64) mov_reg(BPF_REG_MAP[insn->dst_reg], BPF_REG_MAP[insn->dst_reg], false);
+            return true;
+        }
     }
 
     // Arithmetic / logic / shift
@@ -739,7 +747,8 @@ bool AArch64Emitter::emit_alu(const bpf_insn* insn, bool is_64) {
     case BPF_MOD: {
         if (!is_x) {
             if (insn->imm == 0) {
-                // mod by 0 = dst 不变
+                // mod by 0：ALU64 结果为 dst 不变；ALU（w32）按 RFC 9669 零扩展高位
+                if (!is_64) mov_reg(BPF_REG_MAP[insn->dst_reg], BPF_REG_MAP[insn->dst_reg], false);
                 return true;
             }
             mov_imm(X1, (uint64_t)(int64_t)insn->imm, is_64);
@@ -1287,7 +1296,8 @@ void AArch64Emitter::emit_call_softfp_slow(const bpf_insn* insn, int cur, uint64
 // fast path（flags==0、callee 已缓存）零 C 调用、零 flush/reload：
 //   flags-check -> 内联 push_frame -> inline cache -> 命中 blr X16 进 entry_fast
 //   -> callee 经 vm_exit ret 回 .cont（只 reload r10 + flag-check + pc-check）。
-//   r0=X9（vm_exit 不 ldp X9）、r6-r9/X28（callee-saved 由 ldp 还原）、r1-r5 失效，故无 reload。
+//   r0=X9（vm_exit 不 ldp X9）、r6-r9/X28（callee-saved 由 ldp 还原）；r1-r5 是
+//   caller-saved，物理连续性直接携带 callee 终值（EXIT 亦写回 vm->reg[]，两边一致），故无 reload。
 //   inline cache 槽用 ldr Xn,[pc,#8] + b .+12 跳过 8 字节内联数据（aarch64 不能像 x86 用
 //   mov reg,imm64 占位：ldr-literal 后 PC 会落入数据，须 b 跳过）。
 //
@@ -1443,9 +1453,12 @@ void AArch64Emitter::emit_exit(std::vector<AbortPatchInfo>& abort_patches, int b
     cbz(X1, true);                         // CBZ X1, .stack_bottom
     size_t stack_bottom_jcc = size() - 4;
 
-    // -  正常返回：vm->pc_=ret_addr；vm->reg[0]=r0(X9)；r6..r9/10 从帧取写 vm->reg[]。
+    // -  正常返回：vm->pc_=ret_addr；vm->reg[0..5]=物理寄存器终值（r1-r5 是
+    //    caller-saved，调用者可见被调函数的写入——与解释器的全局寄存器语义一致，
+    //    慢速调用路径经 vm_exit 重载后才能看到）；r6..r9/10 从帧取写 vm->reg[]。
     str_imm(X1, X28, (int32_t)off_pc_, true);              // vm->pc_ = ret_addr
     str_imm(X9, X28, (int32_t)(off_reg_ + 0 * 8), true);   // vm->reg[0] = r0（信号帧下方覆盖）
+    for (int i = 1; i <= 5; i++) str_imm(BPF_REG_MAP[i], X28, (int32_t)(off_reg_ + i * 8), true);
     ldr_imm(X0, X28, (int32_t)off_scratch_, true);          // X0 = frame host
     ldr_imm(X1, X0, 0x18, true); str_imm(X1, X28, (int32_t)(off_reg_ + 6 * 8), true);  // r6
     ldr_imm(X1, X0, 0x20, true); str_imm(X1, X28, (int32_t)(off_reg_ + 7 * 8), true);  // r7
@@ -1470,10 +1483,11 @@ void AArch64Emitter::emit_exit(std::vector<AbortPatchInfo>& abort_patches, int b
     size_t exit_jmp = size(); b_uncond();
     patch_branch_uncond(exit_jmp, vm_exit_offset);
 
-    // -  .stack_bottom：flush r0(退出码) + 原子 or VM_EXITED + vm_exit
+    // -  .stack_bottom：flush 全部寄存器（顶层退出无调用者需要恢复，物理寄存器
+    //    即程序终值，run() 之后的 r() 检查依赖此写回）+ 原子 or VM_EXITED + vm_exit
     size_t stack_bottom = size();
     patch_branch_cond(stack_bottom_jcc, stack_bottom);
-    str_imm(X9, X28, (int32_t)(off_reg_ + 0 * 8), true);   // vm->reg[0] = 退出码
+    flush_to_vm();
     mov_imm(X0, (uint64_t)vm::VM_EXITED, false);            // W0 = VM_EXITED(1)
     add_imm(X1, X28, (int64_t)off_flags_, true);
     size_t atomic_loop = size();

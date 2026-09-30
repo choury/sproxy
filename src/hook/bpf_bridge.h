@@ -5,7 +5,9 @@
 #include "hook_callback.h"
 #include "bpfvm/insn.h"
 
+#include <array>
 #include <string>
+#include <string_view>
 #include <map>
 #include <functional>
 #include <type_traits>
@@ -39,106 +41,193 @@ namespace bpf_detail {
 // MapEntry { string key = 1; Value value = 2; }
 // Value   { int64 = 1; uint64 = 2; string = 3; bytes = 4; KVMap = 5; Array = 6; }
 // Array   { repeated Value elements = 1; }
+//
+// 单缓冲直写：嵌套 LEN 字段先写 5 字节定宽 varint 占位、内容写完回填，
+// 全程只触碰一个缓冲，不产生中间 string（定宽 varint 是合法编码，解码端无感）。
 
-inline void pb_append_varint(std::string& out, uint64_t val) {
-    while (val > 0x7F) {
-        out.push_back((char)((val & 0x7F) | 0x80));
-        val >>= 7;
+class PbWriter {
+    std::string& buf;
+    char stage[64];
+    size_t n = 0;
+
+    void flush() {
+        if (n) {
+            buf.append(stage, n);
+            n = 0;
+        }
     }
-    out.push_back((char)(val & 0x7F));
-}
+    void put(char c) {
+        if (n == sizeof(stage)) flush();
+        stage[n++] = c;
+    }
+public:
+    explicit PbWriter(std::string& out) : buf(out) {}
 
-inline void pb_append_tag(std::string& out, uint32_t field, uint32_t wire_type) {
-    pb_append_varint(out, ((uint64_t)field << 3) | wire_type);
-}
+    size_t size() const { return buf.size() + n; }
+    void truncate(size_t len) {
+        flush();
+        buf.resize(len);
+    }
 
-inline void pb_append_bytes_field(std::string& out, uint32_t field, const void* data, size_t len) {
-    pb_append_tag(out, field, 2);
-    pb_append_varint(out, len);
-    out.append((const char*)data, len);
-}
-
-inline void pb_append_varint_field(std::string& out, uint32_t field, uint64_t val) {
-    pb_append_tag(out, field, 0);
-    pb_append_varint(out, val);
-}
-
-// Append a MapEntry { key = 1, value = 2 } as KVMap field 1
-inline void pb_append_map_entry(std::string& kvmap, const std::string& key,
-                                const std::string& value_msg) {
-    std::string entry;
-    pb_append_bytes_field(entry, 1, key.data(), key.size());
-    pb_append_bytes_field(entry, 2, value_msg.data(), value_msg.size());
-    pb_append_bytes_field(kvmap, 1, entry.data(), entry.size());
-}
+    void varint(uint64_t v) {
+        while (v > 0x7F) {
+            put((char)((v & 0x7F) | 0x80));
+            v >>= 7;
+        }
+        put((char)(v & 0x7F));
+    }
+    void tag(uint32_t field, uint32_t wire) {
+        varint(((uint64_t)field << 3) | wire);
+    }
+    // LEN 字段：返回占位偏移（tag 之后），内容写完后 end_len 回填实际长度
+    size_t begin_len(uint32_t field) {
+        flush();
+        char tmp[12];
+        size_t k = 0;
+        uint64_t t = ((uint64_t)field << 3) | 2;
+        while (t > 0x7F) {
+            tmp[k++] = (char)((t & 0x7F) | 0x80);
+            t >>= 7;
+        }
+        tmp[k++] = (char)t;
+        size_t tag_len = k;
+        for (int i = 0; i < 5; i++) tmp[k++] = '\x80';
+        tmp[k - 1] = '\0';
+        size_t off = buf.size();
+        buf.append(tmp, k);
+        return off + tag_len;
+    }
+    void end_len(size_t off) {
+        flush();
+        size_t len = buf.size() - off - 5;
+        for (int i = 0; i < 4; i++) {
+            buf[off + i] = (char)((len & 0x7F) | 0x80);
+            len >>= 7;
+        }
+        buf[off + 4] = (char)(len & 0x7F);
+    }
+    void varint_field(uint32_t field, uint64_t v) {
+        tag(field, 0);
+        varint(v);
+    }
+    void bytes_field(uint32_t field, const void* data, size_t len) {
+        tag(field, 2);
+        varint(len);
+        if (n + len <= sizeof(stage)) {
+            memcpy(stage + n, data, len);
+            n += len;
+        } else {
+            flush();
+            buf.append((const char*)data, len);
+        }
+    }
+};
 
 
 // ============ IVisitor-based visitors for virtual reflect ============
 
-// PBSerializeVisitor: builds protobuf KVMap from virtual reflect(IVisitor&)
+// PBSerializeVisitor: reflect 树直写进 PbWriter。
+// map/vector 元素经 push_map_key + leaf(name=nullptr) 到达，叶子名回退取 pending_map_key_。
 class PBSerializeVisitor : public IVisitor {
-    struct Scope {
-        std::string name;   // name passed to push(), or map key
-        std::string kvmap;  // accumulated protobuf MapEntry bytes
+    static constexpr size_t MAX_DEPTH = 64;
+    PbWriter& w;
+    struct Nest {
+        size_t entry_off, value_off, kvmap_off;  // begin_len 占位（root/透明层无效）
+        size_t start;                            // entry 占位前的缓冲长度，空对象回退目标
+        size_t body;                             // entry 占位后的缓冲长度，空对象判空基准
+        bool root;                               // push(nullptr) 且栈底：根标记；无名非根：透明层
     };
-    std::vector<Scope> stack_;
+    Nest stack_[MAX_DEPTH];
+    size_t depth_ = 0;
     std::string pending_map_key_;
-    std::string* out_;      // final output (top-level result)
-public:
-    explicit PBSerializeVisitor(std::string& out) : out_(&out) {
-        stack_.push_back({"", {}});
+
+    const char* entry_name(const char* name) const {
+        if (name) return name;
+        return pending_map_key_.empty() ? nullptr : pending_map_key_.c_str();
     }
+public:
+    explicit PBSerializeVisitor(PbWriter& writer) : w(writer) {}
 
     Mode mode() const override { return Mode::Serialize; }
 
     void push(const char* name) override {
-        stack_.push_back({name ? name : "", {}});
+        const char* n = (name || depth_ != 0) ? entry_name(name) : nullptr;
+        if (depth_ >= MAX_DEPTH) { depth_++; return; }  // 超深嵌套按透明层处理，叶子仍写入父层，不占槽
+        Nest scope{0, 0, 0, w.size(), 0, !n};
+        if (n) {
+            scope.entry_off = w.begin_len(1);
+            w.bytes_field(1, n, strlen(n));
+            scope.value_off = w.begin_len(2);
+            scope.kvmap_off = w.begin_len(5);
+            scope.body = w.size();
+        }
+        stack_[depth_++] = scope;
     }
     void pop() override {
-        Scope s = std::move(stack_.back());
-        stack_.pop_back();
-        if (s.kvmap.empty() && stack_.size() > 1) return;
-        // Serialize child as nested KVMap Value(5) and add to parent
-        std::string val_msg;
-        if (!s.kvmap.empty()) {
-            pb_append_bytes_field(val_msg, 5, s.kvmap.data(), s.kvmap.size());
+        if (depth_ > MAX_DEPTH) { depth_--; return; }
+        Nest s = stack_[--depth_];
+        if (s.root) return;
+        if (w.size() == s.body) {
+            w.truncate(s.start);
+            return;
         }
-        std::string entry_name = s.name.empty() ? pending_map_key_ : s.name;
-        if (!entry_name.empty() && !val_msg.empty()) {
-            pb_append_map_entry(stack_.back().kvmap, entry_name, val_msg);
-        } else if (stack_.size() == 1 && !s.kvmap.empty()) {
-            // Top-level: move to output
-            *out_ = std::move(s.kvmap);
-        }
+        w.end_len(s.kvmap_off);
+        w.end_len(s.value_off);
+        w.end_len(s.entry_off);
     }
     void push_map_key(const std::string& key) override { pending_map_key_ = key; }
     void pop_map_key() override { pending_map_key_.clear(); }
 
-    // Mutable leaf handlers → serialize to protobuf
+    // 叶子直接写进当前打开的 KVMap 体
     void leaf_i64(const char* name, int64_t& val) override {
-        std::string msg;
-        pb_append_varint_field(msg, 1, (uint64_t)val);
-        if (name) pb_append_map_entry(stack_.back().kvmap, name, msg);
+        const char* n = entry_name(name);
+        if (!n) return;
+        size_t e = w.begin_len(1);
+        w.bytes_field(1, n, strlen(n));
+        size_t v = w.begin_len(2);
+        w.varint_field(1, (uint64_t)val);
+        w.end_len(v);
+        w.end_len(e);
     }
     void leaf_u64(const char* name, uint64_t& val) override {
-        std::string msg;
-        pb_append_varint_field(msg, 2, val);
-        if (name) pb_append_map_entry(stack_.back().kvmap, name, msg);
+        const char* n = entry_name(name);
+        if (!n) return;
+        size_t e = w.begin_len(1);
+        w.bytes_field(1, n, strlen(n));
+        size_t v = w.begin_len(2);
+        w.varint_field(2, val);
+        w.end_len(v);
+        w.end_len(e);
     }
     void leaf_str(const char* name, std::string& val) override {
-        std::string msg;
-        pb_append_bytes_field(msg, 3, val.data(), val.size());
-        if (name) pb_append_map_entry(stack_.back().kvmap, name, msg);
+        const char* n = entry_name(name);
+        if (!n) return;
+        size_t e = w.begin_len(1);
+        w.bytes_field(1, n, strlen(n));
+        size_t v = w.begin_len(2);
+        w.bytes_field(3, val.data(), val.size());
+        w.end_len(v);
+        w.end_len(e);
     }
     void leaf_cstr(const char* name, char* val, size_t maxlen) override {
-        std::string msg;
-        pb_append_bytes_field(msg, 3, val, strnlen(val, maxlen));
-        if (name) pb_append_map_entry(stack_.back().kvmap, name, msg);
+        const char* n = entry_name(name);
+        if (!n) return;
+        size_t e = w.begin_len(1);
+        w.bytes_field(1, n, strlen(n));
+        size_t v = w.begin_len(2);
+        w.bytes_field(3, val, strnlen(val, maxlen));
+        w.end_len(v);
+        w.end_len(e);
     }
     void leaf_blob(const char* name, void* data, size_t len) override {
-        std::string msg;
-        pb_append_bytes_field(msg, 4, data, len);
-        if (name) pb_append_map_entry(stack_.back().kvmap, name, msg);
+        const char* n = entry_name(name);
+        if (!n) return;
+        size_t e = w.begin_len(1);
+        w.bytes_field(1, n, strlen(n));
+        size_t v = w.begin_len(2);
+        w.bytes_field(4, data, len);
+        w.end_len(v);
+        w.end_len(e);
     }
 
     // Read-only leaf handlers → same serialization
@@ -149,14 +238,10 @@ public:
         uint64_t mut = val; leaf_u64(name, mut);
     }
     void leaf_ro_str(const char* name, const std::string& val) override {
-        std::string msg;
-        pb_append_bytes_field(msg, 3, val.data(), val.size());
-        if (name) pb_append_map_entry(stack_.back().kvmap, name, msg);
+        leaf_str(name, const_cast<std::string&>(val));
     }
     void leaf_ro_blob(const char* name, const void* data, size_t len) override {
-        std::string msg;
-        pb_append_bytes_field(msg, 4, data, len);
-        if (name) pb_append_map_entry(stack_.back().kvmap, name, msg);
+        leaf_blob(name, const_cast<void*>(data), len);
     }
 };
 
@@ -180,7 +265,7 @@ class PBSetFieldVisitor : public IVisitor {
                 && (key_[path.size()] == '.' || key_[path.size()] == '['));
     }
 public:
-    PBSetFieldVisitor(const std::string& prefix, const std::string& key, const BpfKV& kv)
+    PBSetFieldVisitor(std::string_view prefix, const std::string& key, const BpfKV& kv)
         : prefix_(prefix), key_(key), kv_(kv) {}
 
     Mode mode() const override { return Mode::SetField; }
@@ -259,113 +344,232 @@ public:
 
 // ============ Serialize: reflect → nested protobuf ============
 
-// serialize_value: produce a Value message for a single value
+// serialize_value_body: 把单个值写成 Value 消息体（不含外层长度），调用方负责 begin_len/end_len 包装
 template<typename T>
-std::string serialize_value(const T& val) {
+void serialize_value_body(PbWriter& w, const T& val) {
     using Raw = std::remove_cv_t<std::remove_reference_t<T>>;
-    std::string value_msg;
     if constexpr (std::is_array_v<Raw> && std::is_same_v<std::remove_extent_t<Raw>, char>) {
-        pb_append_bytes_field(value_msg, 3, val, strnlen(val, std::extent_v<Raw>));
+        w.bytes_field(3, val, strnlen(val, std::extent_v<Raw>));
     } else if constexpr (std::is_same_v<Raw, std::string>) {
-        pb_append_bytes_field(value_msg, 3, val.data(), val.size());
+        w.bytes_field(3, val.data(), val.size());
     } else if constexpr (std::is_same_v<Raw, const char*> || std::is_same_v<Raw, char*>) {
         const char* s = val ? val : "";
-        pb_append_bytes_field(value_msg, 3, s, strlen(s));
+        w.bytes_field(3, s, strlen(s));
     } else if constexpr (is_byte_span<Raw>::value) {
-        pb_append_bytes_field(value_msg, 4, val.data(), val.size_bytes());
+        w.bytes_field(4, val.data(), val.size_bytes());
     } else if constexpr (std::is_enum_v<Raw>) {
         using Underlying = std::underlying_type_t<Raw>;
-        return serialize_value(static_cast<Underlying>(val));
+        serialize_value_body(w, static_cast<Underlying>(val));
     } else if constexpr (std::is_signed_v<Raw> && std::is_integral_v<Raw>) {
-        pb_append_varint_field(value_msg, 1, (uint64_t)(int64_t)val);
+        w.varint_field(1, (uint64_t)(int64_t)val);
     } else if constexpr (std::is_unsigned_v<Raw> && std::is_integral_v<Raw>) {
-        pb_append_varint_field(value_msg, 2, (uint64_t)val);
+        w.varint_field(2, (uint64_t)val);
     } else if constexpr (is_vector<Raw>::value || is_deque<Raw>::value
                          || is_list<Raw>::value || is_set<Raw>::value
                          || is_span<Raw>::value) {
-        // Value field 6 = Array { repeated Value elements = 1 }
-        std::string array_msg;
+        size_t arr = w.begin_len(6);
         for (const auto& item : val) {
-            std::string elem = serialize_value(item);
-            pb_append_bytes_field(array_msg, 1, elem.data(), elem.size());
+            size_t elem = w.begin_len(1);
+            serialize_value_body(w, item);
+            w.end_len(elem);
         }
-        pb_append_bytes_field(value_msg, 6, array_msg.data(), array_msg.size());
+        w.end_len(arr);
     } else if constexpr (is_map<Raw>::value) {
-        // Value field 5 = KVMap
-        std::string kvmap;
+        size_t m = w.begin_len(5);
         for (const auto& [k, v] : val) {
-            std::string v_msg = serialize_value(v);
-            pb_append_map_entry(kvmap, ::map_key_to_string(k), v_msg);
+            std::string ks = map_key_to_string(k);
+            size_t e = w.begin_len(1);
+            w.bytes_field(1, ks.data(), ks.size());
+            size_t vv = w.begin_len(2);
+            serialize_value_body(w, v);
+            w.end_len(vv);
+            w.end_len(e);
         }
-        pb_append_bytes_field(value_msg, 5, kvmap.data(), kvmap.size());
+        w.end_len(m);
     } else if constexpr (std::is_pointer_v<Raw> && !std::is_void_v<std::remove_pointer_t<Raw>>) {
-        if (val) return serialize_value(*val);
+        if (val) serialize_value_body(w, *val);
     } else if constexpr (is_smart_pointer<Raw>::value) {
-        if (val) return serialize_value(*val);
+        if (val) serialize_value_body(w, *val);
     } else if constexpr (is_complete<Raw>::value && (std::is_base_of_v<HookReflectable, Raw> || has_reflect<Raw>::value)) {
         // reflect(IVisitor&) dispatch: virtual for HookReflectable, direct for has_reflect
-        std::string kvmap;
-        PBSerializeVisitor sv(kvmap);
+        size_t pos = w.size();
+        size_t m = w.begin_len(5);
+        size_t body = w.size();
+        PBSerializeVisitor sv(w);
         sv.push(nullptr);
         const_cast<Raw&>(val).reflect(sv);
         sv.pop();
-        if (!kvmap.empty()) {
-            pb_append_bytes_field(value_msg, 5, kvmap.data(), kvmap.size());
-        }
+        if (w.size() == body) w.truncate(pos);  // 空 reflect 对象不输出 field 5
+        else w.end_len(m);
     } else if constexpr (is_blob_aggregate<Raw>::value) {
-        pb_append_bytes_field(value_msg, 4, &val, sizeof(val));
+        w.bytes_field(4, &val, sizeof(Raw));
     } else {
         static_assert(dependent_false<Raw>::value,
             "Unsupported BPF leaf type in reflect tree");
     }
-    return value_msg;
 }
 
-// Top-level: serialize tuple to a KVMap
-template<typename Tuple, size_t... Is>
-void serialize_tuple(std::string& out, const std::vector<std::string>& names,
-                     const Tuple& t, std::index_sequence<Is...>) {
-    struct PBNode {
-        std::string val_msg;
-        std::map<std::string, PBNode> children;
-        void insert(const std::string& path, const std::string& vmsg) {
-            size_t dot = path.find('.');
-            if (dot == std::string::npos) {
-                children[path].val_msg = vmsg;
-            } else {
-                children[path.substr(0, dot)].insert(path.substr(dot + 1), vmsg);
+// ============ HOOK_BPF 参数名：编译期规整与排序 ============
+//
+// 宏展开处的参数名是字符串字面量，规整（去空白与 &/*、'->'→'.'）与按字典序
+// 排序均在编译期完成，排序置换以类类型 NTTP 进入 Trigger：同前缀参数在流式
+// 写入时天然相邻，前缀合并不依赖参数声明顺序，线序恒为字典序。
+constexpr size_t HOOK_NAME_MAX = 64;
+
+template<size_t N>
+constexpr std::array<char, HOOK_NAME_MAX> norm_name(const char (&s)[N]) {
+    std::array<char, HOOK_NAME_MAX> out{};
+    size_t end = N - 1;  // 不含 '\0'
+    while (end > 0 && (s[end-1] == ' ' || s[end-1] == '\t')) end--;
+    size_t b = 0;
+    while (b < end && (s[b] == ' ' || s[b] == '\t' || s[b] == '&' || s[b] == '*')) b++;
+    size_t o = 0;
+    for (size_t k = b; k < end && o + 1 < HOOK_NAME_MAX; k++) {
+        if (s[k] == '-' && k + 1 < end && s[k+1] == '>') { out[o++] = '.'; k++; }
+        else out[o++] = s[k];
+    }
+    return out;
+}
+
+template<size_t Cnt>
+struct Names {
+    std::array<std::array<char, HOOK_NAME_MAX>, Cnt> names{};
+    std::array<size_t, Cnt> perm{};
+
+    static constexpr int cmp(const std::array<char, HOOK_NAME_MAX>& a,
+                             const std::array<char, HOOK_NAME_MAX>& b) {
+        for (size_t i = 0; i < HOOK_NAME_MAX; i++) {
+            if (a[i] != b[i]) return a[i] < b[i] ? -1 : 1;
+            if (a[i] == '\0') return 0;
+        }
+        return 0;
+    }
+    template<typename... S>
+    constexpr Names(S&&... s) : names{norm_name(s)...} {
+        for (size_t i = 0; i < Cnt; i++) perm[i] = i;
+        for (size_t i = 1; i < Cnt; i++) {
+            size_t k = perm[i], j = i;
+            for (; j > 0 && cmp(names[k], names[perm[j-1]]) < 0; j--) perm[j] = perm[j-1];
+            perm[j] = k;
+        }
+    }
+    // 某名字是另一名字的祖先路径（如 obj 与 obj.field）：流式写入会产生
+    // 同 key 重复条目，被 guest 首匹配解码遮蔽，禁止出现在 HOOK_BPF 参数表里
+    constexpr bool has_prefix_conflict() const {
+        for (size_t i = 0; i < Cnt; i++) {
+            for (size_t j = 0; j < Cnt; j++) {
+                if (i == j) continue;
+                size_t k = 0;
+                while (k < HOOK_NAME_MAX && names[i][k] && names[i][k] == names[j][k]) k++;
+                if (names[i][k] == '\0' && (names[j][k] == '.' || names[j][k] == '\0')) return true;
             }
         }
-        std::string serialize() const {
-            if (!val_msg.empty()) return val_msg;
-            std::string kvmap;
-            for (const auto& kv : children) {
-                pb_append_map_entry(kvmap, kv.first, kv.second.serialize());
-            }
-            std::string value_msg;
-            pb_append_bytes_field(value_msg, 5, kvmap.data(), kvmap.size());
-            return value_msg;
+        return false;
+    }
+    std::string_view name(size_t i) const { return names[i].data(); }
+};
+
+// Names 整体作为 NTTP，把排序置换映射成发射用的 index_sequence
+template<Names N, typename Seq> struct Permuted;
+template<Names N, size_t... Is>
+struct Permuted<N, std::index_sequence<Is...>> {
+    using type = std::index_sequence<N.perm[Is]...>;
+};
+
+// 顶层：参数元组 → KVMap。参数名带点的（如 obj->field 规整后的 "obj.field"）
+// 按路径段展开为嵌套 KVMap，相邻的同前缀参数合并进同一层（发射顺序由 Trigger
+// 的编译期排序保证同前缀参数相邻）。
+template<typename T>
+size_t pb_size_hint(const T& val) {
+    using Raw = std::remove_cv_t<std::remove_reference_t<T>>;
+    if constexpr (std::is_same_v<Raw, std::string>) {
+        return val.size() + 24;
+    } else if constexpr (is_byte_span<Raw>::value) {
+        return val.size_bytes() + 24;
+    } else if constexpr (std::is_array_v<Raw> && std::is_same_v<std::remove_extent_t<Raw>, char>) {
+        return std::extent_v<Raw> + 24;
+    } else {
+        return 24;
+    }
+}
+
+template<size_t Cnt, typename Tuple, size_t... Is>
+void serialize_tuple(std::string& out, const Names<Cnt>& names,
+                     const Tuple& t, std::index_sequence<Is...>) {
+    out.reserve(out.size() + 96 + (pb_size_hint(std::get<Is>(t)) + ... + 0));
+    PbWriter w(out);
+    struct Nest {
+        size_t entry_off, value_off, kvmap_off;
+    };
+    std::string_view open_segs[16];   // 已打开的祖先路径段
+    Nest open_nests[16]; // 每层的 entry/value/kvmap 占位
+    size_t open_count = 0;
+    auto close_to = [&](size_t keep) {
+        while (open_count > keep) {
+            open_count--;
+            Nest n = open_nests[open_count];
+            w.end_len(n.kvmap_off);
+            w.end_len(n.value_off);
+            w.end_len(n.entry_off);
         }
     };
-    PBNode root;
-    ((root.insert(Is < names.size() ? names[Is] : "arg" + std::to_string(Is), serialize_value(std::get<Is>(t)))), ...);
-
-    for (const auto& kv : root.children) {
-        pb_append_map_entry(out, kv.first, kv.second.serialize());
-    }
+    auto emit = [&](size_t i, const auto& val) {
+        std::string_view pname = names.name(i);
+        std::string_view segs[16];
+        size_t seg_count = 0;
+        for (size_t b = 0, b15 = 0;;) {
+            if (seg_count == 16) {
+                segs[15] = pname.substr(b15);  // 超深路径并入末段
+                break;
+            }
+            if (seg_count == 15) b15 = b;
+            size_t d = pname.find('.', b);
+            if (d == std::string_view::npos) {
+                segs[seg_count++] = pname.substr(b);
+                break;
+            }
+            segs[seg_count++] = pname.substr(b, d - b);
+            b = d + 1;
+        }
+        // 末段是 entry key，祖先只到倒数第二段
+        size_t common = 0;
+        while (common < open_count && common + 1 < seg_count
+               && open_segs[common] == segs[common]) {
+            common++;
+        }
+        close_to(common);
+        for (size_t s = common; s + 1 < seg_count; s++) {
+            Nest n;
+            n.entry_off = w.begin_len(1);
+            w.bytes_field(1, segs[s].data(), segs[s].size());
+            n.value_off = w.begin_len(2);
+            n.kvmap_off = w.begin_len(5);
+            open_nests[open_count] = n;
+            open_segs[open_count] = segs[s];
+            open_count++;
+        }
+        size_t e = w.begin_len(1);
+        w.bytes_field(1, segs[seg_count - 1].data(), segs[seg_count - 1].size());
+        size_t v = w.begin_len(2);
+        serialize_value_body(w, val);
+        w.end_len(v);
+        w.end_len(e);
+    };
+    (emit(Is, std::get<Is>(t)), ...);
+    close_to(0);
 }
 
 // ============ Write-back: kv_set → reflect directly ============
 
 template<typename T>
-int set_param(const std::string& name, const std::string& key, const BpfKV& kv, T& val);
+int set_param(std::string_view name, const std::string& key, const BpfKV& kv, T& val);
 
 // Helper: given a pre-validated index, dispatch set_param on the element
 template<typename Elem>
-int set_indexed_param(const std::string& name, const std::string& key, const BpfKV& kv,
-                       Elem& elem, size_t idx) {
+int set_indexed_param(std::string_view name, const std::string& key, const BpfKV& kv,
+                      Elem& elem, size_t idx) {
     std::string rest_key = key.substr(key.find(']', name.size() + 1) + 1);
-    std::string elem_name = name + "[" + std::to_string(idx) + "]";
+    std::string elem_name = std::string(name) + "[" + std::to_string(idx) + "]";
     if (rest_key.empty()) {
         return set_param(elem_name, key, kv, elem);
     }
@@ -374,7 +578,7 @@ int set_indexed_param(const std::string& name, const std::string& key, const Bpf
 }
 
 // Parse "[idx]" suffix from key starting at name.size(), return parsed index or false
-inline bool parse_bracket_index(const std::string& name, const std::string& key, size_t& idx) {
+inline bool parse_bracket_index(std::string_view name, const std::string& key, size_t& idx) {
     if (key.size() <= name.size() || key.compare(0, name.size(), name) != 0
         || key[name.size()] != '[') {
         return false;
@@ -388,7 +592,7 @@ inline bool parse_bracket_index(const std::string& name, const std::string& key,
 }
 
 template<typename T>
-int set_param(const std::string& name, const std::string& key, const BpfKV& kv, T& val) {
+int set_param(std::string_view name, const std::string& key, const BpfKV& kv, T& val) {
     using Raw = std::remove_cv_t<std::remove_reference_t<T>>;
     if constexpr (std::is_const_v<T>) {
         if (key == name || (key.size() > name.size() && key.compare(0, name.size(), name) == 0
@@ -480,7 +684,7 @@ int set_param(const std::string& name, const std::string& key, const BpfKV& kv, 
         } else {
             return -EINVAL;
         }
-        std::string elem_name = name + "[" + map_key_str + "]";
+        std::string elem_name = std::string(name) + "[" + map_key_str + "]";
         if (rest_key.empty()) {
             if constexpr (std::is_default_constructible_v<Mapped>) {
                 auto [it, inserted] = val.try_emplace(map_key);
@@ -517,17 +721,16 @@ int set_param(const std::string& name, const std::string& key, const BpfKV& kv, 
     }
 }
 
-template<typename Tuple, size_t... Is>
-int set_tuple_field(const std::vector<std::string>& names, const std::string& key,
-                     const BpfKV& kv, Tuple& t, std::index_sequence<Is...>) {
+template<size_t Cnt, typename Tuple, size_t... Is>
+int set_tuple_field(const Names<Cnt>& names, const std::string& key,
+                    const BpfKV& kv, Tuple& t, std::index_sequence<Is...>) {
     int result = -ENOENT;
     auto merge = [&result](int r) {
         if (result == 0) return;
         if (r == 0) result = 0;
         else if (r != -ENOENT && result == -ENOENT) result = r;
     };
-    (merge(set_param(Is < names.size() ? names[Is] : "arg" + std::to_string(Is),
-                     key, kv, std::get<Is>(t))), ...);
+    (merge(set_param(names.name(Is), key, kv, std::get<Is>(t))), ...);
     return result;
 }
 
@@ -625,6 +828,7 @@ class BpfCallback : public IHookCallback {
     std::string elf_path;
     ElfLoadInfo info{};
     std::shared_ptr<vm> v;
+    std::shared_ptr<const vmImage> vmImg;
 public:
     BpfCallback(const std::string& elf_path, std::string& msg);
 

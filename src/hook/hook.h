@@ -30,21 +30,13 @@ public:
         return true;
     }
 
-    template <typename... Args>
+    template <bpf_detail::Names N, typename... Args>
     void Trigger(const void* hooker, Args&&... args);
 
-    bool AddHooker(bool* hooker, std::string func, const char* line, std::vector<std::string> names);
+    bool AddHooker(bool* hooker, std::string func, const char* line);
 
     const std::unordered_map<const void*, std::string>& GetHookers() const {
         return hookers;
-    }
-
-    // Get parameter names for a hook point (set by AddHooker with names)
-    const std::vector<std::string>& GetParamNames(const void* hooker) const {
-        static const std::vector<std::string> empty;
-        auto it = param_names_map.find(hooker);
-        if (it != param_names_map.end()) return it->second;
-        return empty;
     }
 
     void dump(Dumper dp, void* param) {
@@ -60,7 +52,6 @@ public:
 private:
     std::unordered_map<const void*, std::shared_ptr<IHookCallback>> callbacks;
     std::unordered_map<const void*, std::string> hookers;
-    std::unordered_map<const void*, std::vector<std::string>> param_names_map;
 
     void AddHookSymbol(const void* addr, const char* mangled);
 };
@@ -85,34 +76,40 @@ extern HookManager hookManager;
 #define _HOOK_NAME_GET(_1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, _12, NAME, ...) NAME
 #define _HOOK_NAME_LIST(...) _HOOK_NAME_GET(__VA_ARGS__, _HOOK_NAME_12, _HOOK_NAME_11, _HOOK_NAME_10, _HOOK_NAME_9, _HOOK_NAME_8, _HOOK_NAME_7, _HOOK_NAME_6, _HOOK_NAME_5, _HOOK_NAME_4, _HOOK_NAME_3, _HOOK_NAME_2, _HOOK_NAME_1)(__VA_ARGS__)
 
+#define _HOOK_NARG(...) _HOOK_NAME_GET(__VA_ARGS__, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0)
+
 #define HOOK_BPF(...) \
     static bool  _S3(__, __LINE__, __hook_registed) = false; \
+    static constexpr bpf_detail::Names<_HOOK_NARG(__VA_ARGS__)> _S3(__, __LINE__, __hook_names){_HOOK_NAME_LIST(__VA_ARGS__)}; \
     if(!_S3(__, __LINE__, __hook_registed))  \
-        hookManager.AddHooker(&_S3(__, __LINE__, __hook_registed), __PRETTY_FUNCTION__, STRINGIZE(__LINE__), std::vector<std::string>{_HOOK_NAME_LIST(__VA_ARGS__)}); \
-    hookManager.Trigger(&_S3(__, __LINE__, __hook_registed), __VA_ARGS__);
+        hookManager.AddHooker(&_S3(__, __LINE__, __hook_registed), __PRETTY_FUNCTION__, STRINGIZE(__LINE__)); \
+    hookManager.Trigger<_S3(__, __LINE__, __hook_names)>(&_S3(__, __LINE__, __hook_registed), __VA_ARGS__);
 
 
 // Trigger template: BPF-aware dispatch path when HAVE_ELF is enabled.
-template <typename... Args>
+template <bpf_detail::Names N, typename... Args>
 void HookManager::Trigger(const void* hooker, Args&&... args) {
 #ifdef HAVE_ELF
     using namespace bpf_detail;
     static_assert((is_bpf_serializable<std::remove_cv_t<std::remove_reference_t<Args>>>::value && ...),
         "HOOK_BPF: all parameters must be BPF-serializable (integral, string, or have a reflect method)");
+    static_assert(!N.has_prefix_conflict(),
+        "HOOK_BPF: one parameter name is a prefix of another (e.g. obj and obj->field); "
+        "the nested entry would be shadowed by the first-match decoder on the wire");
     auto it = callbacks.find(hooker);
     if(it == callbacks.end()) {
         return;
     }
-    const auto& param_names = GetParamNames(hooker);
     auto t = std::tie(args...);
 
     // Serialize parameters to protobuf (needs type info)
     BpfCallArgs bpf_args;
-    serialize_tuple(bpf_args.pb_data, param_names, t, std::index_sequence_for<Args...>{});
+    serialize_tuple(bpf_args.pb_data, N, t,
+                    typename Permuted<N, std::index_sequence_for<Args...>>::type{});
 
     // Construct write-back callback (needs type info)
-    bpf_args.kv_set = [&param_names, &t](const std::string& key, const BpfKV& kv) -> int {
-        return set_tuple_field(param_names, key, kv, t, std::index_sequence_for<Args...>{});
+    bpf_args.kv_set = [&t](const std::string& key, const BpfKV& kv) -> int {
+        return set_tuple_field(N, key, kv, t, std::index_sequence_for<Args...>{});
     };
 
     it->second->OnCall(&bpf_args);

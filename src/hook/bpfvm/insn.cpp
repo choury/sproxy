@@ -314,7 +314,7 @@ bool vm::deliver_signal() {
         }
         return true;
     }
-    if(!mmu(info.handler)) {
+    if(!mmu(info.handler, sizeof(bpf_insn))) {
         return false;
     }
     // 信号帧的返回地址。无待决重启时用当前 pc（被中断处）；有待决 ERESTARTSYS 时
@@ -341,7 +341,8 @@ bool vm::deliver_signal() {
 
 uint64_t vm::pop_frame() {
     uint64_t sp = r(10);
-    uint64_t* frame_base = (uint64_t*)mmu(sp);
+    // 帧头 [0..6] + 信号帧扩展 [7..12]，与 JIT emit_exit 的 104B 读取等宽
+    uint64_t* frame_base = (uint64_t*)mmu(sp, 13 * sizeof(uint64_t));
     if(!frame_base) return 0;
 
     uint64_t old_sp;
@@ -862,8 +863,8 @@ bool vm::ld(const bpf_insn* cur) {
         return false;
     }
     // lddw 是宽指令（占 2 个 bpf_insn 槽），第二个槽也必须在合法映射内
-    if(!mmu(pc_ + 2 * sizeof(bpf_insn))) {
-        log_mem_violation("lddw second slot", pc_ + 2 * sizeof(bpf_insn));
+    if(!mmu(pc_ + sizeof(bpf_insn), sizeof(bpf_insn))) {
+        log_mem_violation("lddw second slot", pc_ + sizeof(bpf_insn));
         return false;
     }
     r(cur->dst_reg) = (uint64_t)(cur+1)->imm << 32 | (uint32_t)cur->imm;
@@ -871,12 +872,22 @@ bool vm::ld(const bpf_insn* cur) {
     return true;
 }
 
+// 访存指令按 size 位段（code & 0x18）的实读写字节数，mmu 检查须与之一致
+static size_t access_size(uint8_t code) {
+    switch(code & 0x18) {
+    case BPF_DW: return 8;
+    case BPF_W: return 4;
+    case BPF_H: return 2;
+    default:    return 1;
+    }
+}
+
 bool vm::ldx(const bpf_insn* cur) {
     if(cur->dst_reg >= 10) {
         return false;
     }
     uint64_t target_addr = r(cur->src_reg) + cur->off;
-    void* addr = mmu(target_addr);
+    void* addr = mmu(target_addr, access_size(cur->code));
     if (addr == nullptr) {
         log_mem_violation("read", target_addr);
         return false;
@@ -918,7 +929,7 @@ bool vm::ldx(const bpf_insn* cur) {
 
 bool vm::st(const bpf_insn* cur) {
     uint64_t target_addr = r(cur->dst_reg) + cur->off;
-    void* addr = mmu_w(target_addr);
+    void* addr = mmu_w(target_addr, access_size(cur->code));
     if (addr == nullptr) {
         log_mem_violation("write", target_addr);
         return false;
@@ -967,8 +978,13 @@ static bool do_atomic(T* p, int32_t op, uint64_t& src_reg, uint64_t& r0) {
 
 bool vm::stx(const bpf_insn* cur) {
     if((cur->code & 0xe0) == BPF_ATOMIC) {
+        // 原子操作只有 DW/W 两种宽度，先判宽度再 mmu_w，避免为非法编码触发 CoW
+        size_t size = (cur->code & 0x18) == BPF_DW ? 8 : (cur->code & 0x18) == BPF_W ? 4 : 0;
+        if(size == 0) {
+            return false;
+        }
         uint64_t target_addr = r(cur->dst_reg) + cur->off;
-        void* addr = mmu_w(target_addr);
+        void* addr = mmu_w(target_addr, size);
         if(addr == nullptr) {
             log_mem_violation("atomic", target_addr);
             return false;
@@ -980,7 +996,7 @@ bool vm::stx(const bpf_insn* cur) {
         }
     }
     uint64_t target_addr = r(cur->dst_reg) + cur->off;
-    void* addr = mmu_w(target_addr);
+    void* addr = mmu_w(target_addr, access_size(cur->code));
     if (addr == nullptr) {
         log_mem_violation("write", target_addr);
         return false;
@@ -1253,7 +1269,7 @@ bool vm::step() {
     if(f && !safepoint()) {
         return false;
     }
-    const bpf_insn* cur = (const bpf_insn*)mmu(pc_);
+    const bpf_insn* cur = (const bpf_insn*)mmu(pc_, sizeof(bpf_insn));
     if(!cur) {
         log_mem_violation("exec", pc_);
         return false;
@@ -1329,6 +1345,7 @@ void* vm::mmu(uint64_t addr, size_t size) {
 // 二分查找包含 [addr, addr+size) 的段。调用方须持 maps_mutex。maps 须按 paddr 升序。
 std::vector<memmap>::iterator vm::find_map_locked(uint64_t addr, size_t size) {
     uint64_t end = addr + size;
+    if(end < addr) return maps->end(); // 回绕：mmu()/mmu_w() 已拦，JIT helper 直调 slow path 须经此处拦截
     // upper_bound 找第一个 paddr > addr 的段，--it 得到 paddr <= addr 的最大段。
     auto it = std::upper_bound(maps->begin(), maps->end(), addr,
         [](uint64_t a, const memmap& m) { return a < m.paddr; });
@@ -1457,7 +1474,7 @@ uint64_t vm::run(const vmOptions* options, const ElfLoadInfo& info) {
     }
     flags.fetch_and(~(VM_EXITED | VM_KILLED), std::memory_order_release);
     pc_ = entry;
-    if(!mmu(pc_)) {
+    if(!mmu(pc_, sizeof(bpf_insn))) {
         std::cerr << "[run] pc is null after mmu(entry)\n";
         return 0;
     }
@@ -1489,7 +1506,12 @@ bool vm::setup_stack(const std::vector<std::string>& argv,
 
     // 哨兵：在初始 r10 处写一个合法 frame[0]，模拟"调用者帧"，给_start的局部变量用。
     // 用普通帧 size；total_len = stack_limit（无 alloca）。
-    *(uint64_t*)mmu_w(reg[10]) = frame_flags_make(false, options.stack_limit);
+    uint64_t* sentinel = (uint64_t*)mmu_w(reg[10], sizeof(uint64_t));
+    if(!sentinel) {
+        std::cerr << "Stack top not writable" << std::endl;
+        return false;
+    }
+    *sentinel = frame_flags_make(false, options.stack_limit);
 
     if(options.raw_stack) {
         return true;
@@ -1548,6 +1570,12 @@ bool vm::setup_stack(const std::vector<std::string>& argv,
     size_t total_bytes = header_bytes + strings_bytes + platform_bytes + kRandomBytes;
     if(total_bytes > STACK_SIZE) {
         std::cerr << "Stack arguments exceed stack size" << std::endl;
+        return false;
+    }
+    // 头部/字符串经 stack_base 直写宿主指针，长度按 total_bytes；STACK_BASE 处已存在的
+    // 段（恶意 ET_EXEC 可覆盖栈区）必须容纳整个写入范围
+    if(!mmu(STACK_BASE, total_bytes)) {
+        std::cerr << "Stack segment too small for arguments" << std::endl;
         return false;
     }
 

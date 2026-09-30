@@ -36,25 +36,28 @@ if(HAVE_ELF)
             set(HOOK_BPF_MCPU v4)
         endif()
 
-        # Build BPF test ELF
-        add_custom_command(
-            OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/hook_bpf.o
-            COMMAND ${CLANG_EXECUTABLE} -target bpf -mcpu=${HOOK_BPF_MCPU} -O1 -std=c11 -nostdinc -fno-builtin
-                    -c -o ${CMAKE_CURRENT_BINARY_DIR}/hook_bpf.o
-                    ${CMAKE_CURRENT_SOURCE_DIR}/hook_bpf.c
-            DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/hook_bpf.c
-                    ${CMAKE_CURRENT_SOURCE_DIR}/include/bpf.h
-                    ${CMAKE_CURRENT_SOURCE_DIR}/include/bpf_syscall.h
-            COMMENT "Compiling BPF test program with -mcpu=${HOOK_BPF_MCPU}"
-        )
-        add_custom_command(
-            OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/hook_bpf.elf
-            COMMAND ${BPF_LD_EXECUTABLE} -e hook_callback -o ${CMAKE_CURRENT_BINARY_DIR}/hook_bpf.elf
-                    ${CMAKE_CURRENT_BINARY_DIR}/hook_bpf.o
-            DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/hook_bpf.o
-            COMMENT "Linking BPF test ELF"
-        )
+        # 从 hook_bpf.c 派生 BPF ELF 变体，建 <name>_elf 目标；额外参数传给 clang
+        function(build_bpf_elf name)
+            set(obj ${CMAKE_CURRENT_BINARY_DIR}/${name}.o)
+            set(elf ${CMAKE_CURRENT_BINARY_DIR}/${name}.elf)
+            add_custom_command(
+                OUTPUT ${elf}
+                COMMAND ${CLANG_EXECUTABLE} -target bpf -mcpu=${HOOK_BPF_MCPU} -O1 -std=c11 -nostdinc -fno-builtin
+                        ${ARGN}
+                        -c -o ${obj}
+                        ${CMAKE_CURRENT_SOURCE_DIR}/hook_bpf.c
+                COMMAND ${BPF_LD_EXECUTABLE} -e hook_callback -o ${elf}
+                        ${obj}
+                DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/hook_bpf.c
+                        ${CMAKE_CURRENT_SOURCE_DIR}/include/bpf.h
+                        ${CMAKE_CURRENT_SOURCE_DIR}/include/bpf_syscall.h
+                COMMENT "Compiling BPF ${name} with -mcpu=${HOOK_BPF_MCPU}"
+            )
+            add_custom_target(${name}_elf DEPENDS ${elf})
+        endfunction()
 
-        add_custom_target(hook_bpf_elf ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/hook_bpf.elf)
+        build_bpf_elf(hook_bpf)
+        build_bpf_elf(bench_readback -DBENCH_READBACK)
+        add_dependencies(hook_test hook_bpf_elf bench_readback_elf)
     endif()
 endif()

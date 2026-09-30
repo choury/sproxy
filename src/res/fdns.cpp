@@ -231,7 +231,7 @@ void FDns::DnsCb(const Host_Result& response) {
     const int error = response.error;
     const std::list<sockaddr_storage>& addrs = response.addrs;
     const int ttl = response.ttl;
-    HOOK_BPF(fdns, fdns->statusmap, id, qid, error, addrs, ttl);
+    HOOK_BPF(fdns, id, qid, error, addrs, ttl);
     if(fdns->statusmap.count(id) == 0){
         fdns->failed_count++;
         return;
@@ -300,7 +300,7 @@ void FDns::RawCb(std::shared_ptr<void> param, const char* data, size_t size) {
     uint64_t id = index.hi;
     uint16_t qid = index.lo & 0xffff;
 #endif
-    HOOK_BPF(fdns, fdns->statusmap, id, qid, std::span<const std::byte>((const std::byte*)data, size));
+    HOOK_BPF(fdns, id, qid, std::span<const std::byte>((const std::byte*)data, size));
     if(fdns->statusmap.count(id) == 0){
         return;
     }
