@@ -693,6 +693,8 @@ MDC
     unshare -n sleep 600 & PC=$!
     unshare -n sleep 600 & PE=$!
     unshare -n sleep 600 & PD=$!
+    #退出时回收 netns 持有进程，避免 CI 并行下累积
+    trap "kill $PA $PB $PC $PE $PD 2>/dev/null" EXIT
     sleep 0.5
     pair() { ip link add $1 type veth peer name $2; ip link set $1 netns $3; ip link set $2 netns $4; }
     pair l1a l1b $PA $PB   # A-B   10.1.1.1 / 10.1.1.2
@@ -863,7 +865,8 @@ M4C
     echo "T3 rc=$R5 out=$(cat $D/out3 2>/dev/null) via=$NVIA"
 
     kill $EPID 2>/dev/null
-    pkill -x sproxy
+    #内层不做 pkill：bash -c 的命令行包含脚本文本，pkill -f 会匹配到自身；
+    #实例清理由外层函数的 pkill 负责
     [ $R1 -eq 0 ] && [ $R2 -eq 0 ] && [ $R4 -eq 0 ] && [ $R5 -eq 0 ] && [ "$NVIA" = "2" ]
     '
     local rc=$?

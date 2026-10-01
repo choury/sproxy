@@ -1013,13 +1013,19 @@ void postConfig(){
         addsecret(p->arg);
     }
     if(opt.mesh_name) {
-        //凭据 identifier 容量为 AUTHLIMIT，节点名超长会在 encodeCredit 处被截断
-        if(strlen(opt.mesh_name) >= AUTHLIMIT || strchr(opt.mesh_name, '/')
-           || strchr(opt.mesh_name, '+')) {
-            LOGE("invalid mesh node name: %s\n", opt.mesh_name);
+        //凭据用户名字段为 "mesh+"+节点名，受 AUTHLIMIT 限制；
+        //字符集须与 gossip 条目的 safe_token 一致，否则自宣条目被全网拒收
+        if(strlen(opt.mesh_name) >= AUTHLIMIT - 5) {
+            LOGE("mesh node name too long (max %d)\n", AUTHLIMIT - 6);
             exit(1);
         }
-        if(!mesh_secret) {
+        for(const char* p = opt.mesh_name; *p; p++) {
+            if(!isalnum((unsigned char)*p) && *p != '.' && *p != '_' && *p != '-') {
+                LOGE("invalid mesh node name: %s\n", opt.mesh_name);
+                exit(1);
+            }
+        }
+        if(!mesh_secret || !mesh_secret[0]) {
             LOGE("mesh require mesh-secret\n");
             exit(1);
         }
