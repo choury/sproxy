@@ -269,8 +269,9 @@ std::string MeshManager::export_entries_json() {
     for(auto& [name, node] : nodes) {
         if(node.entry.seen != 0) {
             //已有该节点自宣的条目（含静态互联的），原样转发其签名条目；
-            //不新鲜的不再扩散（peer 可能已死）
-            if(MeshGossip::fresh_entry(node.entry, now)) {
+            //不新鲜的不再扩散（peer 可能已死）；窗口与 learn 侧一致
+            if(MeshGossip::fresh_entry(node.entry, now,
+                                       std::max<int64_t>(300, (int64_t)opt.mesh_gossip_interval))) {
                 payload.entries.push_back(node.entry);
             }
             continue;
@@ -508,6 +509,9 @@ void MeshManager::gossip_cycle() {
     for(auto& [name, node] : nodes) {
         if(node.entry.addrs.empty() && !node.is_static) {
             continue; //纯入口节点（无地址）不可拉取
+        }
+        if(!alive(node)) {
+            continue; //失联节点不占轮转名额，避免稀释活跃 peer 的 touch 上界
         }
         names.push_back(name);
     }

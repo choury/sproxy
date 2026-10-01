@@ -4,6 +4,7 @@
 #include "prot/memio.h"
 #include "misc/config.h"
 #include "res/responser.h"
+#include "mesh/mesh_manager.h"
 
 #ifdef HAVE_QUIC
 #include "prot/quic/quicio.h"
@@ -64,9 +65,13 @@ bool should_sniff_sni(std::shared_ptr<const HttpReqHeader> req, Requester* src) 
         return false;
     }
     //mesh 中继/出口流量透明转发：嗅探会改写 Dest 破坏转发，也不做 MITM。
-    //按头存在性而非 mesh 凭据判定：普通客户端伪造此头只会关闭对自己的嗅探（自我降级），无安全后果
+    //凭据门控：无门控时已认证用户伪造此头即可绕过基于嗅探的域名级 block/MITM 策略
     if(req->has("X-Mesh-Exit")) {
-        return false;
+        struct Credit cr{};
+        if(MeshManager::Started()
+           && MeshManager::CheckMeshCredit(req->get("Proxy-Authorization"), true, &cr)) {
+            return false;
+        }
     }
     if(opt.mimic || !req->ismethod("CONNECT")) {
         return false;
