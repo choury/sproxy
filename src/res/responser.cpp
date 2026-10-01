@@ -13,7 +13,7 @@
 #include "ping.h"
 #include "uhost.h"
 #include "rproxy2.h"
-#include "mesh/mesh_manager.h"
+#include "mesh/manager.h"
 
 #include <string.h>
 #include <assert.h>

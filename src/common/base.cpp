@@ -1,7 +1,7 @@
 #include "base.h"
 #include "misc/config.h"
 #include "misc/strategy.h"
-#include "mesh/mesh_manager.h"
+#include "mesh/manager.h"
 
 #ifdef HAVE_JEMALLOC
 #include <jemalloc/jemalloc.h>

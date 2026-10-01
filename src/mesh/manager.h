@@ -3,7 +3,7 @@
 
 #include "common/common.h"
 #include "misc/job.h"
-#include "mesh_gossip.h"
+#include "gossip.h"
 
 #include <functional>
 #include <map>

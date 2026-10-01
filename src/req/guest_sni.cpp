@@ -4,7 +4,7 @@
 #include "prot/memio.h"
 #include "misc/config.h"
 #include "res/responser.h"
-#include "mesh/mesh_manager.h"
+#include "mesh/manager.h"
 
 #ifdef HAVE_QUIC
 #include "prot/quic/quicio.h"

@@ -1,4 +1,4 @@
-#include "mesh_gossip.h"
+#include "gossip.h"
 
 #include <assert.h>
 #include <iostream>

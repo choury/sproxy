@@ -1582,8 +1582,8 @@ run_test $buildpath/prot/http3/qpack_test
 run_test $buildpath/prot/quic/quic_frame_test
 run_test $buildpath/misc/trie_test
 run_test $buildpath/misc/buffer_test
-run_test $buildpath/mesh/mesh_gossip_test
-run_test $buildpath/mesh/mesh_route_test
+run_test $buildpath/mesh/gossip_test
+run_test $buildpath/mesh/route_test
 if [ $ker == 'Linux' ];then
     run_test $buildpath/hook/hook_test $buildpath/hook/hook_bpf.elf
 fi

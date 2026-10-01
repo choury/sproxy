@@ -9,7 +9,7 @@
 #include "misc/strategy.h"
 #include "misc/util.h"
 #include "prot/tls.h"
-#include "mesh/mesh_manager.h"
+#include "mesh/manager.h"
 #include "bpf/bpf.h"
 
 #include <unistd.h>

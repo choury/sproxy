@@ -6,8 +6,8 @@
 #include "prot/memio.h"
 #include "cgi.h"
 #include "doh.h"
-#include "mesh/mesh_manager.h"
-#include "mesh/mesh_local.h"
+#include "mesh/manager.h"
+#include "mesh/local.h"
 
 #include <fstream>
 #include <sstream>

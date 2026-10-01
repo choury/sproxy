@@ -11,7 +11,7 @@
 #endif
 #include "res/cgi.h"
 #include "rproxy_listener.h"
-#include "mesh/mesh_manager.h"
+#include "mesh/manager.h"
 
 #include <inttypes.h>
 
