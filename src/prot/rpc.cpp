@@ -181,6 +181,9 @@ json_object * SproxyServer::call(std::string method, json_object* content) {
     }else if(method == "DumpDns") {
         auto server = DumpDns();
         json_object_object_add(jres, "dns_status", json_object_new_string(server.c_str()));
+    }else if(method == "DumpMesh") {
+        auto server = DumpMesh();
+        json_object_object_add(jres, "mesh_status", json_object_new_string(server.c_str()));
     }else if(method == "DumpHooker") {
         auto server = DumpHooker();
         json_object_object_add(jres, "hookers", json_object_new_string(server.c_str()));
@@ -485,6 +488,22 @@ std::promise<std::string> SproxyClient::DumpDns() {
             return;
         }
         json_object* jstatus = json_object_object_get(content, "dns_status");
+        promise.set_value(json_object_get_string(jstatus));
+    });
+    json_object_put(body);
+    return promise;
+}
+
+std::promise<std::string> SproxyClient::DumpMesh() {
+    json_object* body = json_object_new_object();
+    std::promise<std::string> promise;
+    call(__func__, body,[&promise](json_object* content){
+        json_object* jerror = json_object_object_get(content, "error");
+        if(jerror){
+            promise.set_exception(std::make_exception_ptr(std::string(json_object_get_string(jerror))));
+            return;
+        }
+        json_object* jstatus = json_object_object_get(content, "mesh_status");
         promise.set_value(json_object_get_string(jstatus));
     });
     json_object_put(body);

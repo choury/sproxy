@@ -1,6 +1,7 @@
 #include "base.h"
 #include "misc/config.h"
 #include "misc/strategy.h"
+#include "mesh/manager.h"
 
 #ifdef HAVE_JEMALLOC
 #include <jemalloc/jemalloc.h>
@@ -70,6 +71,9 @@ void dump_stat(Dumper dp, void* param){
     for(auto i: servers){
         i->dump_stat(dp, param);
         dp(param, "--------------------------------------\n");
+    }
+    if(MeshManager::Started()) {
+        MeshManager::Instance()->dump_stat(dp, param);
     }
     dump_job(dp, param);
     dp(param, "======================================\n");

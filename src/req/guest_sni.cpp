@@ -4,6 +4,7 @@
 #include "prot/memio.h"
 #include "misc/config.h"
 #include "res/responser.h"
+#include "mesh/manager.h"
 
 #ifdef HAVE_QUIC
 #include "prot/quic/quicio.h"
@@ -62,6 +63,15 @@ static bool is_ip_host(const std::string& host) {
 bool should_sniff_sni(std::shared_ptr<const HttpReqHeader> req, Requester* src) {
     if(req->Dest.port != HTTPSPORT) {
         return false;
+    }
+    //mesh 中继/出口流量透明转发：嗅探会改写 Dest 破坏转发，也不做 MITM。
+    //凭据门控：无门控时已认证用户伪造此头即可绕过基于嗅探的域名级 block/MITM 策略
+    if(req->has("X-Mesh-Exit")) {
+        struct Credit cr{};
+        if(MeshManager::Started()
+           && MeshManager::CheckMeshCredit(req->get("Proxy-Authorization"), true, &cr)) {
+            return false;
+        }
     }
     if(opt.mimic || !req->ismethod("CONNECT")) {
         return false;

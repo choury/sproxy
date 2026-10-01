@@ -11,6 +11,7 @@
 #endif
 #include "res/cgi.h"
 #include "rproxy_listener.h"
+#include "mesh/manager.h"
 
 #include <inttypes.h>
 
@@ -179,6 +180,16 @@ std::string Cli::DumpDns() {
     LOG("%s [%s]\n", dumpDest(rwer->getSrc()).c_str(), __func__);
     std::string ss;
     ::dump_dns(sstream_dumper, &ss);
+    return ss;
+}
+
+std::string Cli::DumpMesh() {
+    LOG("%s [%s]\n", dumpDest(rwer->getSrc()).c_str(), __func__);
+    if(!MeshManager::Started()) {
+        return "mesh not enabled\n";
+    }
+    std::string ss;
+    MeshManager::Instance()->dump_stat(sstream_dumper, &ss);
     return ss;
 }
 

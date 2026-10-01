@@ -453,6 +453,10 @@ static std::map<string, string> secrets;
 static std::set<string> authips{"127.0.0.1", "[::1]", "localhost"};
 static size_t authips_init_count = authips.size();
 
+bool secrexists(const char* user) {
+    return secrets.count(user) > 0;
+}
+
 void addsecret(const char* secret) {
     Credit cr{};
     if (parse_user_pass(secret, strlen(secret), &cr) == 0) {

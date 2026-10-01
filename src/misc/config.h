@@ -82,6 +82,14 @@ struct options{
     const char *pcap_file;
     const char *alt_svc;
     const char *rproxy_name;
+    const char *mesh_name;
+    const char *mesh_secret;
+    struct arg_list* mesh_peers;
+    uint64_t mesh_maxhops;
+    uint64_t mesh_probe_interval; //秒
+    uint64_t mesh_gossip_interval; //秒
+    int mesh_exit;  //enum: 0=on 1=off
+    int mesh_relay; //enum: 0=on 1=off
     const char *bpf_cgroup;
     const char *acme_state;
     const char *pidfile;
