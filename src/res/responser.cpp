@@ -101,6 +101,10 @@ static std::string getBackend(std::shared_ptr<HttpReqHeader> req) {
     return backend;
 }
 
+void appendVia(std::shared_ptr<HttpReqHeader> req) {
+    req->append("Via", identify);
+}
+
 std::string encodeCredit(const struct Credit* credit) {
     char auth_plain[AUTHLIMIT * 3 + 3];
     char auth_encode[AUTHLIMIT * 5];
@@ -226,7 +230,7 @@ void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw)
                             "This site is blocked, please contact administrator for more information.\n");
     }
     req->del("Proxy-Authorization");
-    req->append("Via", identify);
+    appendVia(req);
     Destination dest;
     switch(stra.s){
     case Strategy::proxy:

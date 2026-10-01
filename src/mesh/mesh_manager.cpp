@@ -218,6 +218,7 @@ bool MeshManager::forward(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<Me
     req->chain_proxy = true;
     req->set("Proxy-Authorization", encodeCredit(&dest.credit));
     req->set("X-Mesh-Hops", (uint64_t)(hops - 1));
+    appendVia(req);
     LOGD(DMESH, "mesh relay: %s exit=%s via=%s hops=%d\n",
          req->geturl().c_str(), cr.identifier, nexthop.c_str(), hops - 1);
     Host::distribute(req, dest, rw);

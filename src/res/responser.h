@@ -35,6 +35,8 @@ bool shouldNegotiate(std::shared_ptr<const HttpReqHeader> req, Requester* src);
 void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw);
 void distribute_rproxy(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw, std::string rproxy_name);
 void response(std::shared_ptr<MemRWer> rw, std::shared_ptr<HttpResHeader> res, std::string_view body = "");
+//给请求追加本代理的 Via 标记（入口/中继/出口每跳都要加，环回检测与路径诊断依赖它）
+void appendVia(std::shared_ptr<HttpReqHeader> req);
 void rewrite_rproxy_req(std::shared_ptr<HttpReqHeader> req);
 void rewrite_rproxy_res(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<HttpResHeader> res);
 std::string encodeCredit(const struct Credit* credit);
