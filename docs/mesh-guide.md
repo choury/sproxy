@@ -75,7 +75,6 @@ netflix.com proxy  mesh://auto
 - 密钥未设置、超长（>127 字符）；
 - 节点名含 `/` 或 `+`，或超长（>127 字符，凭据容量限制）；
 - 与 `--insecure` 并存（TLS 域名校验是安全根基，不可关闭）；
-- 与 `--restrict-local` 并存（mesh 探测与 local 出口依赖 local 策略）；
 - `--secret` 里已有名为 `mesh` 的普通用户（与 mesh 凭据冲突）。
 
 ## 常用操作

@@ -291,7 +291,7 @@ CMake 改动：`src/CMakeLists.txt` 增加 `add_subdirectory(mesh)`，目标名�
 | `src/res/responser.cpp` | ① `distribute()` 的 `Strategy::proxy` 分支：`parseDest` 前拦截 `mesh://` ext，调 `MeshManager` 入口处理；② `distribute()` 在 `check_header()` 之后、`getBackend()` 之前加 mesh 前置步骤：识别 `X-Mesh-Exit` + mesh 凭据，走中继/出口处理（位置是硬约束，理由见 4.3）。 |
 | `src/res/file.cpp` | `File::getfile` 增加 `mesh/` 路径分支，分流到 `MeshLocal`（端点实现与 mesh 凭据校验在 `mesh_local.cpp`，见 5.1）。 |
 | `src/req/guest_sni.cpp` | `should_sniff_sni` 单点增加跳过条件：携带 `X-Mesh-Exit` 头**且持 mesh 凭据**的 CONNECT 不嗅探不改写（凭据门控防伪造头绕过嗅探型 block/MITM 策略；guest/guest2/guest3/guest_vpn 全部入口共用此函数）。 |
-| `src/misc/config.c` | `option_detail[]` 增加 mesh 系列条目（`mesh-relay`/`mesh-exit` 用 `option_enum` 承载 on/off，现有 bool 选项机制忽略参数值）；`postConfig()` 校验：mesh-secret 必设、长度上限、拒绝与 `--insecure` 并存、拒绝与 `--restrict-local` 并存（mesh 的探测与 local 出口依赖 local 策略）、检测与普通用户名 `mesh` 冲突；peer URL 解析与"命中 proxy 策略即跳过"的递归防护在 `MeshManager::Start()` 做（解析失败直接退出，策略命中告警跳过）。 |
+| `src/misc/config.c` | `option_detail[]` 增加 mesh 系列条目（`mesh-relay`/`mesh-exit` 用 `option_enum` 承载 on/off，现有 bool 选项机制忽略参数值）；`postConfig()` 校验：mesh-secret 必设、长度上限、拒绝与 `--insecure` 并存、检测与普通用户名 `mesh` 冲突；peer URL 解析与"命中 proxy 策略即跳过"的递归防护在 `MeshManager::Start()` 做（解析失败直接退出，策略命中告警跳过）。 |
 | `src/misc/config.h` | `struct options` 增加对应字段。 |
 | `src/misc/strategy.cpp` | `addsecret` 装载 mesh 凭据（mesh-secret 单独选项、注入 secrets 校验链）。 |
 | `src/prot/rpc.h`、`src/req/cli.cpp`、`src/client/client.cpp` | `SproxyServer`/`SproxyClient` 增加 `DumpMesh()`（节点表/度量/路由，文本输出，同 `DumpStatus` 风格）；scli 为 `dump` 增加 `mesh` 参数。`MeshFlush()`（清空节点表重新发现）未实现，见 Phase 4。 |

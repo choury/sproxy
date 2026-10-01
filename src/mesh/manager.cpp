@@ -371,21 +371,23 @@ std::pair<size_t, size_t> MeshManager::learn_entries(std::vector<MeshEntry> es) 
 void MeshManager::request(const Destination& dest,
                           const char* method, const char* path, const std::string& body,
                           std::function<void(int, std::string)> done) {
+    //Host 带上拨号端口：restrict-local 下 local 策略要求请求端口等于监听端口，
+    //无端口 Host 会按默认端口（80）判定不匹配而降级 direct，探测/控制面全挂
     char buff[HEADLENLIMIT];
     int headlen;
     if(body.empty()) {
         headlen = snprintf(buff, sizeof(buff),
                            "%s %s HTTP/1.1" CRLF
-                           "Host: localhost" CRLF
+                           "Host: localhost:%u" CRLF
                            "Proxy-Authorization: %s" CRLF CRLF,
-                           method, path, encodeCredit(&dest.credit).c_str());
+                           method, path, dest.port, encodeCredit(&dest.credit).c_str());
     } else {
         headlen = snprintf(buff, sizeof(buff),
                            "%s %s HTTP/1.1" CRLF
-                           "Host: localhost" CRLF
+                           "Host: localhost:%u" CRLF
                            "Proxy-Authorization: %s" CRLF
                            "Content-Length: %zu" CRLF CRLF,
-                           method, path, encodeCredit(&dest.credit).c_str(), body.size());
+                           method, path, dest.port, encodeCredit(&dest.credit).c_str(), body.size());
     }
     auto req = UnpackHttpReq(buff, headlen);
     struct State {

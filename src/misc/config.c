@@ -1031,10 +1031,6 @@ void postConfig(){
             LOGE("mesh can not work with insecure mode\n");
             exit(1);
         }
-        if(opt.restrict_local) {
-            LOGE("mesh can not work with restrict-local (probe and local exit rely on local strategy)\n");
-            exit(1);
-        }
         if(secrexists("mesh")) {
             LOGE("mesh-secret conflicts with user 'mesh' in secret\n");
             exit(1);
