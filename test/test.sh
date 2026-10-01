@@ -609,11 +609,16 @@ MRC
     [ $? -ne 0 ] && echo "mesh relay test 2 failed: no relay log" && exit 1
 
     #CONNECT 隧道过中继（https 经 B 中继、C 出口直连本测试的 https 服务）。
-    #注：目标端口非 443，SNI 嗅探分支本身不进入（guest_sni 只对 :443 生效），
+    #注1：curl 对 CONNECT 请求不发送 -H 头，必须用 --proxy-header，
+    #否则请求以普通代理 CONNECT 直连目标、断言形同虚设（曾长期假通过）
+    #注2：目标端口非 443，SNI 嗅探分支本身不进入（guest_sni 只对 :443 生效），
     #此处验证的是 CONNECT 语义在中继路径上的透传
-    curl -sf -m 10 -k -x 127.0.0.1:3371 -H "Proxy-Authorization: $MESHCRED" \
-        -H "X-Mesh-Exit: ip6-localhost" -H "X-Mesh-Hops: 4" \
-        https://$HOSTNAME:3334/sites.list -o mesh_out && [ -s mesh_out ]
+    curl -s -m 10 -k -x 127.0.0.1:3371 --proxy-header "Proxy-Authorization: $MESHCRED" \
+        --proxy-header "X-Mesh-Exit: ip6-localhost" --proxy-header "X-Mesh-Hops: 4" \
+        https://$HOSTNAME:3334/sites.list -o mesh_out
+    #非空、非 sproxy 错误页（错误页均带 [[...]] 标记）、且中继确实发生
+    [ -s mesh_out ] && ! grep -q "\[\[" mesh_out \
+        && sleep 1 && grep -aq "mesh relay: tcp://$HOSTNAME:3334" mesh_rb.log
     [ $? -ne 0 ] && echo "mesh relay test 3 failed: CONNECT tunnel via relay" && exit 1
 
     #hops 耗尽：508 拒绝（防环兜底）
