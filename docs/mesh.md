@@ -145,14 +145,14 @@ UDP（CONNECT-UDP / h3 Datagram）与 WebSocket 在代理级联里语义不变�
 三重机制，**只有第一道是无条件成立的**，另两道是收敛性优化与兜底：
 
 1. **hop limit（硬保证）**：`X-Mesh-Hops` 每过一跳减一，减到 0 拒绝（508）。无论各节点视图如何分叉，任何环路都会在 ≤ `mesh-maxhops` 跳内被此规则截断。**唯一的例外是出口重入**：出口剥掉 `X-Mesh-*` 后若本机策略再把请求送进 mesh，hops 会重置、hop limit 失效——两台出口节点策略互指可形成无界循环（受 200 并发流上限自然限流但持续消耗）。此例外由出口的自环拒绝规则堵死（见 4.2 出口处理第 2 步）：出口发现目标再入 mesh 即 508。Via 检测帮不上忙——它只匹配本进程 pid，跨节点互指不会命中。
-2. **距离严格递减（一致视图下的无环与质量保证）**：中继只把请求转发给"按本地链路状态库算出的、到出口最短路距离比自己小的节点"。全网视图一致时距离沿路径严格递减、不可能成环，且各跳独立决策的结果衔接成同一条最短路；视图分叉的窗口期（gossip 未收敛）里此规则不保证无环，由 hop limit 兜底，代价是个别请求多绕一跳或被拒。
+2. **距离严格递减（一致视图下的无环与质量保证）**：中继的下一跳由最短路计算得出，"下一跳到出口的距离严格小于本节点到出口的距离"是**最短路的数学性质而非显式校验**（实现中没有独立的距离检查代码）。全网视图一致时距离沿路径严格递减、不可能成环，且各跳独立决策的结果衔接成同一条最短路；视图分叉的窗口期（gossip 未收敛）里此性质不保证无环，由 hop limit 兜底，代价是个别请求多绕一跳或被拒。
 3. **Via 检测（同节点回环兜底）**：现有 `check_header()` 的 `Via: HTTP/1.1 sproxy:<pid>` 检测，兜住"路由把下一跳选回自己"的本地配置错误。
 
 **前置步骤插入点（实现约束）**：mesh 前置步骤必须位于 `distribute()` 中 `check_header()` 之后、`getBackend()` 之前。放在 `check_header` 之前会绕过 Via 检测；放在 `getBackend` 之后，mesh 凭据 identifier（出口节点名）会被 `getBackend` 当作 rproxy backend 名查表、落入 `distribute_rproxy` 报 404——mesh 与 rproxy 共用 identifier 命名空间，必须由 mesh 先拦截。
 
 ### 4.4 故障处理
 
-- **peer 连接断开**：现有 `Proxy2::ping_check`（10s 周期 h2 PING，2s 无 ACK 判死）/ QUIC keepalive 负责检测；`MeshManager` 经 Proxy2 销毁回调感知后删边重算路由。**存量流量随连接一起断**（与任何代理级联一致，不做流级迁移）；新请求立即走新路由。
+- **peer 连接断开**：现有 `Proxy2::ping_check`（10s 周期 h2 PING，2s 无 ACK 判死）/ QUIC keepalive 负责检测；mesh 侧不做销毁回调，故障感知靠两条周期信号收敛——本节点探测新近度（5 个探测周期内无成功即失去自身出边）与链路状态上报的 ts 过期（死节点停止续报后其边全网过期）。**存量流量随连接一起断**（与任何代理级联一致，不做流级迁移）；新请求立即走新路由。
 - **出口节点失联**：显式出口 → 502 报错；auto 出口 → 候选集合里去掉它，滞回窗口后切换。
 - **中继失联**：入口的下一批请求重算路由绕开它；已在失联中继上的流量中断（同上）。
 - **节点恢复**：peer 重连成功即重新入表、重新参与路由。
@@ -166,10 +166,12 @@ UDP（CONNECT-UDP / h3 Datagram）与 WebSocket 在代理级联里语义不变�
 
 | 请求 | 方向 | 作用 |
 | :--- | :--- | :--- |
-| `GET http://localhost/mesh/hello` | 外连节点 → 对端 | 握手注册：携带本节点条目。对端校验签名后入表。 |
-| `GET http://localhost/mesh/nodes` | 任意 peer | pull 对端当前完整节点表（响应 200 + JSON 条目数组）。 |
-| `POST http://localhost/mesh/announce` | 任意 peer → 对端 | push 本节点最新条目（地址/能力变更时主动推）。 |
-| `GET http://localhost/mesh/metrics` | 任意 peer | 对端自身的链路状态（诊断用途；正式的链路状态交换内嵌在 `/mesh/nodes` 载荷里随 gossip 泛洪）。 |
+| `GET /mesh/hello` | 外连节点 → 对端 | 返回对端自身条目。**预留端点，当前 gossip 流程未使用**（发现由 nodes/announce 完成），处置见 Phase 4。 |
+| `GET /mesh/nodes` | 任意 peer | pull gossip 载荷（节点表 + 链路状态，见 5.2）。 |
+| `POST /mesh/announce` | 任意 peer → 对端 | push 本节点最新条目（随轮转周期发送；变更触发的即时推送见 Phase 4）。 |
+| `GET /mesh/metrics` | 任意 peer | 对端自身的链路状态（诊断用途；正式的链路状态交换内嵌在 `/mesh/nodes` 载荷里随 gossip 泛洪）。 |
+
+请求均为 origin-form（`GET /mesh/...` + `Host: localhost`）。
 
 **所有 `/mesh/*` 请求要求 mesh 凭据**（user=`mesh`），普通代理凭据与 localhost 免认证通道均不放行——防止普通本地用户拉取全网节点表。
 
@@ -189,7 +191,7 @@ UDP（CONNECT-UDP / h3 Datagram）与 WebSocket 在代理级联里语义不变�
 
 - `via`：reach-via 字段。直连可达节点缺省；NAT 后节点填其锚定 peer 名，表示"经此节点可到达我"（见 5.4）。
 - `addrs`：条目校验强制**每个 URL 的主机名必须等于节点名**（理由与威胁模型见 2.1——现有 TLS 钉扎的是拨号主机名，若允许 addrs 主机名 ≠ 节点名，投毒 addrs 即可劫持流量到攻击者自己的合法证书域名）。addrs 只声明同一域名的不同 scheme/端口。
-- `fp`：叶证书指纹，供观测与未来逐节点密钥对升级时对账，首期不参与准入判断。
+- `fp`：叶证书指纹。**未实现**（不生成不解析），随 Phase 4 的逐节点密钥对一起落地。
 - `seen`：条目签名的 Unix 时间戳（秒）。接收校验**新鲜度窗口**：`|now - seen| ≤ 300s`——既拒旧条目回滚，也拒时钟超前的成员签出未来时间戳钉死条目；窗口外的条目不采纳、不传播，已有旧条目保留至 TTL 自然过期兜底。**节点时钟因此有硬依赖**（偏差 > 5 分钟的节点其自签条目会被全网静默拒收、自己却毫无感知），运维要求 NTP；`DumpMesh` 输出本节点条目在外网的采纳情况需要靠对端回报，Phase 2 起在 gossip 响应中捎带"我见到的你的 seen"供对账。
 - `sig`：成员签名，防非成员投毒。**规范化串的精确定义**（HMAC 的输入字节）：
 
@@ -201,10 +203,10 @@ addrs 保持条目内声明顺序原样参与签名（顺序也是被签名内�
 
 ### 5.2 gossip 算法
 
-push-pull 反熵，由周期 job（`AddJob` 自我重臂）驱动（`mesh-gossip-interval`，默认 30s）。**心跳轮转覆盖全部活跃 peer**，不做纯随机抽样：每周期按轮转顺序向 `⌈P/8⌉` 个 peer 发 `GET /mesh/nodes`（P 为活跃 peer 数），保证任意 peer 在 ≤ 240s 内至少被 touch 一次——这同时服务于三个目的：节点表交换、链路状态拉取（6.1 的 metrics 搭同一班心跳）、以及**重臂 peer 连接的 300s 空闲计时**（`Proxy2` 的 idle 只被"新请求"重置，h2 PING 不算；若靠随机抽样，32 peer 时约一半连接会被周期性回收再重连，形成持续 churn）：
+push-pull 反熵，由周期 job（`AddJob` 自我重臂）驱动（`mesh-gossip-interval`，默认 30s）。**心跳轮转覆盖全部活跃 peer**，不做纯随机抽样：每周期按轮转顺序向 `⌈P/8⌉` 个 peer 发 `GET /mesh/nodes`（P 为活跃 peer 数），保证任意 peer 在 ≤ 240s 内至少被 touch 一次——服务于两个目的：节点表交换与链路状态交换（metrics 内嵌于响应载荷随轮泛洪）。peer 连接 300s 空闲计时的重臂主力是周期探测（每 probe-interval 对全部 peer 发请求），轮转只是补充（`Proxy2` 的 idle 只被"新请求"重置，h2 PING 不算）：
 
 1. 每周期按轮转发 `GET /mesh/nodes`，响应为 `{"nodes":[条目],"metrics":[链路状态]}` 载荷：条目照常合并（签名 + 新鲜度 + 时间戳单调），链路状态随载荷**传递性泛洪**（逐跳携带原始上报 ts，按边 TTL 过期）——纯直连拉取在分区拓扑下组不出多跳路径的图；
-2. 本节点条目变更（地址/能力变化）时立即 `POST /mesh/announce` 给所有活跃 peer；
+2. 本节点条目随轮转周期向轮到的 peer `POST /mesh/announce` 续期（变更触发的全量即时推送未实现，见 Phase 4）；
 3. 本节点条目每周期重新签名续期（更新 `seen`），随 pull/push 传播；
 4. 条目 TTL 过期（默认 `10 × gossip-interval`）：源节点持续在网就持续续期，静默退网的节点最终从所有表里消失；
 5. 同名条目检测到签名不同且 `seen` 交替上升时判定为命名冲突，本地告警（LOGE）并放弃其中后到者。
@@ -213,17 +215,17 @@ push-pull 反熵，由周期 job（`AddJob` 自我重臂）驱动（`mesh-gossip
 
 ### 5.3 peer 连接维护
 
-- 启动时：对每个 `mesh-peer` 种子建 peer 连接；随后对节点表中**直连可达**（无 `via`）的节点逐个建连，受 `mesh-max-peers` 上限约束（默认 32）。超限淘汰规则：对"非当前路由必需且空闲最久"的连接**停止主动保活（不再轮转 touch），放任 300s idle 回收**——不主动 `deleteLater`，因为 `responsers` 池按 dest（不含凭据）合并连接，主动断开会连带杀掉同 dest 的普通上游在途流量。
-- peer 连接 ALPN 强制 h2/h3：`MeshManager` 建连后校验协商结果，降级到 h1 即断开重试（h1 路径的 SNI 嗅探/MITM 行为与 mesh 语义冲突，见 4.2）。
-- **保留现有 300s 空闲回收，不做豁免**：前提正是 5.2 的心跳轮转——任意活跃 peer 在 ≤ 240s 内必有一次控制面请求，idle 计时被持续重臂（注意 h2 PING 不重置 idle，只有新请求会）；超出 `mesh-max-peers` 管理范围、被停止保活的连接由 idle 回收清理。无需改动 `Proxy2/Proxy3` 的 idle 逻辑。
+- 启动时：对每个 `mesh-peer` 种子建 peer 连接；发现的节点一经入表即纳入周期探测，连接由 `responsers` 池按需建立与复用。**当前不设连接数上限与淘汰**（`mesh-max-peers` 未实现，见 Phase 4）。
+- peer 连接不强制 ALPN h2/h3：h1 peer 亦可用——中继流量的 SNI 嗅探/MITM 跳过在 `should_sniff_sni` 单点生效，覆盖全部协议入口。强制 h2/h3 列入 Phase 4。
+- **保留现有 300s 空闲回收，不做豁免**：活跃 peer 每 probe-interval 必有探测请求重臂 idle 计时（h2 PING 不重置 idle，只有新请求会）。无需改动 `Proxy2/Proxy3` 的 idle 逻辑。
 - 保活：`Proxy2` 的 h2 PING（10s 周期）+ 2s 判死，QUIC keepalive 同理，现成。
-- 重连：per-peer 指数退避 1s→32s，30 分钟后重置（仿 `Rguest2` 模式，但退避状态独立于实例，不共享 static 变量）。
+- 重连：**无独立重连状态机**——连接由连接池按需重建、探测周期性重试；per-peer 退避（仿 `Rguest2` 的 1s→32s）列入 Phase 4 视需要补。
 
 ### 5.4 NAT 后节点
 
 无公网地址的节点（如家里的盒子）：
 
-- **作为入口**：正常。它主动与种子建立 peer 连接，`hello` 时声明 `via: <种子名>`；它的转发请求经 peer 连接（或再经中继）送达出口。**它不需要证书**（只发起 TLS，不接受入连）。
+- **作为入口**：可用。它主动与种子建立 peer 连接，转发请求经 peer 连接送达出口。**它不需要证书**（只发起 TLS，不接受入连）。`via` 字段的声明与路由使用未实现（条目格式已预留），随 Phase 4 的反向通道一起落地。
 - **作为出口/被直连**：首期不支持。后续阶段复用 rproxy 的反向通道机制（`Rguest2` 的 h2 PUSH 注册模式）：NAT 节点把 peer 连接"注册"给对端，对端即可通过该既有连接反向把请求送达 NAT 节点，`via` 字段就是路由表里的中继边。这是 Phase 4 的内容。
 
 ## 6. 探测与路由算法
@@ -235,11 +237,11 @@ push-pull 反熵，由周期 job（`AddJob` 自我重臂）驱动（`mesh-gossip
 | 来源 | 度量 | 说明 |
 | :--- | :--- | :--- |
 | mesh 应用层探测 `GET /mesh/ping` | RTT | MeshManager 经 peer 连接周期发 HTTP 探测请求、测响应往返。不用 `Proxy2::ping_check`（其 job 在 onRead 里重臂，读取间隔小于 10s 的连接 PING 永远不会发出，Android 构建下只随 SendData 触发）。应用层探测同时重臂连接的 300s 空闲计时，一石二鸟，也是 gossip 心跳的载体。 |
-| `Proxy3` / QUIC | RTT、丢包 | 拥塞控制的 `smoothed_rtt` 随每次 ACK 持续更新（`quic_qos`），忙闲皆有样本，直接读取即可。 |
-| TCP（h1 降级时） | RTT | `TCP_INFO`（现有代码仅在 dump 时读取，连续采样需新增读取逻辑）。peer 连接已强制 h2/h3（5.3），此项仅兜底。 |
+| `Proxy3` / QUIC | RTT、丢包 | **未实现**：QUIC 的 `smoothed_rtt`/丢包统计当前不读取，所有度量走应用层探测；接入列入 Phase 4。 |
+| TCP（h1 peer） | RTT | `TCP_INFO` **未实现**（现有代码仅在 dump 时读取）；h1 peer 的 RTT 由应用层探测覆盖，此项列入 Phase 4。 |
 
 - 采样周期 = `mesh-probe-interval`（默认 10s），EWMA 平滑（rtt: 系数 0.125；loss: 0.25），抑制抖动。
-- 探测结果即本节点的链路状态，随 5.2 的心跳轮转对外发布（`/mesh/metrics`）。**边有 TTL = 600s**（≥ 2× 心跳覆盖周期 240s，从对端最近一次上报时间起算）：对端静默失联后它的边不会残留在全网视图里，也不会因分发节奏贴近而周期性掉边。
+- 探测结果即本节点的链路状态，随 5.2 的心跳轮转对外发布（`/mesh/metrics`）。**边 TTL = 20 × gossip 周期**（默认 600s，覆盖最坏泛洪传播时延；从上报的原始时间戳起算，泛洪逐跳保真）：对端静默失联后它的边不会残留在全网视图里，也不会因分发节奏贴近而周期性掉边。
 - 没有活跃连接的节点没有本地度量——路由图中就不存在那条直连边（本来也不该有）。
 
 ### 6.2 拓扑与路由计算
@@ -272,11 +274,12 @@ exit = argmin_{e ∈ candidates} W(path(本节点 → e))
 
 ```
 src/mesh/                          新目录，静态库（仿 hook_lib 挂入 CMake）
-  mesh_manager.h/.cpp              单例：节点表、peer 连接生命周期、gossip/probe 周期 job、dump_stat
-  mesh_gossip.h/.cpp               条目编解码、规范化串签名校验、push-pull 调度
-  mesh_probe.h/.cpp                度量采集（读 Proxy2/Proxy3/SocketRWer 统计）、EWMA
-  mesh_route.h/.cpp                拓扑图、Dijkstra、逐 hop 决策、防环规则、滞回缓存
-  mesh_route_test.cpp              路由算法单元测试（图构造/最短路/防环）
+  mesh_manager.h/.cpp              单例：节点表、控制面请求与探测调度、gossip 轮转、路由与中继、dump_stat
+  mesh_gossip.h/.cpp               条目/链路状态编解码、规范化串签名校验、gossip 载荷
+  mesh_local.h/.cpp                /mesh/* 端点（Responser，含 POST announce 的请求体消费）
+  mesh_route.h/.cpp                有向图最短路、防环性质
+  mesh_route_test.cpp              路由算法单元测试
+  mesh_gossip_test.cpp             条目签名与载荷解析单元测试
 ```
 
 CMake 改动：`src/CMakeLists.txt` 增加 `add_subdirectory(mesh)`，目标名加入 `SPROXY_CORE_TARGETS`；Linux 分支的 `--start-group` 链接列表与 Apple 分支的 `SPROXY_LIBS` 列表都要加。
@@ -286,12 +289,12 @@ CMake 改动：`src/CMakeLists.txt` 增加 `add_subdirectory(mesh)`，目标名�
 | 文件 | 改动 |
 | :--- | :--- |
 | `src/res/responser.cpp` | ① `distribute()` 的 `Strategy::proxy` 分支：`parseDest` 前拦截 `mesh://` ext，调 `MeshManager` 入口处理；② `distribute()` 在 `check_header()` 之后、`getBackend()` 之前加 mesh 前置步骤：识别 `X-Mesh-Exit` + mesh 凭据，走中继/出口处理（位置是硬约束，理由见 4.3）。 |
-| `src/res/file.cpp` | `File::getfile` 增加 `mesh/` 路径分支：控制面四个端点，强制 mesh 凭据校验（见 5.1）。 |
-| `src/req/guest2.cpp`、`guest3.cpp`、`guest.cpp` | 携带 mesh 凭据的请求跳过 `should_sniff_sni` 嗅探与 MITM（见 4.2 中继处理；h1 的 `Guest` 在 distribute 之前同样嗅探，作为 peer 强制 h2/h3 之外的兜底）。 |
+| `src/res/file.cpp` | `File::getfile` 增加 `mesh/` 路径分支，分流到 `MeshLocal`（端点实现与 mesh 凭据校验在 `mesh_local.cpp`，见 5.1）。 |
+| `src/req/guest_sni.cpp` | `should_sniff_sni` 单点增加跳过条件：携带 `X-Mesh-Exit` 头的 CONNECT 不嗅探不改写（guest/guest2/guest3/guest_vpn 全部入口共用此函数，无需逐文件改）。 |
 | `src/misc/config.c` | `option_detail[]` 增加 mesh 系列条目（`mesh-relay`/`mesh-exit` 用 `option_enum` 承载 on/off，现有 bool 选项机制忽略参数值）；`postConfig()` 校验：mesh-secret 必设、长度上限、拒绝与 `--insecure` 并存、检测与普通用户名 `mesh` 冲突；peer URL 解析与"命中 proxy 策略即跳过"的递归防护在 `MeshManager::Start()` 做（解析失败直接退出，策略命中告警跳过）。 |
 | `src/misc/config.h` | `struct options` 增加对应字段。 |
 | `src/misc/strategy.cpp` | `addsecret` 装载 mesh 凭据（mesh-secret 单独选项、注入 secrets 校验链）。 |
-| `src/prot/rpc.h`、`src/req/cli.cpp`、`src/client/client.cpp` | `SproxyServer`/`SproxyClient` 增加 `DumpMesh()`（节点表/度量/路由，文本输出，同 `DumpStatus` 风格）与 `MeshFlush()`（清空节点表重新发现）；scli 增加 `mesh` 子命令。 |
+| `src/prot/rpc.h`、`src/req/cli.cpp`、`src/client/client.cpp` | `SproxyServer`/`SproxyClient` 增加 `DumpMesh()`（节点表/度量/路由，文本输出，同 `DumpStatus` 风格）；scli 为 `dump` 增加 `mesh` 参数。`MeshFlush()`（清空节点表重新发现）未实现，见 Phase 4。 |
 | `src/server/server.cpp` | `postConfig` 后检测 `mesh` 配置项，`MeshManager::instance().start()`。 |
 
 ### 7.3 可观测性
@@ -308,7 +311,6 @@ mesh-secret <密钥>         # 网络密钥（必设；凭据用户名固定为 
 mesh-peer <url>            # 种子节点，可多条（https://node.example.com[:443]，或 quic://）
 mesh-relay on|off          # 允许中继他人流量，默认 on（option_enum）
 mesh-maxhops <n>           # 最大跳数，默认 4
-mesh-max-peers <n>         # 最大直连 peer 数，默认 32
 mesh-probe-interval <秒>   # 探测采样周期，默认 10
 mesh-gossip-interval <秒>  # 节点表交换周期，默认 30（全网应配置一致且 ≤300，见 12-9）
 mesh-exit on|off           # 允许做出口（auto 候选），默认 on
@@ -342,7 +344,7 @@ netflix.com proxy  mesh://auto
 - `mesh://<节点名>` scheme、alias/策略集成、distribute 两处挂接（前置步骤含防环三件套的位置约束）；
 - 节点表只来自 `mesh-peer` 静态配置（无 gossip）；
 - 出口/入口处理（无中继：只有一跳直连到出口）、防环三件套与出口自环拒绝；
-- 独立 h2 PING job RTT 探测（不依赖 `Proxy2::ping_check`，见 6.1）+ dump_stat/RPC 可见性；
+- 应用层 `GET /mesh/ping` RTT 探测（不依赖 `Proxy2::ping_check`，见 6.1）+ dump_stat/RPC 可见性；
 - **验收**：两节点，A 上 `google.com proxy mesh://B` 通；`scli mesh` 可见节点与 RTT；出口失联时报错信息正确；带 `X-Mesh-*` 头但无 mesh 凭据的请求不进入 mesh 语义（入口剥头后按普通策略处理）。
 
 ### Phase 2 — gossip 发现 + auto 出口
@@ -360,9 +362,12 @@ netflix.com proxy  mesh://auto
 ### Phase 4 — 体验与硬化
 
 - QUIC peer 优先/连接迁移在选路中的应用；利用 peer 连接的 observed address 做轻量打洞增强（复用 QUIC PATH_CHALLENGE）；
-- NAT 节点作为出口（rproxy PUSH 反向通道复用）；
+- NAT 节点作为出口（rproxy PUSH 反向通道复用），含 `via` reach-via 字段的声明与路由使用；
 - webui 节点管理页、metrics 输出、出口失败反馈修正 auto 评分、跨跳请求关联头；
-- 逐节点密钥对签名（升级信任模型的可选路径）。
+- 逐节点密钥对签名（升级信任模型的可选路径），含条目的 `fp` 证书指纹字段；
+- 连接管理：`mesh-max-peers` 上限与淘汰、peer 连接 ALPN 强制 h2/h3、per-peer 重连退避；
+- `MeshFlush` RPC 与 scli 命令补全；条目变更触发的即时 announce 推送；`/mesh/hello` 端点处置（启用或删除）；
+- QUIC `smoothed_rtt`/丢包采样接入边权、h1 peer 的 `TCP_INFO` 采样。
 
 ## 10. 测试计划
 
