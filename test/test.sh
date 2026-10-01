@@ -3,6 +3,15 @@ set -x
 
 HOSTNAME=localhost.choury.com
 
+#ip6-localhost 是 Debian /etc/hosts 的固有别名，macOS 等平台没有：
+#mesh 测试用它当第三个可解析节点名，缺失则补一条（无权限则跳过相关用例）
+if ! python3 -c "import socket; socket.getaddrinfo('ip6-localhost', None)" 2>/dev/null; then
+    if ! (echo "::1 ip6-localhost" | sudo tee -a /etc/hosts >/dev/null 2>&1) \
+       && ! (echo "::1 ip6-localhost" >> /etc/hosts 2>/dev/null); then
+        echo "ip6-localhost unresolvable and cannot fix /etc/hosts, mesh ipv6-name tests may fail"
+    fi
+fi
+
 ker=$(uname -s)
 run_extended_tests=false
 
