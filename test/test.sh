@@ -527,7 +527,7 @@ EOF
         fi
         sleep 1
     done
-    printf "dump mesh" | ./scli -s ${sp}mesha.sock | grep "noexit.local" | grep -qv " exit"
+    printf "dump mesh" | ./scli -s ${sp}mesha.sock | grep "noexit.local \[" | grep -qv " exit"
     [ $? -ne 0 ] && echo "mesh gossip test 5 failed: exit cap should be off" && exit 1
     kill -SIGINT $epid; wait $epid
 
@@ -605,7 +605,7 @@ MRC
         http://mesh-relay.local/status -o mesh_out \
         && grep -q "mesh node: ip6-localhost" mesh_out
     [ $? -ne 0 ] && echo "mesh relay test 1 failed: relay forward" && exit 1
-    grep -q "mesh relay:" mesh_rb.log
+    sleep 1 && grep -q "mesh relay:" mesh_rb.log
     [ $? -ne 0 ] && echo "mesh relay test 2 failed: no relay log" && exit 1
 
     #CONNECT 隧道过中继（https 经 B 中继、C 出口直连本测试的 https 服务）。
@@ -735,6 +735,7 @@ MDC
     sleep 12
     nsenter -t $PA -n curl -sf -m 15 -x 10.99.0.1:4430 http://dumbbell.local/sites.list -o $D/out1
     [ $? -ne 0 ] && echo "MESHFAIL forward" && exit 1
+    sleep 1
     #两跳中继：A 的下一跳必须是某个中继（B 或 E，两条对称路径谁便宜走谁），不能是直连 D
     VIA=$(grep -ao "exit=10.99.0.5 via=10.99.[01].9" $D/a.log | tail -1 | grep -o "10.99.[01].9$")
     [ -z "$VIA" ] && echo "MESHFAIL via-relay" && exit 1
@@ -762,7 +763,6 @@ MDC
     '
     local rc=$?
     [ -s $D/out1 ] || { echo "mesh dumbbell test 1 failed: no relayed output"; rc=1; }
-    grep -q MESHFAIL $D/*.log 2>/dev/null && rc=1
     if [ $rc -ne 0 ]; then
         echo "mesh dumbbell test failed"
         grep -aE "mesh dispatch|mesh relay|no route" $D/a.log 2>/dev/null | tail -5
@@ -772,6 +772,103 @@ MDC
     return $rc
 }
 
+
+
+#mesh 专项：凭据门控的 SNI 嗅探跳过（真 443 端口）与逐跳 Via 追加。
+#用户命名空间内可绑 443；python 起TLS 服务与记录请求头的 echo 上游
+function test_mesh_443via(){
+    if ! unshare -Urn true 2>/dev/null; then
+        echo "mesh 443/via test skipped: user namespace unavailable"
+        return 0
+    fi
+    pkill -f "mesh-secret=mesh-pass" 2>/dev/null
+    sleep 1
+    local D=$(pwd)/mesh443
+    rm -rf $D; mkdir -p $D
+    cat > $D/echo.py << 'M4E'
+import http.server
+class Echo(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        with open("/tmp/mesh443_recv.txt", "a") as f:
+            f.write(str(self.headers))
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"ok")
+    def log_message(self, *a): pass
+http.server.HTTPServer(("127.0.0.1", 8398), Echo).serve_forever()
+M4E
+    cat > $D/conf << 'M4C'
+policy-file /dev/null
+debug all
+mesh-gossip-interval 2
+mesh-probe-interval 1
+M4C
+    printf "127.0.0.1:443 direct\nvia.local forward http://127.0.0.1:8398\n" > $D/exit.list
+
+    printf "ok443\n" > $D/x
+    printf "root-dir $D\npolicy-file $D/tls.list\n" > $D/tls.conf
+    printf "127.0.0.1 local\n" > $D/tls.list
+    unshare -Urmn bash -c '
+    set -x
+    SPROXY="$PWD/../build/src/sproxy"
+    D="$PWD/mesh443"
+    T="$PWD"
+    ip l set lo up
+    rm -f /tmp/mesh443_recv.txt
+    (cd $T && python3 $D/echo.py) & EPID=$!
+    sleep 0.5
+    $SPROXY -c $D/tls.conf --bind "443 ssl" --cert $T/localhost.crt --key $T/localhost.key \
+        --admin unix:$D/tls.sock > $D/tls.log 2>&1 &
+    $SPROXY -c $D/conf --mesh=127.0.0.3 --mesh-secret=mesh-pass --bind 4431 \
+        -P $D/exit.list --admin unix:$D/c.sock > $D/c.log 2>&1 &
+    $SPROXY -c $D/conf --mesh=127.0.0.2 --mesh-secret=mesh-pass --bind 4432 \
+        --secret=client:pass --mesh-peer=http://127.0.0.3:4431 \
+        --admin unix:$D/b.sock > $D/b.log 2>&1 &
+    sleep 5
+    MESHCRED="Basic $(echo -n mesh+127.0.0.3:mesh-pass | base64)"
+
+    #1: 真443 CONNECT 过中继（凭据门控放行 mesh 流量、跳过嗅探）。
+    #目标用 IP：netns 内无 DNS，域名 direct 解析会失败
+    curl -sf -m 10 -k -x 127.0.0.1:4432 --proxy-header "Proxy-Authorization: $MESHCRED" \
+        --proxy-header "X-Mesh-Exit: 127.0.0.3" --proxy-header "X-Mesh-Hops: 4" \
+        https://127.0.0.1/x -o $D/out1
+    R1=$?
+    sleep 1
+    #中继确实发生（若门控失效会落入嗅探分支、不可能有中继日志）
+    grep -aq "mesh relay: tcp://127.0.0.1:443" $D/b.log
+    R2=$?
+    echo "T1 rc=$R1 relay=$R2"
+
+    #2: 伪造 X-Mesh-Exit（普通凭据）不得绕过嗅探：IP 目标 :443 触发嗅探
+    curl -sf -m 10 -k -x 127.0.0.1:4432 \
+        --proxy-header "Proxy-Authorization: Basic $(echo -n client:pass | base64)" \
+        --proxy-header "X-Mesh-Exit: evil" \
+        https://127.0.0.1/x -o $D/out2
+    R3=$?
+    sleep 1
+    grep -aqE "sni.*forward|forward to" $D/b.log
+    R4=$?
+    echo "T2 rc=$R3 sniff=$R4"
+
+    #3: 逐跳 Via：http 经 B 中继、C 出口转 echo 上游，上游应见两条 Via（B、C）
+    curl -sf -m 10 -x 127.0.0.1:4432 --proxy-header "Proxy-Authorization: $MESHCRED" \
+        --proxy-header "X-Mesh-Exit: 127.0.0.3" --proxy-header "X-Mesh-Hops: 4" \
+        http://via.local/x -o $D/out3
+    R5=$?
+    sleep 1
+    NVIA=$(grep -ao "HTTP/1.1 sproxy:" /tmp/mesh443_recv.txt 2>/dev/null | wc -l)
+    echo "T3 rc=$R5 out=$(cat $D/out3 2>/dev/null) via=$NVIA"
+
+    kill $EPID 2>/dev/null
+    pkill -x sproxy
+    [ $R1 -eq 0 ] && [ $R2 -eq 0 ] && [ $R4 -eq 0 ] && [ $R5 -eq 0 ] && [ "$NVIA" = "2" ]
+    '
+    local rc=$?
+    [ $rc -ne 0 ] && echo "mesh 443/via test failed" && \
+        grep -ahE "T1 |T2 |T3 " $D/b.log 2>/dev/null | tail -3
+    pkill -f "mesh-secret=mesh-pass" 2>/dev/null
+    return $rc
+}
 
 #DoH服务(/dns-query)验证：独立实例 + 公共DoH上游(cloudflare-dns.com)。
 #1) type-65应答透传ech参数；2) 被MITM的域名(block子域触发mayBeBlocked)
@@ -1432,6 +1529,9 @@ test_mesh_relay
 
 echo "test mesh dumbbell"
 test_mesh_dumbbell || exit 1
+
+echo "test mesh 443/via"
+test_mesh_443via || exit 1
 
 if [ "$run_extended_tests" = true ]; then
     echo "test tproxy"

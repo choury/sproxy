@@ -511,8 +511,10 @@ void MeshManager::gossip_cycle() {
         if(node.entry.addrs.empty() && !node.is_static) {
             continue; //纯入口节点（无地址）不可拉取
         }
-        if(!alive(node)) {
-            continue; //失联节点不占轮转名额，避免稀释活跃 peer 的 touch 上界
+        bool probed = node.last_ok_ms != 0 || node.probe_fail > 0;
+        if(probed && !alive(node)) {
+            continue; //探测过且失联的节点不占轮转名额；从未探测的（启动期/新发现）放行，
+                      //否则首个 gossip 周期整轮空转、初次交换推迟一个周期
         }
         names.push_back(name);
     }
