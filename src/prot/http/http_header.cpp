@@ -191,6 +191,23 @@ bool HttpReqHeader::valid_method() const {
     return http_method() || ismethod("CONNECT") || webdav_method();
 }
 
+bool decodeauth(const char* auth, struct Credit* credit){
+    if(strncmp(auth, "Basic ", 6) == 0){
+        auth = auth + 6;
+    }
+
+    size_t len = strlen(auth);
+    std::vector<char> decoded(len + 1);
+    size_t decoded_len = Base64Decode(auth, len, decoded.data());
+    if (decoded_len == 0) {
+        return false;
+    }
+    decoded[decoded_len] = 0;
+
+    return parse_user_pass(decoded.data(), decoded_len, credit) == 0;
+}
+
+
 void HttpReqHeader::postparse() {
     const char *start = path;
     while (*start && *++start == '/');
@@ -238,6 +255,12 @@ void HttpReqHeader::postparse() {
         strcpy(method, "CONNECT");
         Dest.scheme[0] = 0;
         strcpy(Dest.protocol, "icmp");
+    }
+    cr = {};
+    if(has("Proxy-Authorization")){
+        decodeauth(get("Proxy-Authorization"), &cr);
+    } else if(has("Authorization")) {
+        decodeauth(get("Authorization"), &cr);
     }
 }
 

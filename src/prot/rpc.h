@@ -58,6 +58,7 @@ protected:
     virtual std::string GetServer() = 0;
     virtual std::string DumpStatus() = 0;
     virtual std::string DumpDns() = 0;
+    virtual std::string DumpMesh() = 0;
     virtual std::string DumpMemUsage() = 0;
     virtual std::string DumpHooker() = 0;
     virtual bool ListenAdd(const std::string& bind, const std::string& target) = 0;
@@ -90,6 +91,7 @@ public:
     std::promise<std::string>  GetServer();
     std::promise<std::string> DumpStatus();
     std::promise<std::string> DumpDns();
+    std::promise<std::string> DumpMesh();
     std::promise<std::string> DumpMemUsage();
     std::promise<std::string> DumpHooker();
     std::promise<std::string> Login(const std::string& token, const std::string& source);

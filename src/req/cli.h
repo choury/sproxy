@@ -37,6 +37,7 @@ public:
     virtual std::string Login(const std::string& token, const std::string& source) override;
     virtual std::string DumpStatus() override;
     virtual std::string DumpDns() override;
+    virtual std::string DumpMesh() override;
     virtual std::string DumpMemUsage() override;
     virtual std::string DumpHooker() override;
     virtual bool Debug(const std::string& module, bool enable) override;

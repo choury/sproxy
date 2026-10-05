@@ -3,6 +3,7 @@
 #Created:  2017/2/11
 
 set(res_src
+        fetch.cpp
         responser.cpp
         host.cpp
         proxy2.cpp

@@ -9,8 +9,8 @@
 extern "C" {
 #endif
 void addsecret(const char* secret);
-bool decodeauth(const char* auth, struct Credit* credit);
-bool checksecret(const char* auth, const struct Credit* credit);
+bool secrexists(const char* user);
+bool checksecret(const struct Credit* credit);
 bool checktoken(const char* token);
 void reloadstrategy();
 bool addstrategy(const char *host, const char* s, const char* ext);

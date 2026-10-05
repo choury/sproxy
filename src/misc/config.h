@@ -29,6 +29,8 @@ extern "C" {
 #define DNSPORT   53u
 #define QUICPORT  443u
 
+#define MESH_CAP_RELAY 1
+#define MESH_CAP_EXIT  2
 struct DnsServer {
     struct sockaddr_storage addr;
     double rtt;                       // 最近 RTT（毫秒）
@@ -113,6 +115,11 @@ struct options{
     enum auto_mode ech_mode;        // ECH mode for outbound tls connections, Auto -> GREASE
     const char* ech_key;           // ECH key file for server (generate if not exists)
     const char* ech_name;          // public name for ECH key generation (server)
+
+    const char *mesh_name;
+    const char *mesh_secret;
+    struct arg_list* mesh_peers;
+    uint32_t mesh_caps;
 
     FILE* policy_read;
     FILE* policy_write;

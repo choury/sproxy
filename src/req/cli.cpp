@@ -11,6 +11,7 @@
 #endif
 #include "res/cgi.h"
 #include "rproxy_listener.h"
+#include "mesh/manager.h"
 
 #include <inttypes.h>
 
@@ -146,7 +147,11 @@ std::string Cli::GetServer() {
 
 std::string Cli::Login(const std::string &token, const std::string &source) {
     LOG("%s [%s] %s\n", dumpDest(rwer->getSrc()).c_str(), __func__, source.c_str());
-    if(checksecret(token.c_str(), nullptr)){
+    struct Credit cr;
+    if(!decodeauth(token.c_str(), &cr)) {
+        return "";
+    }
+    if(checksecret(&cr)){
         return gen_token();
     }
     return "";
@@ -180,6 +185,13 @@ std::string Cli::DumpDns() {
     std::string ss;
     ::dump_dns(sstream_dumper, &ss);
     return ss;
+}
+
+std::string Cli::DumpMesh() {
+    LOG("%s [%s]\n", dumpDest(rwer->getSrc()).c_str(), __func__);
+    std::string ss;
+    ::dump_mesh(sstream_dumper, &ss);
+    return ss.empty() ? "mesh not enabled\n" : ss;
 }
 
 std::string Cli::DumpMemUsage() {
