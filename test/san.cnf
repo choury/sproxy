@@ -1,2 +1,2 @@
 [SAN]
-subjectAltName=DNS:localhost,DNS:localhost.choury.com,IP:127.0.0.1,IP:::1
+subjectAltName=DNS:localhost,DNS:localhost.choury.com,DNS:ip6-localhost,IP:127.0.0.1,IP:::1

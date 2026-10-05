@@ -13,12 +13,14 @@
 #include "ping.h"
 #include "uhost.h"
 #include "rproxy2.h"
+#include "mesh/manager.h"
 
 #include <string.h>
 #include <assert.h>
 #include <unistd.h>
 #include <sstream>
 #include <cctype>
+#include <random>
 
 
 bimap<std::string, Responser*> responsers;
@@ -29,7 +31,7 @@ enum class CheckResult{
     NoPort,
 };
 
-static std::string identify = "HTTP/1.1 sproxy:" + std::to_string(getpid());
+static std::string identify = "HTTP/1.1 sproxy:" + std::to_string(std::mt19937_64(std::random_device{}())());
 
 bool shouldNegotiate(const std::string& hostname, uint16_t port, const strategy* stra_){
     const auto& stra = stra_ ? *stra_ : getstrategy(hostname.c_str(), port);
@@ -81,20 +83,18 @@ void response(std::shared_ptr<MemRWer> rw, std::shared_ptr<HttpResHeader> res, s
 }
 
 static std::string getBackend(std::shared_ptr<HttpReqHeader> req) {
-    std::string backend = req->rproxy_name;
+    std::string backend = req->backend_name;
     if(backend == "local") {
         return "";
     }
-    const char* auth = req->get("Proxy-Authorization");
-    struct Credit cr{};
-    if(auth && !decodeauth(auth, &cr)){
+    if(req->cr.user[0] == 0){
         return backend;
     }
-    if(!checksecret(auth, &cr) && !req->skip_authorize) {
+    if(!checksecret(&req->cr) && !req->skip_authorize) {
         return backend;
     }
-    if(cr.identifier[0]) {
-        backend = cr.identifier;
+    if(req->cr.identifier[0]) {
+        backend = req->cr.identifier;
     }
 
     return backend;
@@ -167,14 +167,34 @@ void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw)
     strategy stra{Strategy::none, ""};
     std::string backend = getBackend(req);
     if(!backend.empty()){
+        //裸名字解析优先级 alias > rproxy > mesh，mesh 目标以 mesh://ext 交给归一化统一处理。
+        //cr 带出即凭据有效；skip_authorize 的来源（tproxy/rproxy 委托）本身已受信
         std::string target;
         if(getalias(backend, target)){
             stra = strategy{Strategy::proxy, target};
-        } else {
+        }else if(rproxys.count(backend)){
             return distribute_rproxy(req, rw, backend);
+        }else{
+            stra = strategy{Strategy::proxy, MESH_SCHEME + backend};
         }
     }else{
         stra = getstrategy(req->Dest.hostname, req->Dest.port, req->path);
+    }
+    Destination dest{};
+    if(stra.s == Strategy::proxy && startwith(stra.ext.c_str(), MESH_SCHEME)) {
+        //mesh：裸名字（identifier/rproxy 委托）、策略、alias 三种来源在此汇合。
+        std::string target = stra.ext.substr(strlen(MESH_SCHEME));
+        stra = MeshManager::Route(target, &dest);
+        //{direct} 的 port==0 是自身名归一化的正常返回
+        if(stra.s == Strategy::proxy && dest.port == 0) {
+            return response(rw, HttpResHeader::create(S502, sizeof(S502), id), stra.ext);
+        }
+        //via 为下一跳节点名（addrs 主机名即节点名）；direct 即本节点为出口。
+        //none（未知目标）不在此日志，后续 404 兜底
+        if(stra.s != Strategy::none) {
+            LOGD(DMESH, "mesh dispatch: %s exit=%s via=%s\n", req->geturl().c_str(),
+                 target.c_str(), stra.s == Strategy::proxy ? dest.hostname : opt.mesh_name);
+        }
     }
     if(stra.s == Strategy::none) {
         req->set(STRATEGY, getstrategystring(Strategy::none));
@@ -213,12 +233,13 @@ void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw)
     }
     req->del("Proxy-Authorization");
     req->append("Via", identify);
-    Destination dest;
     switch(stra.s){
     case Strategy::proxy:
-        memcpy(&dest, &opt.Server, sizeof(dest));
-        if(!stra.ext.empty() && parseDest(stra.ext.c_str(), &dest)){
-            return response(rw, HttpResHeader::create(S500, sizeof(S500), id), "[[ext misformat]]\n");
+        if(dest.port == 0) {
+            memcpy(&dest, &opt.Server, sizeof(dest));
+            if(!stra.ext.empty() && parseDest(stra.ext.c_str(), &dest)){
+                return response(rw, HttpResHeader::create(S500, sizeof(S500), id), "[[ext misformat]]\n");
+            }
         }
         if(dest.port == 0){
             return response(rw, HttpResHeader::create(S400, sizeof(S400), id), "[[server not set]]\n");
@@ -234,7 +255,7 @@ void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw)
     case Strategy::direct:
         memcpy(&dest, &req->Dest, sizeof(dest));
         dest.port = req->getDport();
-        if(!req->rproxy_name.empty() && req->has("X-Forwarded-For")) {
+        if(!req->backend_name.empty() && req->has("X-Forwarded-For")) {
             if(opt.rproxy_keep_src) strncpy(dest.assign_src, req->get("X-Forwarded-For"), sizeof(dest.assign_src) - 1);
             if(!req->ismethod("CONNECT")) req->del("X-Forwarded-For");
         }
@@ -401,13 +422,12 @@ void rewrite_rproxy_req(std::shared_ptr<HttpReqHeader> req) {
     if(auth == nullptr) {
         return;
     }
-    struct Credit cr;
-    if(!decodeauth(auth, &cr) || cr.identifier[0] == 0) {
+    if(req->cr.identifier[0] == 0) {
         return;
     }
     //重写认证信息
     char combined[AUTHLIMIT * 2 + 2];
-    int len = snprintf(combined, sizeof(combined), "%s:%s", cr.user, cr.pass);
+    int len = snprintf(combined, sizeof(combined), "%s:%s", req->cr.user, req->cr.pass);
     char encoded[512];
     size_t elen = Base64Encode(combined, len, encoded);
     encoded[elen] = 0;
@@ -469,7 +489,7 @@ void distribute_rproxy(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRW
     }
     const auto& src = rw->getSrc();
     req->set("X-Forwarded-For", dumpAuthority(&src));
-    req->rproxy_name = rproxy_name;
+    req->backend_name = rproxy_name;
     if(rproxy_name == "local") {
         rewrite_rproxy_req(req);
         return distribute(req, rw);
@@ -508,7 +528,7 @@ static void rewrite_rproxy_reporting_endpoints(std::shared_ptr<HttpReqHeader> re
     if(!res->has("Reporting-Endpoints")) {
         return;
     }
-    const auto& rproxy = req->rproxy_name;
+    const auto& rproxy = req->backend_name;
     if(rproxy.empty()) return;
 
     std::string endpoints = res->get("Reporting-Endpoints");
@@ -577,7 +597,7 @@ static void rewrite_rproxy_cookie(std::shared_ptr<HttpReqHeader> req, std::share
     if(res->cookies.empty()) {
         return;
     }
-    const auto& rproxy = req->rproxy_name;
+    const auto& rproxy = req->backend_name;
     if(rproxy.empty()) {
         return;
     }
@@ -601,7 +621,7 @@ void rewrite_rproxy_res(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<Http
     if(!req || !res) {
         return;
     }
-    const auto& rproxy = req->rproxy_name;
+    const auto& rproxy = req->backend_name;
     if(rproxy.empty()) {
         return;
     }

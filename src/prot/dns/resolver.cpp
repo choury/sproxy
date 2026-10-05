@@ -7,8 +7,8 @@
 #include "hook/hook.h"
 #include "hook/reflect.h"
 #include "prot/ep.h"
-#include "prot/memio.h"
 #include "prot/http/http_header.h"
+#include "res/fetch.h"
 #include "res/responser.h"
 
 #include <unordered_map>
@@ -82,80 +82,45 @@ public:
 
 //DoH解析器：DNS报文作为POST body发往DoH服务器
 class HttpResolver: public ResolverBase {
-    Job reply = nullptr;
-    struct Status {
-        std::shared_ptr<HttpReqHeader>   req;
-        std::shared_ptr<MemRWer>          rw;
-        std::shared_ptr<IMemRWerCallback> cb;
-        std::string data;
-    }status{};
-    std::function<void(const char*, size_t)> dnscb = nullptr;
-    //回调前先取消超时job，避免成功/失败回调后超时job再触发一次
-    void fire(const char* data, size_t len) {
-        reply.reset(nullptr);
-        dnscb(data, len);
-    }
-public:
-    explicit HttpResolver(const Destination& server) {
+    Destination server;
+    std::string url;
+    void send(const void* data, size_t len, std::function<void(const char*, size_t)> cb) {
         char buff[HEADLENLIMIT];
         int headlen = snprintf(buff, sizeof(buff),
-            "POST %s/dns-query HTTP/1.1" CRLF
-            "content-type: application/dns-message" CRLF CRLF, dumpDest(server).c_str());
-        status.req = UnpackHttpReq(buff, headlen);
-        memcpy(&status.req->Dest, &server, sizeof(Destination));
-        status.req->Dest.system_resolve = true;
+            "POST %s HTTP/1.1" CRLF
+            "content-type: application/dns-message" CRLF CRLF, url.c_str());
+        auto req = UnpackHttpReq(buff, headlen);
+        //DoH 服务器自身的解析必须走系统解析，否则自引用死循环
+        Destination dest = server;
+        dest.system_resolve = true;
+        req->Dest = dest;
         if(server.credit.user[0]) {
-            status.req->set("Authorization", encodeCredit(&server.credit));
+            req->set("Authorization", encodeCredit(&server.credit));
         }
-
-        status.cb = std::make_shared<IMemRWerCallback>()->onData([this](Buffer&& bb) {
-            if (bb.len == 0) {
-                status.cb = nullptr;
-                fire(status.data.data(), status.data.size());
-                return 0;
-            }
-            status.data.append((const char*)bb.data(), bb.len);
-            return (int)bb.len;
-        })->onHeader([this](std::shared_ptr<HttpResHeader> res) {
-            LOGD(DDNS, "http dns response: %s\n", res->status);
-            if (memcmp(res->status, "200", 3) == 0) {
-                return;
-            }
-            LOGE("[DNS] http dns error: %s\n", res->status);
-            status.cb = nullptr;
-            fire(nullptr, 0);
-        })->onCap([] {
-            return BUF_LEN;
-        })->onWrite([](uint64_t){})->onSignal([](Signal){});
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
-        status.rw = std::make_shared<MemRWer>(Destination{.hostname = "localhost"}, status.req->Dest, status.cb);
-#pragma GCC diagnostic pop
+        http_fetch(std::move(req), dest, std::string((const char*)data, len),
+                   [cb](std::shared_ptr<HttpResHeader> res, std::string body) {
+                       if(!res || atoi(res->status) != 200) {
+                           LOGE("[DNS] http dns error: %s\n", res ? res->status : "NULL");
+                           return cb(nullptr, 0);
+                       }
+                       cb(body.data(), body.size());
+                   },
+                   dnsConfig.timeout * 1000);
     }
-
-    virtual ~HttpResolver() override {
-        status.rw->push_signal(Signal::CHANNEL_ABORT);
+public:
+    explicit HttpResolver(const Destination& server): server(server) {
+        url = dumpDest(server) + "/dns-query";
     }
 
     virtual int query(const void *data, size_t len, std::function<void(const char *, size_t)> cb) override {
-        dnscb = std::move(cb);
-        status.req->set("content-length", len);
-        status.rw->push_data({data, len});
-        status.rw->push_data({nullptr});
-        distribute(status.req, status.rw);
-        reply = AddJob([this]{fire(nullptr, 0);}, dnsConfig.timeout * 1000, 0);
+        send(data, len, std::move(cb));
         return 0;
     }
 
     virtual int query(const char* host, int type, std::function<void(const char *, size_t)> cb) override {
-        dnscb = std::move(cb);
         char buf[BUF_SIZE];
         int len = Dns_Query(host, type, id_cur++).build((unsigned char*)buf, sizeof(buf));
-        status.req->set("content-length", len);
-        status.rw->push_data({buf, (size_t)len});
-        status.rw->push_data({nullptr});
-        distribute(status.req, status.rw);
-        reply = AddJob([this]{fire(nullptr, 0);}, dnsConfig.timeout * 1000, 0);
+        send(buf, (size_t)len, std::move(cb));
         return 0;
     }
 };

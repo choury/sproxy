@@ -192,7 +192,7 @@ Guest_tproxy::Guest_tproxy(std::shared_ptr<RWer> rwer,
     }
     header->set("X-Forwarded-For", dumpAuthority(&src));
     header->set("User-Agent", generateUA(opt.ua, "", 0));
-    header->rproxy_name = rproxy;
+    header->backend_name = rproxy;
     header->skip_authorize = true;
     ReqProc(0, header);
     inited = true;

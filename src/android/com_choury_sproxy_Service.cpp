@@ -5,6 +5,7 @@
 #include "req/rguest2.h"
 #include "req/rguest3.h"
 #include "req/cli.h"
+#include "mesh/manager.h"
 
 #include <unistd.h>
 #include <fcntl.h>
@@ -113,6 +114,9 @@ static int vpn_start(){
             LOG("Starting rproxy2 client to %s\n", dumpDest(opt.rproxy_server).c_str());
             new Rguest2(opt.rproxy_server, opt.rproxy_name);
         }
+    }
+    if(opt.mesh_name) {
+        MeshManager::Start();
     }
     new Guest_vpn(opt.tun_fd, false);
     LOG("Accepting connections ...\n");
