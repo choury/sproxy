@@ -453,6 +453,10 @@ static std::map<string, string> secrets;
 static std::set<string> authips{"127.0.0.1", "[::1]", "localhost"};
 static size_t authips_init_count = authips.size();
 
+bool secrexists(const char* user) {
+    return secrets.count(user) > 0;
+}
+
 void addsecret(const char* secret) {
     Credit cr{};
     if (parse_user_pass(secret, strlen(secret), &cr) == 0) {
@@ -562,38 +566,14 @@ bool checktoken(const char* token) {
     return false;
 }
 
-bool decodeauth(const char* auth, struct Credit* credit){
-    if(strncmp(auth, "Basic ", 6) == 0){
-        auth = auth + 6;
-    }
-
-    size_t len = strlen(auth);
-    std::vector<char> decoded(len + 1);
-    size_t decoded_len = Base64Decode(auth, len, decoded.data());
-    if (decoded_len == 0) {
-        return false;
-    }
-    decoded[decoded_len] = 0;
-
-    return parse_user_pass(decoded.data(), decoded_len, credit) == 0;
-}
-
-bool checksecret(const char* auth, const struct Credit* cr){
+bool checksecret(const struct Credit* cr){
     if(secrets.empty())
         return true;
 
-    if(auth == nullptr && cr == nullptr){
+    if(cr == nullptr){
         return false;
     }
-    struct Credit local;
-    if(cr == nullptr){
-        if (!decodeauth(auth, &local)) {
-            return false;
-        }
-    } else {
-        local = *cr;
-    }
-    if (secrets.count(local.user) && secrets.at(local.user) == local.pass) {
+    if (secrets.count(cr->user) && secrets.at(cr->user) == cr->pass) {
         return true;
     }
     return false;
@@ -611,7 +591,7 @@ bool checkauth(const char* ip, std::shared_ptr<const HttpReqHeader> req) {
         return true;
     }
 
-    if (checksecret(req->get("Proxy-Authorization"), nullptr) || checksecret(req->get("Authorization"), nullptr)) {
+    if (checksecret(&req->cr)) {
         return true;
     }
     auto cookies = req->getcookies();

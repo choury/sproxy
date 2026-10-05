@@ -40,12 +40,14 @@ static char* auto_options[] = {"disable", "enable", "auto", NULL};
 static char* ech_options[] = {"disable", "enable", "grease", NULL};
 static char* server_string = NULL;
 static char* policy_file = NULL;
+static char* mesh_secret = NULL;
 static struct arg_list secrets = {NULL, NULL};
 static struct arg_list debug_list = {NULL, NULL};
 static struct arg_list http_listens = {NULL, NULL};
 static struct arg_list ssl_listens = {NULL, NULL};
 static struct arg_list quic_listens = {NULL, NULL};
 static struct arg_list bind_listens = {NULL, NULL};
+static struct arg_list mesh_peer_list = {NULL, NULL};
 static bool sni_flag = false;
 static uint64_t id = 100000;
 
@@ -115,6 +117,11 @@ struct options opt = {
     .ech_mode          = Disable,
     .ech_key           = NULL,
     .ech_name          = NULL,
+
+    .mesh_name         = NULL,
+    .mesh_secret       = NULL,
+    .mesh_peers        = NULL,
+    .mesh_caps         = MESH_CAP_EXIT | MESH_CAP_RELAY,
 
     .policy_read    = NULL,
     .policy_write   = NULL,
@@ -234,6 +241,11 @@ static struct option long_options[] = {
     {"request-header",required_argument, NULL,  0 },
     {"forward-header",required_argument, NULL,  0 },
     {"mimic",         no_argument,       NULL,  0 },
+    {"mesh",          required_argument, NULL,  0 },
+    {"mesh-secret",   required_argument, NULL,  0 },
+    {"mesh-peer",     required_argument, NULL,  0 },
+    {"mesh-exit",     required_argument, NULL,  0 },
+    {"mesh-relay",    required_argument, NULL,  0 },
 #if __linux__
     {"tun",           no_argument,       NULL,  0 },
     {"tap",           no_argument,       NULL,  0 },
@@ -292,6 +304,11 @@ static struct option_detail option_detail[] = {
     {"key", "Private key file name (ssl/quic)", option_string, &keyfile, NULL},
     {"mimic", "Make sproxy mimic a standard web server.", option_bool, &opt.mimic, (void*)true},
     {"mitm", "Mitm mode for https request ([auto], enable, disable), require cakey", option_enum, &opt.mitm_mode, auto_options},
+    {"mesh", "enable mesh with node name (must be the cert domain for reachable nodes)", option_string, &opt.mesh_name, NULL},
+    {"mesh-secret", "shared secret for mesh network (credential user is 'mesh')", option_string, &mesh_secret, NULL},
+    {"mesh-peer", "bootstrap mesh peer, e.g. https://node.example.com[:443] (can be set multiple times)", option_list, &mesh_peer_list, NULL},
+    {"mesh-exit", "announce exit capability and serve as mesh exit ([on], off)", option_bitwise, &opt.mesh_caps, (void*)MESH_CAP_EXIT},
+    {"mesh-relay", "announce relay capability ([on], off); all caps off = ingress-only node (not probed, not relayed through)", option_bitwise, &opt.mesh_caps, (void*)MESH_CAP_RELAY},
     {"pcap", "Save packets in pcap file for vpn", option_string, &opt.pcap_file, NULL},
     {"pcap-len", "Max packet length to save in pcap file", option_uint64, &opt.pcap_len, NULL},
     {"pidfile", "Write pid to this file", option_string, &opt.pidfile, NULL},
@@ -442,8 +459,15 @@ static void parseArgs(const char* name, const char* args){
                 LOG("set option %s: %s\n", name, (char*)option_detail[i].result);
                 break;
             case option_bitwise:
-                *(uint32_t*)option_detail[i].result |= (uint32_t)(intptr_t)option_detail[i].value;
-                LOG("set option %s: 0x%08X\n", name, (uint32_t)(intptr_t)option_detail[i].value);
+                if(args == NULL || strcmp(args, "1") == 0 || strcmp(args, "on") == 0 || strcmp(args, "true") == 0){
+                    *(uint32_t*)option_detail[i].result |= (uint32_t)(intptr_t)option_detail[i].value;
+                }else if(strcmp(args, "0") == 0 || strcmp(args, "off") == 0 || strcmp(args, "false") == 0){
+                    *(uint32_t*)option_detail[i].result &= ~(uint32_t)(intptr_t)option_detail[i].value;
+                } else {
+                    LOGE("unknown bitwise option value: %s\n", args);
+                    exit(1);
+                }
+                LOG("set option %s: 0x%08X\n", name, *(uint32_t*)option_detail[i].result & (uint32_t)(intptr_t)option_detail[i].value);
                 break;
             case option_enum:
                 uresult = 0;
@@ -993,6 +1017,60 @@ void postConfig(){
     for(struct arg_list* p = secrets.next; p != NULL; p = p->next){
         addsecret(p->arg);
     }
+    if(opt.mesh_name) {
+        //凭据用户名字段为 "mesh+"+节点名，受 AUTHLIMIT 限制
+        if(opt.mesh_name[0] == 0) {
+            LOGE("mesh node name is empty\n");
+            exit(1);
+        }
+        if(strlen(opt.mesh_name) >= AUTHLIMIT - 5) {
+            LOGE("mesh node name too long (max %d)\n", AUTHLIMIT - 6);
+            exit(1);
+        }
+        for(const char* p = opt.mesh_name; *p; p++) {
+            if(!isalnum((unsigned char)*p) && *p != '.' && *p != '_' && *p != '-') {
+                LOGE("invalid mesh node name: %s\n", opt.mesh_name);
+                exit(1);
+            }
+        }
+        if(!mesh_secret || !mesh_secret[0]) {
+            LOGE("mesh require mesh-secret\n");
+            exit(1);
+        }
+        if(strlen(mesh_secret) >= AUTHLIMIT) {
+            LOGE("mesh-secret too long (max %d)\n", AUTHLIMIT - 1);
+            exit(1);
+        }
+        if(opt.ignore_cert_error) {
+            LOGE("mesh can not work with insecure mode\n");
+            exit(1);
+        }
+        //判据须与 mesh own_entry 的 addrs 生成一致：不一致则本检查放过、自宣却被全网当非法条目丢弃
+        if(opt.mesh_caps) {
+            int usable = 0;
+            for(struct bind_list* n = opt.listen_list; n; n = n->next) {
+                if(n->info.port && (!strcmp(n->info.protocol, "ssl") || !strcmp(n->info.protocol, "quic")
+                       || !strcmp(n->info.protocol, "http")))
+                {
+                    usable = 1;
+                    break;
+                }
+            }
+            if(!usable) {
+                LOGE("mesh: no connectable listener, fall back to ingress-only node\n");
+                opt.mesh_caps = 0;
+            }
+        }
+        if(secrexists("mesh")) {
+            LOGE("mesh-secret conflicts with user 'mesh' in secret\n");
+            exit(1);
+        }
+        char mesh_secret_arg[AUTHLIMIT * 2 + 2] = {0};
+        snprintf(mesh_secret_arg, sizeof(mesh_secret_arg), "mesh:%s", mesh_secret);
+        addsecret(mesh_secret_arg);
+        opt.mesh_secret = mesh_secret;
+        opt.mesh_peers = mesh_peer_list.next;
+    }
     for(struct arg_list* p = debug_list.next; p != NULL; p = p->next){
         if(!debugon(p->arg, true)){
             LOGE("set debug on %s failed\n", p->arg);
@@ -1192,6 +1270,7 @@ struct debug_flags_map debug[] = {
         {"HTTP3", false},
         {"RWER", false},
         {"SOCKS", false},
+        {"MESH", false},
         {NULL, false},
 };
 

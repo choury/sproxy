@@ -9,6 +9,7 @@
 #include "misc/strategy.h"
 #include "misc/util.h"
 #include "prot/tls.h"
+#include "mesh/manager.h"
 #include "bpf/bpf.h"
 
 #include <unistd.h>
@@ -114,6 +115,9 @@ int main(int argc, char **argv) {
             LOG("Starting rproxy2 client to %s\n", dumpDest(opt.rproxy_server).c_str());
             new Rguest2(opt.rproxy_server, opt.rproxy_name);
         }
+    }
+    if(opt.mesh_name) {
+        MeshManager::Start();
     }
 
 #ifdef HAVE_QUIC

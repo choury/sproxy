@@ -3,6 +3,18 @@ set -x
 
 HOSTNAME=localhost.choury.com
 
+#ip6-localhost 是 Debian /etc/hosts 的固有别名，macOS 等平台没有：
+#mesh 测试用它当第三个可解析节点名，缺失则补一条，无权限则跳过 mesh 用例
+mesh_hosts_ok=0
+if grep -qw ip6-localhost /etc/hosts 2>/dev/null; then
+    mesh_hosts_ok=1
+elif (echo "::1 ip6-localhost" | sudo tee -a /etc/hosts >/dev/null 2>&1) \
+   || (echo "::1 ip6-localhost" >> /etc/hosts 2>/dev/null); then
+    mesh_hosts_ok=1
+else
+    echo "ip6-localhost unresolvable and cannot fix /etc/hosts, mesh tests will be skipped"
+fi
+
 ker=$(uname -s)
 run_extended_tests=false
 
@@ -293,6 +305,374 @@ function test_rproxy(){
     kill -SIGINT %2
     wait %2
 }
+
+#mesh 核心语义：静态组网、自动发现、逐跳中继、出口策略、auto 切换与目标解析优先级。
+#三种 peer 传输全覆盖：A(3370,入口,名=localhost,http)只配种子 B(3371,名=$HOSTNAME,ssl)；
+#C(3373,名=ip6-localhost,quic)只与 B 互联，A 经 B 的节点表同步发现 C——
+#A->B 走 https、B->C 与 A->C 走 quic。出口不再套本地策略而是 direct，
+#目标复用主服务器(3333/3334)；CONNECT 用端口特定规则($HOSTNAME:3334)压过主机名的自动 local 规则；全程不依赖外网
+function test_mesh(){
+    if [ "$mesh_hosts_ok" != 1 ]; then
+        echo "mesh test skipped: ip6-localhost unresolvable"
+        return 0
+    fi
+    rm -f mesh_out
+    #探测/同步周期加速（环境变量是测试专用旋钮，非配置项）
+    export SPROXY_MESH_PROBE_INTERVAL=1 SPROXY_MESH_SYNC_INTERVAL=2
+    cat > mesh.conf << EOF
+root-dir .
+policy-file /dev/null
+cert localhost.crt
+key localhost.key
+mesh-secret mesh-pass
+debug all
+EOF
+    #B 的本地策略对目标 block：出口与 identifier 分发都不查本地策略，block 不应生效；
+    #myback 是死地址 alias，供目标解析优先级用例与 rproxy 后端竞争
+    printf "127.0.0.1:3333 block\nlocalhost:3333 block\nmyback alias http://127.0.0.1:1/\n" > mesh_b.list
+    : > mesh_c.list
+    printf "127.0.0.1 block\nlocalhost block\n$HOSTNAME block\n" > mesh_bp.list
+    printf "127.0.0.1 local\nlocalhost local\n$HOSTNAME local\n" > mesh_bg.list
+    cat > mesh_a.list << EOF
+127.0.0.1:3333 proxy mesh://$HOSTNAME
+localhost:3333 proxy mesh://ip6-localhost
+$HOSTNAME:3333 proxy mesh://localhost
+$HOSTNAME:3334 proxy mesh://$HOSTNAME
+bad-mesh.net proxy mesh://nosuch.node
+mesh-loop.local proxy mesh://$HOSTNAME
+EOF
+    SSL_CERT_FILE=$PWD/ca.crt ./sproxy -c mesh.conf --mesh=ip6-localhost \
+        --bind "3373 quic" -P mesh_c.list --mesh-peer=https://$HOSTNAME:3371 \
+        --admin unix:${sp}meshc.sock > mesh_c.log 2>&1 &
+    local cpid=$!
+    SSL_CERT_FILE=$PWD/ca.crt ./sproxy -c mesh.conf --mesh=$HOSTNAME \
+        --bind "3371 ssl" -P mesh_b.list --mesh-peer=http://localhost:3370 \
+        --mesh-peer=quic://ip6-localhost:3373 \
+        --admin unix:${sp}meshb.sock > mesh_b.log 2>&1 &
+    local bpid=$!
+    SSL_CERT_FILE=$PWD/ca.crt ./sproxy -c mesh.conf --mesh=localhost \
+        --bind 3370 --secret=client:pass -P mesh_a.list \
+        --mesh-peer=https://$HOSTNAME:3371 \
+        --admin unix:${sp}mesha.sock > mesh_a.log 2>&1 &
+    local apid=$!
+    wait_tcp_port 3370
+    wait_tcp_port 3371
+    wait_udp_port 3373
+
+    #等 A 对种子 B 的首次探测成功（DNS 失败重试下可能要到第三拍）
+    wait_mesh_dump ${sp}mesha.sock "probes=[1-9]/" "mesh test 1 failed: no probe result"
+    #发现：A 的节点表应出现 C（仅经同步学得，无静态配置）且探测已有样本（路由需要活边）
+    wait_mesh_dump ${sp}mesha.sock "ip6-localhost.*probes=[1-9]" "mesh test 2 failed: no discovery"
+    #中继路由需要 B->C 活边
+    wait_mesh_dump ${sp}meshb.sock "ip6-localhost.*probes=[1-9]" "mesh test 2 failed: no edge to relay exit"
+
+    #经 mesh 转发到固定出口 B：B 对目标配了 block，仍应 200（出口不套本地策略）
+    curl -sf -m 10 -x client:pass@127.0.0.1:3370 http://127.0.0.1:3333/status -o mesh_out \
+        && grep -q "Proxy server" mesh_out
+    [ $? -ne 0 ] && echo "mesh test 3 failed: forward via mesh" && exit 1
+
+    #经发现的节点 C 转发：A -> C(出口) -> direct -> 主服务器 /status
+    curl -sf -m 10 -x client:pass@127.0.0.1:3370 http://localhost:3333/status -o mesh_out \
+        && grep -q "Proxy server" mesh_out
+    [ $? -ne 0 ] && echo "mesh test 4 failed: forward to discovered node" && exit 1
+
+    #CONNECT 隧道（https 经 mesh 中继）：A -> B(出口) -> direct -> 本测试的 https 服务
+    curl -sf -m 10 -k -x client:pass@127.0.0.1:3370 https://$HOSTNAME:3334/sites.list -o mesh_out \
+        && [ -s mesh_out ]
+    [ $? -ne 0 ] && echo "mesh test 5 failed: CONNECT tunnel via mesh" && exit 1
+
+    #mesh:// 策略写未知节点：mesh/rproxy/alias 三级皆 miss，404
+    curl -s -m 10 -x client:pass@127.0.0.1:3370 http://bad-mesh.net/ | grep -q "\[\[can't find backend\]\]"
+    [ $? -ne 0 ] && echo "mesh test 6 failed: unknown node" && exit 1
+
+    #出口 direct 后不可达目标自然失败
+    curl -s -m 10 -x client:pass@127.0.0.1:3370 http://mesh-loop.local/ -o mesh_out
+    grep -q "Proxy server" mesh_out
+    [ $? -eq 0 ] && echo "mesh test 7 failed: unreachable target should fail" && exit 1
+
+    #合法 mesh 凭据但 identifier 是未知名字：落 rproxy/alias 后 404
+    [ "$(curl -s -m 10 --proxy-insecure -x https://$HOSTNAME:3371 -U mesh+third.node:mesh-pass \
+        http://127.0.0.1:3333/ -o /dev/null -w "%{http_code}")" != "404" ] \
+        && echo "mesh test 8 failed: unknown identifier" && exit 1
+
+    #mesh://<本节点名> 归一化为 direct：请求直连主服务器的 /mesh/ping（其未启用 mesh，应答 404）
+    curl -s -m 10 -x client:pass@127.0.0.1:3370 http://$HOSTNAME:3333/mesh/ping | grep -q "\[\[mesh not enabled\]\]"
+    [ $? -ne 0 ] && echo "mesh test 9 failed: mesh://self should fall to direct" && exit 1
+
+    #普通用户凭据的 identifier 触发 mesh（不要求 mesh 用户）：A 应记 dispatch 日志
+    curl -sf -m 10 -x client+$HOSTNAME:pass@127.0.0.1:3370 http://$HOSTNAME:3333/status -o mesh_out \
+        && grep -q "Proxy server" mesh_out
+    [ $? -ne 0 ] && echo "mesh test 10 failed: normal user identifier" && exit 1
+    sleep 1
+    grep -aq "mesh dispatch: http://$HOSTNAME:3333/status exit=$HOSTNAME via=$HOSTNAME" mesh_a.log
+    [ $? -ne 0 ] && echo "mesh test 10 failed: no dispatch log" && exit 1
+
+    #控制面端点仅接受 mesh 凭据（目标须用 IP 形式命中内建 local，
+    #域名形式无 local 规则会落默认策略被转发出去）
+    [ "$(curl -s -m 5 -k https://127.0.0.1:3371/mesh/ping -o /dev/null -w "%{http_code}")" != "401" ] \
+        && echo "mesh test 11 failed: expect 401" && exit 1
+    curl -s -m 5 -k -u mesh:mesh-pass https://127.0.0.1:3371/mesh/ping | grep -q pong
+    [ $? -ne 0 ] && echo "mesh test 11 failed: ping" && exit 1
+
+    #B 中继：凭据 identifier 即出口声明，请求经 B 转发到出口 C，C 出口 direct 连主服务器；
+    #B 对目标配了 block，仍应 200（identifier 分发不查本地策略）
+    curl -sf -m 10 --proxy-insecure -x https://$HOSTNAME:3371 -U mesh+ip6-localhost:mesh-pass \
+        http://127.0.0.1:3333/status -o mesh_out \
+        && grep -q "Proxy server" mesh_out
+    [ $? -ne 0 ] && echo "mesh test 12 failed: relay forward" && exit 1
+    #只断言 B 分发到了出口 C：首跳可能是 C 直连也可能是经 A 的两跳
+    #（探测噪声下两者权重接近，都合法），多跳路径由 dumbbell 专项覆盖
+    sleep 1 && grep -aq "mesh dispatch: http://127.0.0.1:3333/status exit=ip6-localhost" mesh_b.log
+    [ $? -ne 0 ] && echo "mesh test 12 failed: no relay dispatch log" && exit 1
+
+    #CONNECT 隧道过中继（https 代理承载 CONNECT、经 B 中继、C 出口 direct 连本测试的 https 服务）。
+    #凭据必须随 CONNECT 请求发送：-U 可以，-H 不会附加到 CONNECT，
+    #误用 -H 会让请求以无凭据 CONNECT 直连目标、断言形同虚设
+    curl -s -m 10 -k --proxy-insecure -x https://$HOSTNAME:3371 -U mesh+ip6-localhost:mesh-pass \
+        https://$HOSTNAME:3334/sites.list -o mesh_out
+    #非空、非 sproxy 错误页（错误页均带 [[...]] 标记）、且中继确实发生
+    [ -s mesh_out ] && ! grep -q "\[\[" mesh_out \
+        && sleep 1 && grep -aq "mesh dispatch: tcp://$HOSTNAME:3334 exit=ip6-localhost" mesh_b.log
+    [ $? -ne 0 ] && echo "mesh test 13 failed: CONNECT tunnel via relay" && exit 1
+
+    #目标名解析优先级 alias > rproxy > mesh：向 B 注册 rproxy 后端
+    #ip6-localhost（bp，对目标 block）与 myback（bg，本地应答）。
+    #ip6-localhost 注册前经 mesh 到 C 成功（test 12），注册后被 bp 截住（block 403）；
+    #myback 恒走 B 上的 alias 死地址而非 bg
+    SSL_CERT_FILE=$PWD/ca.crt ./sproxy -c mesh.conf --rproxy https://$HOSTNAME:3371/ip6-localhost \
+        -P mesh_bp.list --admin unix:${sp}meshbp.sock > mesh_bp.log 2>&1 &
+    local bppid=$!
+    SSL_CERT_FILE=$PWD/ca.crt ./sproxy -c mesh.conf --rproxy https://$HOSTNAME:3371/myback \
+        -P mesh_bg.list --admin unix:${sp}meshbg.sock > mesh_bg.log 2>&1 &
+    local bgpid=$!
+    local count=0
+    while ! curl -s -m 5 --proxy-insecure -x https://$HOSTNAME:3371 -U mesh+ip6-localhost:mesh-pass \
+        http://127.0.0.1:3333/status | grep -q "blocked"; do
+        count=$((count + 1))
+        if [ $count -ge 20 ]; then
+            echo "mesh test 14 failed: rproxy backend not registered"
+            exit 1
+        fi
+        sleep 1
+    done
+    #rproxy 压过 mesh：identifier=ip6-localhost 须走 rproxy 后端 bp（block 403）而非 mesh（会成功）
+    curl -s -m 5 --proxy-insecure -x https://$HOSTNAME:3371 -U mesh+ip6-localhost:mesh-pass \
+        http://127.0.0.1:3333/status | grep -q "blocked"
+    [ $? -ne 0 ] && echo "mesh test 14 failed: rproxy should beat mesh" && exit 1
+    #alias 压过 rproxy：identifier=myback 须走 alias（死地址失败）而非 rproxy 后端 bg（会成功）
+    curl -sf -m 5 --proxy-insecure -x https://$HOSTNAME:3371 -U mesh+myback:mesh-pass \
+        http://127.0.0.1:3333/status -o mesh_out \
+        && echo "mesh test 15 failed: alias should beat rproxy" && exit 1
+    kill -SIGINT $bppid $bgpid
+    wait $bppid $bgpid 2>/dev/null
+
+    #同名冲突：D 与 C 同名(ip6-localhost)不同地址，A 应告警并保留既有条目
+    ./sproxy -c mesh.conf --mesh=ip6-localhost \
+        --bind 3374 --mesh-peer=http://localhost:3370 \
+        --admin unix:${sp}meshd.sock > mesh_d.log 2>&1 &
+    local dpid=$!
+    local count=0
+    while ! grep -q "changed addrs" mesh_a.log; do
+        count=$((count + 1))
+        if [ $count -ge 20 ]; then
+            break
+        fi
+        sleep 1
+    done
+    grep -q "changed addrs" mesh_a.log
+    [ $? -ne 0 ] && echo "mesh test 16 failed: conflict alarm" && exit 1
+    #冲突不被劫持：A 保留既有条目的地址
+    printf "dump mesh" | ./scli -s ${sp}mesha.sock | grep -q "ip6-localhost \[quic://ip6-localhost:3373\]"
+    [ $? -ne 0 ] && echo "mesh test 16 failed: hijacked by conflicting entry" && exit 1
+    kill -SIGINT $dpid; wait $dpid
+
+    #mesh-exit=off：E 自宣无 exit 能力位，A 的节点表不应标记其为出口
+    ./sproxy -c mesh.conf --mesh=noexit.local --mesh-exit=off \
+        --bind 3375 --mesh-peer=http://localhost:3370 \
+        --admin unix:${sp}meshe.sock > mesh_e.log 2>&1 &
+    local epid=$!
+    wait_mesh_dump ${sp}mesha.sock "noexit.local \[" "mesh test 17 failed: no discovery of noexit node"
+    printf "dump mesh" | ./scli -s ${sp}mesha.sock | grep "noexit.local \[" | grep -qv " exit"
+    [ $? -ne 0 ] && echo "mesh test 17 failed: exit cap should be off" && exit 1
+    kill -SIGINT $epid; wait $epid
+
+    #auto 出口：identifier=auto 触发，dump 记录被选中的出口
+    curl -sf -m 10 -x client+auto:pass@127.0.0.1:3370 http://$HOSTNAME:3333/status -o mesh_out \
+        && grep -q "Proxy server" mesh_out
+    [ $? -ne 0 ] && echo "mesh test 18 failed: auto exit" && exit 1
+    local picked=""
+    picked=$(printf "dump mesh" | ./scli -s ${sp}mesha.sock | grep "auto exit:" | awk '{print $3}')
+    [ -z "$picked" ] && echo "mesh test 18 failed: no auto exit in dump" && exit 1
+    #杀掉被选中的出口，auto 应切换到另一个并继续应答
+    local other=""
+    if [ "$picked" = "ip6-localhost" ]; then
+        kill -SIGINT $cpid; wait $cpid 2>/dev/null; other=$HOSTNAME
+    else
+        kill -SIGINT $bpid; wait $bpid 2>/dev/null; other=ip6-localhost
+    fi
+    count=0
+    while ! curl -sf -m 5 -x client+auto:pass@127.0.0.1:3370 http://$HOSTNAME:3333/status -o mesh_out 2>/dev/null \
+        || ! grep -q "Proxy server" mesh_out \
+        || ! printf "dump mesh" | ./scli -s ${sp}mesha.sock | grep -q "auto exit: $other"; do
+        count=$((count + 1))
+        if [ $count -ge 60 ]; then
+            echo "mesh test 19 failed: auto exit switch"
+            exit 1
+        fi
+        sleep 1
+    done
+
+    #剩余出口也失联（入口 A 保留）：auto 应显式报错而非挂起；
+    #固定出口同样必须失败（错误形态因平台/时序而异，断言不变量为"不成功、不挂起"）
+    if [ "$other" = "ip6-localhost" ]; then
+        kill -SIGINT $cpid; wait $cpid 2>/dev/null
+    else
+        kill -SIGINT $bpid; wait $bpid 2>/dev/null
+    fi
+    sleep 6
+    curl -s -m 10 -x client+auto:pass@127.0.0.1:3370 http://$HOSTNAME:3333/status | grep -q "\[\[mesh: no exit\]\]"
+    [ $? -ne 0 ] && echo "mesh test 20 failed: expect no exit" && exit 1
+    curl -s -m 10 -x client:pass@127.0.0.1:3370 http://127.0.0.1:3333/status -o mesh_out
+    grep -q "Proxy server" mesh_out
+    [ $? -eq 0 ] && echo "mesh test 20 failed: exit down" && exit 1
+
+    #崩溃检查：ASAN 报告，或不含 epoll_wait 的 dump_trace 栈块
+    #（收尾 kill 信号打在空闲进程上的关机栈都停在 epoll_wait，不算崩溃）
+    for lg in mesh_a.log mesh_b.log mesh_c.log; do
+        grep -q "AddressSanitizer" $lg \
+            && echo "mesh test 21 failed: asan report in $lg" && exit 1
+        awk '/Stack Trace/{t=1;has=0;n=0;next} t{n++; if(/epoll_wait/)has=1; if(n>=14){if(!has)found=1; t=0}} END{exit found?0:1}' $lg \
+            && echo "mesh test 21 failed: crash trace in $lg" && exit 1
+    done
+
+    kill -SIGINT $apid
+    wait $apid 2>/dev/null
+}
+
+#mesh：真实分区拓扑（用户命名空间 + veth，无需 root）。
+#哑铃：A-B、B-D、C-D、A-E、E-D（D 为出口，A 有两条互异路径：经 B/C 或经 E）。
+#验收：A 到 D 两跳中继成功；杀掉中继 B 后自动经 E 重路由
+function test_mesh_dumbbell(){
+    if ! unshare -Urn true 2>/dev/null; then
+        echo "mesh dumbbell test skipped: user namespace unavailable"
+        return 0
+    fi
+    local D=$(pwd)/meshdumb
+    rm -rf $D; mkdir -p $D
+    export SPROXY_MESH_PROBE_INTERVAL=1 SPROXY_MESH_SYNC_INTERVAL=2
+    cat > $D/common.conf << 'MDC'
+policy-file /dev/null
+mesh-secret mesh-pass
+debug all
+MDC
+    #普通目标 F（无 mesh）放在 D 的 netns：D 出口 direct 直连它应答，且只能经 D 到达
+    : > $D/other.list
+    printf "10.99.0.5 local\n" > $D/f.list
+    echo "10.99.0.5:4431 proxy mesh://10.99.0.5" > $D/a.list
+
+    #拓扑：环回口为各节点唯一身份（A=.0.1 B=.0.9 C=.0.3 D=.0.5 E=.1.9），
+    #veth 仅作链路中继（10.1.x.y 点对点）：A-B、B-D、C-D、A-E、E-D。
+    #A 到 D 有两条互异路径（经 B 或经 E），杀 B 后应经 E 重路由
+    unshare -Urmn bash -c '
+    SPROXY="$PWD/sproxy"
+    D="$PWD/meshdumb"
+    unshare -n sleep 600 & PA=$!
+    unshare -n sleep 600 & PB=$!
+    unshare -n sleep 600 & PC=$!
+    unshare -n sleep 600 & PE=$!
+    unshare -n sleep 600 & PD=$!
+    #退出时回收 netns 持有进程，避免 CI 并行下累积
+    trap "kill $PA $PB $PC $PE $PD 2>/dev/null" EXIT
+    sleep 0.5
+    pair() { ip link add $1 type veth peer name $2; ip link set $1 netns $3; ip link set $2 netns $4; }
+    pair l1a l1b $PA $PB   # A-B   10.1.1.1 / 10.1.1.2
+    pair l2a l2b $PB $PD   # B-D   10.1.2.1 / 10.1.2.2
+    pair l3a l3b $PC $PD   # C-D   10.1.3.1 / 10.1.3.2
+    pair l4a l4b $PA $PE   # A-E   10.1.4.1 / 10.1.4.2
+    pair l5a l5b $PE $PD   # E-D   10.1.5.1 / 10.1.5.2
+    cfg() { nsenter -t $1 -n bash -c "$2"; }
+    cfg $PA "ip l set lo up; ip a add 10.99.0.1/32 dev lo
+        ip l set l1a up; ip a add 10.1.1.1/32 dev l1a; ip r add 10.1.1.2/32 dev l1a; ip r add 10.99.0.9/32 via 10.1.1.2
+        ip l set l4a up; ip a add 10.1.4.1/32 dev l4a; ip r add 10.1.4.2/32 dev l4a; ip r add 10.99.1.9/32 via 10.1.4.2"
+    cfg $PB "ip l set lo up; ip a add 10.99.0.9/32 dev lo
+        ip l set l1b up; ip a add 10.1.1.2/32 dev l1b; ip r add 10.1.1.1/32 dev l1b; ip r add 10.99.0.1/32 via 10.1.1.1
+        ip l set l2a up; ip a add 10.1.2.1/32 dev l2a; ip r add 10.1.2.2/32 dev l2a; ip r add 10.99.0.5/32 via 10.1.2.2"
+    cfg $PC "ip l set lo up; ip a add 10.99.0.3/32 dev lo
+        ip l set l3a up; ip a add 10.1.3.1/32 dev l3a; ip r add 10.1.3.2/32 dev l3a; ip r add 10.99.0.5/32 via 10.1.3.2"
+    cfg $PE "ip l set lo up; ip a add 10.99.1.9/32 dev lo
+        ip l set l4b up; ip a add 10.1.4.2/32 dev l4b; ip r add 10.1.4.1/32 dev l4b; ip r add 10.99.0.1/32 via 10.1.4.1
+        ip l set l5a up; ip a add 10.1.5.1/32 dev l5a; ip r add 10.1.5.2/32 dev l5a; ip r add 10.99.0.5/32 via 10.1.5.2"
+    cfg $PD "ip l set lo up; ip a add 10.99.0.5/32 dev lo
+        ip l set l2b up; ip a add 10.1.2.2/32 dev l2b; ip r add 10.1.2.1/32 dev l2b; ip r add 10.99.0.9/32 via 10.1.2.1
+        ip l set l3b up; ip a add 10.1.3.2/32 dev l3b; ip r add 10.1.3.1/32 dev l3b; ip r add 10.99.0.3/32 via 10.1.3.1
+        ip l set l5b up; ip a add 10.1.5.2/32 dev l5b; ip r add 10.1.5.1/32 dev l5b; ip r add 10.99.1.9/32 via 10.1.5.1"
+
+    run1() { nsenter -t $1 -n $SPROXY -c $D/common.conf --mesh=$2 \
+        --bind 4430 -P $3 --mesh-peer=$4 --admin unix:$D/$5.sock > $D/$5.log 2>&1 & }
+    run2() { nsenter -t $1 -n $SPROXY -c $D/common.conf --mesh=$2 \
+        --bind 4430 -P $3 --mesh-peer=$4 --mesh-peer=$5 --admin unix:$D/$6.sock > $D/$6.log 2>&1 & }
+    run2 $PD 10.99.0.5 $D/other.list http://10.99.0.9:4430 http://10.99.0.3:4430 d
+    DPROXY=$!
+    nsenter -t $PD -n $SPROXY -c $D/common.conf --bind 4431 -P $D/f.list \
+        --admin unix:$D/f.sock > $D/f.log 2>&1 &
+    FPROXY=$!
+    run1 $PC 10.99.0.3 $D/other.list http://10.99.0.5:4430 c
+    CPROXY=$!
+    run1 $PB 10.99.0.9 $D/other.list http://10.99.0.1:4430 b
+    BPROXY=$!
+    run1 $PE 10.99.1.9 $D/other.list http://10.99.0.1:4430 e
+    EPROXY=$!
+    run2 $PA 10.99.0.1 $D/a.list    http://10.99.0.9:4430 http://10.99.1.9:4430 a
+    APROXY=$!
+    #节点起齐后把各节点 PID 纳入清理（nsenter exec 后即 sproxy 本体，按 PID 精确杀）
+    trap "kill -INT $DPROXY $FPROXY $CPROXY $BPROXY $EPROXY $APROXY 2>/dev/null;
+          kill $PA $PB $PC $PE $PD 2>/dev/null" EXIT
+
+    #等 probe 收敛：A 经 B 发现 D（A 对 D 无直连，探测必败，只看条目出现）
+    #再留数个 probe 周期让链路状态传播到达 A
+    for i in $(seq 1 40); do
+        if printf "dump mesh" | "$PWD/scli" -s $D/a.sock 2>/dev/null | grep -q "10.99.0.5 \["; then break; fi
+        sleep 1
+    done
+    sleep 12
+    nsenter -t $PA -n curl -sf -m 15 -x 10.99.0.1:4430 http://10.99.0.5:4431/status -o $D/out1
+    [ $? -ne 0 ] && echo "MESHFAIL forward" && exit 1
+    sleep 1
+    #两跳中继：A 的下一跳必须是某个中继（B 或 E，两条对称路径谁便宜走谁），不能是直连 D
+    VIA=$(grep -ao "exit=10.99.0.5 via=10.99.[01].9" $D/a.log | tail -1 | grep -o "10.99.[01].9$")
+    [ -z "$VIA" ] && echo "MESHFAIL via-relay" && exit 1
+    if [ "$VIA" = "10.99.0.9" ]; then
+        KILLPID=$BPROXY; OTHER=10.99.1.9
+        grep -aq "mesh dispatch.*exit=10.99.0.5" $D/b.log || { echo "MESHFAIL relay-log"; exit 1; }
+    else
+        KILLPID=$EPROXY; OTHER=10.99.0.9
+        grep -aq "mesh dispatch.*exit=10.99.0.5" $D/e.log || { echo "MESHFAIL relay-log"; exit 1; }
+    fi
+
+    #杀掉首发中继（nsenter exec 后即 sproxy 本体，按 PID 精确杀）：A 应切到另一条路径
+    kill -INT $KILLPID
+    sleep 6
+    for i in $(seq 1 30); do
+        if nsenter -t $PA -n curl -sf -m 8 -x 10.99.0.1:4430 http://10.99.0.5:4431/status -o $D/out2 2>/dev/null; then
+            #重路由后必须经另一条路径的中继
+            if [ -s $D/out2 ] && grep -aq "exit=10.99.0.5 via=$OTHER" $D/a.log; then
+                echo "MESHOK reroute" && exit 0
+            fi
+        fi
+        sleep 1
+    done
+    echo "MESHFAIL reroute" && exit 1
+    '
+    local rc=$?
+    grep -q "Proxy server" $D/out1 || { echo "mesh dumbbell test 1 failed: no relayed output"; rc=1; }
+    if [ $rc -ne 0 ]; then
+        echo "mesh dumbbell test failed"
+        grep -aE "mesh dispatch|no route" $D/a.log 2>/dev/null | tail -5
+    fi
+    return $rc
+}
+
+
 
 #DoH服务(/dns-query)验证：独立实例 + 公共DoH上游(cloudflare-dns.com)。
 #1) type-65应答透传ech参数；2) 被MITM的域名(block子域触发mayBeBlocked)
@@ -767,6 +1147,20 @@ function wait_tcp_port() {
     done
 }
 
+#轮询 dump mesh 直到匹配（mesh 收敛等待），超时即失败
+function wait_mesh_dump(){
+    local sock=$1 pattern=$2 msg=$3
+    local count=0
+    while ! printf "dump mesh" | ./scli -s $sock | grep -q "$pattern"; do
+        count=$((count + 1))
+        if [ $count -ge 40 ]; then
+            echo "$msg"
+            exit 1
+        fi
+        sleep 1
+    done
+}
+
 function wait_udp_port() {
     local count=0
     while ! lsof -Pi udp:$1; do
@@ -803,10 +1197,10 @@ openssl req -new -key localhost.key -out localhost.csr -subj '/CN=localhost'
 
 cat >> san.cnf << SEOF
 [SAN]
-subjectAltName=DNS:localhost,DNS:localhost.choury.com,IP:127.0.0.1,IP:::1
+subjectAltName=DNS:localhost,DNS:localhost.choury.com,DNS:ip6-localhost,IP:127.0.0.1,IP:::1
 SEOF
 
-openssl x509 -req -days 365 -in localhost.csr  -CA ca.crt -CAkey ca.key -set_serial 01 -out localhost.crt -extfile san.cnf  -extensions SAN
+openssl x509 -req -days 3560 -in localhost.csr  -CA ca.crt -CAkey ca.key -set_serial 01 -out localhost.crt -extfile san.cnf  -extensions SAN
 
 EOF
 
@@ -942,6 +1336,12 @@ kill -SIGUSR1 %1
 echo "test doh strip"
 test_doh_strip
 
+echo "test mesh"
+test_mesh
+
+echo "test mesh dumbbell"
+test_mesh_dumbbell || exit 1
+
 if [ "$run_extended_tests" = true ]; then
     echo "test tproxy"
     test_tproxy 4333
@@ -991,6 +1391,7 @@ run_test $buildpath/prot/http3/qpack_test
 run_test $buildpath/prot/quic/quic_frame_test
 run_test $buildpath/misc/trie_test
 run_test $buildpath/misc/buffer_test
+run_test $buildpath/mesh/route_test
 if [ $ker == 'Linux' ];then
     run_test $buildpath/hook/hook_test $buildpath/hook/hook_bpf.elf
 fi

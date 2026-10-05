@@ -76,6 +76,8 @@ static inline std::string ltrim(std::string s) {
     return s;
 }
 
+bool decodeauth(const char* auth, struct Credit* credit);
+
 struct CaseInsensitiveCompare {
     bool operator()(const std::string& a, const std::string& b) const {
         const size_t len = std::min(a.length(), b.length());
@@ -136,7 +138,8 @@ public:
     std::vector<Range> ranges;
     bool chain_proxy  = false;
     bool skip_authorize = false;
-    std::string rproxy_name;
+    struct Credit cr;
+    std::string backend_name;
     std::vector<std::tuple<std::string, uint32_t>> tracker;
     explicit HttpReqHeader(HeaderMap&& headers);
     static std::shared_ptr<HttpReqHeader> create(HeaderMap&& headers);
