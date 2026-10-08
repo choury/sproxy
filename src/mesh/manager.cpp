@@ -161,7 +161,7 @@ void MeshManager::probe_round() {
         ++it;
     }
     for(auto& [name, e] : table) {
-        if(e.probing || e.addrs.empty() || e.caps == 0) {
+        if(e.probing || e.addrs.empty()) {
             continue;
         }
         e.probing = true;
@@ -215,11 +215,10 @@ void MeshManager::probe_round() {
 
 void MeshManager::sync_round() {
     for(auto& [name, e] : table) {
-        //纯入口节点(caps==0)不收任何入向连接；种子始终同步以便引导收敛
-        if(e.syncing || e.caps == 0 || e.addrs.empty()) {
+        if(e.syncing || e.addrs.empty()) {
             continue;
         }
-        //rtt = 0 代表没有ping成功过，先不进行同步
+        //rtt = 0 代表没有ping成功过，先不进行同步；种子例外，以便引导收敛
         if(!e.seeded && e.rtt == 0) {
             continue;
         }
@@ -271,6 +270,17 @@ std::string MeshManager::serialize() const {
         }
         out << "\n";
     }
+    //本机 rproxy 后端经常驻会话可达，宣告为出口；无直连地址，边权取固定占位值。
+    if(opt.mesh_caps & MESH_CAP_RELAY) {
+        uint64_t now = now_ms();
+        for(const auto& [name, r] : rproxys) {
+            if(name == opt.mesh_name) {
+                continue;
+            }
+            out << "N " << name << " " << MESH_CAP_EXIT << " " << now << " - "
+                << opt.mesh_name << "=" << MESH_RPROXY_RTT_MS << "\n";
+        }
+    }
     return out.str();
 }
 
@@ -291,7 +301,7 @@ void MeshManager::merge(const std::string& body) {
         if(!(ls >> name >> caps >> ts >> addrstr)) {
             continue;
         }
-        if(name == opt.mesh_name) {
+        if(name == opt.mesh_name || rproxys.count(name)) {
             continue;
         }
         //时钟偏差超窗：静默拒收
@@ -351,6 +361,8 @@ void MeshManager::merge(const std::string& body) {
             //种子让位与常规刷新同路：旧地址探测状态随宣告集变化作废
             it->second.seeded = false;
             if(addr_set(it->second) != addrs) {
+                LOGD(DMESH, "%s changed addrs [%s] -> [%s]\n", name.c_str(),
+                     join_str(addr_set(it->second), ' ').c_str(), join_str(addrs, ' ').c_str());
                 it->second.addrs.clear();
                 for(const auto& a : addrs) {
                     it->second.addrs[a];
@@ -473,6 +485,15 @@ void MeshManager::dump(Dumper dp, void* param) {
            e.seeded ? " seeded" : "");
     }
     dp(param, "auto exit: %s\n", last_auto_exit.empty() ? "-" : last_auto_exit.c_str());
+    if(opt.mesh_caps & MESH_CAP_RELAY) {
+        std::string s;
+        for(const auto& [name, r] : rproxys) {
+            s += " " + name;
+        }
+        if(!s.empty()) {
+            dp(param, "rproxy exits:%s\n", s.c_str());
+        }
+    }
     dp(param, "link states:\n");
     auto dump_edges = [&](const std::string& who, const std::map<std::string, double>& edges) {
         std::string es;

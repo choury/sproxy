@@ -246,6 +246,21 @@ int main(){
         assert(mesh_route(f.self, f.table, "x", p) && p.first_hop == "a" && p.hops == 2);
     }
 
+    std::cout<<"---------- t15: rproxy exit announced by relay ----------"<<std::endl;
+    {
+        Fixture f("c");
+        //c 视角：x 是 r 宣告的 rproxy 出口——无宣告地址无探测，仅一条到 r 的固定权值边
+        f.node("r").caps = MESH_CAP_RELAY;
+        f.node("x").caps = MESH_CAP_EXIT;
+        f.node("r").rtt = 20.0;
+        f.node("x").edges = {{"r", MESH_RPROXY_RTT_MS}};
+        assert(mesh_route(f.self, f.table, "x", p) && p.first_hop == "r" && p.hops == 2);
+        assert(std::fabs(p.cost - (20.0 + MESH_RPROXY_RTT_MS + 2 * MESH_HOP_PENALTY)) < 1e-9);
+        assert(mesh_pick_exit(f.self, f.table, exit_name, p) && exit_name == "x");
+        //宣告节点自身不经 mesh 路由到 x：无宣告地址无法落账首跳，走本地 rproxy 分发
+        assert(!mesh_route("r", f.table, "x", p));
+    }
+
     std::cout << "all mesh route tests passed" << std::endl;
     return 0;
 }

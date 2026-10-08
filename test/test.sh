@@ -435,6 +435,26 @@ EOF
         && sleep 1 && grep -aq "mesh dispatch: tcp://$HOSTNAME:3334 exit=ip6-localhost" mesh_b.log
     [ $? -ne 0 ] && echo "mesh test 13 failed: CONNECT tunnel via relay" && exit 1
 
+    #同名冲突：D 与 C 同名(ip6-localhost)不同地址，A 应告警并保留既有条目
+    ./sproxy -c mesh.conf --mesh=ip6-localhost \
+        --bind 3374 --mesh-peer=http://localhost:3370 \
+        --admin unix:${sp}meshd.sock > mesh_d.log 2>&1 &
+    local dpid=$!
+    local count=0
+    while ! grep -q "changed addrs" mesh_a.log; do
+        count=$((count + 1))
+        if [ $count -ge 20 ]; then
+            break
+        fi
+        sleep 1
+    done
+    grep -q "changed addrs" mesh_a.log
+    [ $? -ne 0 ] && echo "mesh test 14 failed: conflict alarm" && exit 1
+    #冲突不被劫持：A 保留既有条目的地址
+    printf "dump mesh" | ./scli -s ${sp}mesha.sock | grep -q "ip6-localhost \[quic://ip6-localhost:3373\]"
+    [ $? -ne 0 ] && echo "mesh test 14 failed: hijacked by conflicting entry" && exit 1
+    kill -SIGINT $dpid; wait $dpid
+
     #目标名解析优先级 alias > rproxy > mesh：向 B 注册 rproxy 后端
     #ip6-localhost（bp，对目标 block）与 myback（bg，本地应答）。
     #ip6-localhost 注册前经 mesh 到 C 成功（test 12），注册后被 bp 截住（block 403）；
@@ -450,7 +470,7 @@ EOF
         http://127.0.0.1:3333/status | grep -q "blocked"; do
         count=$((count + 1))
         if [ $count -ge 20 ]; then
-            echo "mesh test 14 failed: rproxy backend not registered"
+            echo "mesh test 15 failed: rproxy backend not registered"
             exit 1
         fi
         sleep 1
@@ -458,33 +478,13 @@ EOF
     #rproxy 压过 mesh：identifier=ip6-localhost 须走 rproxy 后端 bp（block 403）而非 mesh（会成功）
     curl -s -m 5 --proxy-insecure -x https://$HOSTNAME:3371 -U mesh+ip6-localhost:mesh-pass \
         http://127.0.0.1:3333/status | grep -q "blocked"
-    [ $? -ne 0 ] && echo "mesh test 14 failed: rproxy should beat mesh" && exit 1
+    [ $? -ne 0 ] && echo "mesh test 15 failed: rproxy should beat mesh" && exit 1
     #alias 压过 rproxy：identifier=myback 须走 alias（死地址失败）而非 rproxy 后端 bg（会成功）
     curl -sf -m 5 --proxy-insecure -x https://$HOSTNAME:3371 -U mesh+myback:mesh-pass \
         http://127.0.0.1:3333/status -o mesh_out \
-        && echo "mesh test 15 failed: alias should beat rproxy" && exit 1
+        && echo "mesh test 16 failed: alias should beat rproxy" && exit 1
     kill -SIGINT $bppid $bgpid
     wait $bppid $bgpid 2>/dev/null
-
-    #同名冲突：D 与 C 同名(ip6-localhost)不同地址，A 应告警并保留既有条目
-    ./sproxy -c mesh.conf --mesh=ip6-localhost \
-        --bind 3374 --mesh-peer=http://localhost:3370 \
-        --admin unix:${sp}meshd.sock > mesh_d.log 2>&1 &
-    local dpid=$!
-    local count=0
-    while ! grep -q "changed addrs" mesh_a.log; do
-        count=$((count + 1))
-        if [ $count -ge 20 ]; then
-            break
-        fi
-        sleep 1
-    done
-    grep -q "changed addrs" mesh_a.log
-    [ $? -ne 0 ] && echo "mesh test 16 failed: conflict alarm" && exit 1
-    #冲突不被劫持：A 保留既有条目的地址
-    printf "dump mesh" | ./scli -s ${sp}mesha.sock | grep -q "ip6-localhost \[quic://ip6-localhost:3373\]"
-    [ $? -ne 0 ] && echo "mesh test 16 failed: hijacked by conflicting entry" && exit 1
-    kill -SIGINT $dpid; wait $dpid
 
     #mesh-exit=off：E 自宣无 exit 能力位，A 的节点表不应标记其为出口
     ./sproxy -c mesh.conf --mesh=noexit.local --mesh-exit=off \

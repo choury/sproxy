@@ -15,6 +15,9 @@ constexpr int MESH_MAX_HOPS = 10;
 constexpr double MESH_HOP_PENALTY = 5.0;
 //条目/上报的新鲜度窗口(ms)，兼作节点间时钟偏差容忍
 constexpr uint64_t MESH_FRESHNESS_MS = 120'000;
+//rproxy 出口宣告边的固定权值(ms)：出口只有宣告节点一条可达路径，
+//rtt 无选路意义，取正值以区别于死边(0)
+constexpr double MESH_RPROXY_RTT_MS = 50.0;
 
 struct MeshRoutePath {
     std::string first_hop;
