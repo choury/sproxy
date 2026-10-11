@@ -1065,9 +1065,6 @@ void postConfig(){
             LOGE("mesh-secret conflicts with user 'mesh' in secret\n");
             exit(1);
         }
-        char mesh_secret_arg[AUTHLIMIT * 2 + 2] = {0};
-        snprintf(mesh_secret_arg, sizeof(mesh_secret_arg), "mesh:%s", mesh_secret);
-        addsecret(mesh_secret_arg);
         opt.mesh_secret = mesh_secret;
         opt.mesh_peers = mesh_peer_list.next;
     }

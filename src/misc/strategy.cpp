@@ -579,6 +579,11 @@ bool checksecret(const struct Credit* cr){
     return false;
 }
 
+bool checkmesh(const struct Credit* cr){
+    return opt.mesh_secret && strcmp(cr->user, "mesh") == 0
+           && strcmp(cr->pass, opt.mesh_secret) == 0;
+}
+
 bool checkauth(const char* ip, std::shared_ptr<const HttpReqHeader> req) {
     if(authips.count(ip) > 0){
         return true;
@@ -591,7 +596,7 @@ bool checkauth(const char* ip, std::shared_ptr<const HttpReqHeader> req) {
         return true;
     }
 
-    if (checksecret(&req->cr)) {
+    if (checksecret(&req->cr) || checkmesh(&req->cr)) {
         return true;
     }
     auto cookies = req->getcookies();

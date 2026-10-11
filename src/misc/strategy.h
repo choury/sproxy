@@ -11,6 +11,7 @@ extern "C" {
 void addsecret(const char* secret);
 bool secrexists(const char* user);
 bool checksecret(const struct Credit* credit);
+bool checkmesh(const struct Credit* credit);
 bool checktoken(const char* token);
 void reloadstrategy();
 bool addstrategy(const char *host, const char* s, const char* ext);

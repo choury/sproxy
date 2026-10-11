@@ -90,7 +90,7 @@ static std::string getBackend(std::shared_ptr<HttpReqHeader> req) {
     if(req->cr.user[0] == 0){
         return backend;
     }
-    if(!checksecret(&req->cr) && !req->skip_authorize) {
+    if(!checksecret(&req->cr) && !checkmesh(&req->cr) && !req->skip_authorize) {
         return backend;
     }
     if(req->cr.identifier[0]) {

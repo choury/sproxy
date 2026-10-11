@@ -426,7 +426,7 @@ void MeshManager::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<Me
     //file.cpp 已保证前缀 "mesh/"
     std::string endpoint = req->filename.substr(5);
     //控制面仅收 mesh 用户凭据
-    if(strcmp(req->cr.user, "mesh") != 0 || !checksecret(&req->cr)) {
+    if(!checkmesh(&req->cr)) {
         auto sheader = HttpResHeader::create(S401, sizeof(S401), id);
         sheader->set("WWW-Authenticate", "Basic realm=\"mesh\"");
         return response(rw, sheader, "[[Authorization needed]]\n");
