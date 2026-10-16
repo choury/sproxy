@@ -37,8 +37,10 @@ class MeshManager {
     void sync_round();
     std::string serialize() const;
     void merge(const std::string& body);
+    void recompute_edge(MeshEntry& e);
+    //最优地址；无活样本时退回首地址(排序规范化的宣告序)
     const std::string& best_addr(const MeshEntry& e) const;
-    
+
 public:
     static void Start();
     static MeshManager* GetInstance();

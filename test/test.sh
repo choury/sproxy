@@ -450,8 +450,8 @@ EOF
     done
     grep -q "changed addrs" mesh_a.log
     [ $? -ne 0 ] && echo "mesh test 14 failed: conflict alarm" && exit 1
-    #冲突不被劫持：A 保留既有条目的地址
-    printf "dump mesh" | ./scli -s ${sp}mesha.sock | grep -q "ip6-localhost \[quic://ip6-localhost:3373\]"
+    #冲突不被劫持：A 保留既有条目的地址(dump 地址带 [探测状态] 后缀)
+    printf "dump mesh" | ./scli -s ${sp}mesha.sock | grep -q "ip6-localhost \[quic://ip6-localhost:3373\["
     [ $? -ne 0 ] && echo "mesh test 14 failed: hijacked by conflicting entry" && exit 1
     kill -SIGINT $dpid; wait $dpid
 

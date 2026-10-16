@@ -20,10 +20,10 @@ void dijkstra(const std::string& self, const std::map<std::string, MeshEntry>& t
     //各用各的私有测量，独立最短路计算会互指成环
     std::map<std::string, std::map<std::string, double>> adj;
     for(const auto& [peer, e] : table) {
-        if(!e.fresh(now) || e.rtt <= 0) {
+        if(!e.fresh(now) || e.cost <= 0) {
             continue;
         }
-        double w = e.rtt;
+        double w = e.cost;
         if(auto it = e.edges.find(self); it != e.edges.end()) {
             w = std::min(w, it->second);
         }
@@ -33,15 +33,15 @@ void dijkstra(const std::string& self, const std::map<std::string, MeshEntry>& t
         if(reporter == self || !e.fresh(now)) {
             continue;
         }
-        for(const auto& [peer, rtt] : e.edges) {
-            if(peer == self || rtt <= 0) {
+        for(const auto& [peer, cost] : e.edges) {
+            if(peer == self || cost <= 0) {
                 continue;
             }
             //两端各自上报同一链路时取较小者，消除处理顺序依赖
             auto& a1 = adj[reporter][peer];
-            a1 = a1 > 0 ? std::min(a1, rtt) : rtt;
+            a1 = a1 > 0 ? std::min(a1, cost) : cost;
             auto& a2 = adj[peer][reporter];
-            a2 = a2 > 0 ? std::min(a2, rtt) : rtt;
+            a2 = a2 > 0 ? std::min(a2, cost) : cost;
         }
     }
     auto caps_of = [&](const std::string& name) -> uint32_t {
