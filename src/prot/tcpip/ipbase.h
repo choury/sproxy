@@ -10,6 +10,7 @@
 class Buffer;
 class Block;
 struct IpStatus;
+struct NetStat;
 void Unreach(std::shared_ptr<IpStatus> status, uint8_t code);
 void UpdateTcpMss(const std::shared_ptr<IpStatus>& status, uint16_t mss);
 forceinline  ssize_t Cap(std::shared_ptr<IpStatus>) {
@@ -44,6 +45,8 @@ struct IpStatus{
 #define  TUN_GSO_OFFLOAD 1
 #define  TUN_SEND_EOF    2
     uint32_t    flags = 0;
+
+    virtual NetStat getNetStat() const;
 };
 
 #endif

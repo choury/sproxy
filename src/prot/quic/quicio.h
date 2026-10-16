@@ -160,6 +160,7 @@ protected:
     uint64_t my_sent_data_total = 0;
     uint64_t my_received_data = 0;
     uint64_t my_received_data_total = 0;
+    uint64_t received_packets = 0;
     uint64_t my_received_max_bidistream_id = 0;
     uint64_t my_received_max_unistream_id = 0;
     size_t my_max_payload_size = 1400;
@@ -280,6 +281,9 @@ public:
     int setAlpn(const unsigned char *s, unsigned int len);
     uint64_t createBiStream();
     uint64_t createUbiStream();
+    NetStat netStat() const {
+        return {qos->rtt.smoothed_rtt, qos->packets_sent, received_packets, qos->lost_packets_count};
+    }
     void dump(Dumper dp, void* param);
     size_t mem_usage();
 };
@@ -373,6 +377,7 @@ public:
     static void MigrationDnscallback(const Host_Result& result);
 
     virtual void dump_status(Dumper dp, void* param) override;
+    virtual NetStat getNetStat() override;
     virtual size_t mem_usage() override;
 };
 
@@ -412,6 +417,7 @@ public:
 
     virtual void Close() override;
     virtual void dump_status(Dumper dp, void* param) override;
+    virtual NetStat getNetStat() override;
     virtual size_t mem_usage() override;
 };
 

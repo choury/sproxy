@@ -18,6 +18,25 @@
 #include "misc/net.h"
 #endif
 
+std::string dumpNetStat(const NetStat& ns) {
+    char buf[160];
+    int off = 0;
+    if(ns.rtt_us == 0 && ns.tx_pkts == 0 && ns.rx_pkts == 0 && ns.lost_pkts == 0) {
+        return "";
+    }
+    if(ns.rtt_us) {
+        off += snprintf(buf + off, sizeof(buf) - off, "rtt: %.3fms, ", ns.rtt_us / 1000.0);
+    }
+    if(ns.tx_pkts) {
+        off += snprintf(buf + off, sizeof(buf) - off, "loss: %.2f%% (%" PRIu64 "/%" PRIu64 "), ",
+                        (double)ns.lost_pkts * 100 / ns.tx_pkts, ns.lost_pkts, ns.tx_pkts);
+    }else if(ns.lost_pkts) {
+        off += snprintf(buf + off, sizeof(buf) - off, "lost: %" PRIu64 ", ", ns.lost_pkts);
+    }
+    snprintf(buf + off, sizeof(buf) - off, "tx: %" PRIu64 ", rx: %" PRIu64, ns.tx_pkts, ns.rx_pkts);
+    return buf;
+}
+
 ssize_t RWer::cap(uint64_t) {
     return wbuff.cap();
 }

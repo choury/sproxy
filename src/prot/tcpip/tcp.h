@@ -88,6 +88,8 @@ struct TcpStatus: public IpStatus{
     Job        rto_job = nullptr;
     Job        pull_job = nullptr;
     Job        keepalive_job = nullptr;
+
+    NetStat getNetStat() const override;
 };
 
 

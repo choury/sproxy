@@ -1,5 +1,6 @@
 #include "ipbase.h"
 #include "tcp.h"
+#include "prot/rwer.h"
 #include "misc/buffer.h"
 #include "misc/net.h"
 
@@ -49,4 +50,8 @@ void UpdateTcpMss(const std::shared_ptr<IpStatus>& status, uint16_t mss) {
     }
     LOGD(DVPN, "tcp mss update %u -> %u\n", tstatus->mss, mss);
     tstatus->mss = mss;
+}
+
+NetStat IpStatus::getNetStat() const {
+    return {};
 }

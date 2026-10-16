@@ -564,27 +564,26 @@ static void dumpConnection(Dumper dp, void* param,
     switch(status_->protocol) {
     case Protocol::TCP: {
         auto status = std::static_pointer_cast<TcpStatus>(status_);
-        dp(param, "  [%" PRIu64"]: <tcp> %s -> %s, srtt=%zd, state=%d, "
-           "tx:%u/%" PRIu64 " rx:%u/%" PRIu64 " retrans:%u(rto:%u,fast:%u), "
+        dp(param, "  [%" PRIu64"]: <tcp> %s -> %s, %s, state=%d, "
+           "tx_bytes: %" PRIu64 ", rx_bytes: %" PRIu64 ", rto: %u, fast: %u, "
            "wlist: %zd, rlen: %zd, window: %zd, cwnd: %u, ssthresh: %u\n",
            value.first.first,
            std::string(storage_ntoa(&status->src)).c_str(),
            std::string(storage_ntoa(&status->dst)).c_str(),
-           (size_t) status->srtt, status->state,
-           status->tx_packets, status->tx_bytes,
-           status->rx_packets, status->rx_bytes,
-           status->retransmits, status->rto_timeouts, status->fast_retransmits,
+           dumpNetStat(status->getNetStat()).c_str(), status->state,
+           status->tx_bytes, status->rx_bytes,
+           status->rto_timeouts, status->fast_retransmits,
            status->sent_list.size(), status->rbuf.length(),
            status->Cap(), status->cwnd, status->ssthresh);
         break;
     }
     case Protocol::UDP: {
         auto status = std::static_pointer_cast<UdpStatus>(status_);
-        dp(param, "  [%" PRIu64"]: <udp> %s -> %s, rx_packets=%zd, rx_len=%zd, tx_packets=%zd, tx_len=%zd\n",
+        dp(param, "  [%" PRIu64"]: <udp> %s -> %s, %s, rx_len: %zd, tx_len: %zd\n",
            value.first.first,
            std::string(storage_ntoa(&status->src)).c_str(),
            std::string(storage_ntoa(&status->dst)).c_str(),
-           status->rx_packets, status->rx_len, status->tx_packets, status->tx_len);
+           dumpNetStat(status->getNetStat()).c_str(), status->rx_len, status->tx_len);
         break;
     }
     case Protocol::ICMP: {

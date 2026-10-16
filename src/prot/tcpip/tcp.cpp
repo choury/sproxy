@@ -1,5 +1,6 @@
 #include "common/common.h"
 #include "tcp.h"
+#include "prot/rwer.h"
 #include "misc/net.h"
 
 #include <stdlib.h>
@@ -827,4 +828,8 @@ void CloseProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pac,
         status->errCB(pac, NOERROR);
         return;
     }
+}
+
+NetStat TcpStatus::getNetStat() const {
+    return {(uint64_t)srtt * 1000, tx_packets, rx_packets, retransmits};
 }

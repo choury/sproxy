@@ -30,6 +30,15 @@ enum class SslStats{
     SslEOF,
 };
 
+struct NetStat {
+    uint64_t rtt_us = 0;    // 平滑RTT，微秒；不可测（UDP/未连接）为0，QUIC未采样时为初始估计值
+    uint64_t tx_pkts = 0;   // 累计发包数
+    uint64_t rx_pkts = 0;   // 累计收包数
+    uint64_t lost_pkts = 0; // TCP:重传段数 QUIC:判定丢失数 UDP:发送失败被丢弃数
+};
+
+std::string dumpNetStat(const NetStat& ns);
+
 struct IRWerCallback: public std::enable_shared_from_this<IRWerCallback> {
     //返回值是处理的数据长度，返回len表示数据处理完毕，返回0表示数据完全没有被消费
     //!!readCB不可重入，调用者需通过 RWER_READING来保证这一点
@@ -139,6 +148,7 @@ public:
     virtual bool idle(uint64_t id);
     virtual void dump_status(Dumper dp, void* param) = 0;
     virtual size_t mem_usage() = 0;
+    virtual NetStat getNetStat() { return {}; }
     void reflect(IVisitor& v) override {
         Ep::reflect(v);
         reflect_all(flags, stats, sndbuf, wbuff);

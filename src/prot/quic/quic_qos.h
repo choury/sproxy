@@ -35,7 +35,6 @@ protected:
 
     //used for bbr
     size_t delivered_bytes = 0;
-    size_t packets_sent = 0;
     uint64_t last_sent_time = 0;
     //end
 
@@ -54,6 +53,7 @@ protected:
     virtual void OnCongestionEvent(uint64_t sent_time) = 0;
 public:
     Rtt    rtt;
+    size_t packets_sent = 0;
     size_t lost_packets_count = 0;
     size_t pto_timeouts = 0;
     /*

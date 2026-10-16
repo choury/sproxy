@@ -19,6 +19,8 @@ struct UdpStatus: public IpStatus{
     size_t tx_len     = 0;
     Job   aged_job = nullptr;
     Job   ack_job = nullptr;
+
+    NetStat getNetStat() const override;
 };
 
 #endif

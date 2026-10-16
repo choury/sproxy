@@ -1,5 +1,6 @@
 #include "udp.h"
 #include "dhcp.h"
+#include "prot/rwer.h"
 #include "misc/buffer.h"
 #include "misc/config.h"
 #include "misc/net.h"
@@ -172,4 +173,8 @@ void SendData(std::shared_ptr<UdpStatus> status, Buffer&& bb) {
     status->ack_job = updatejob_with_name(std::move(status->ack_job),
                                           [ackCB = status->ackCB, rpac]{ackCB(rpac);},
                                           "udp_ack_job", 0);
+}
+
+NetStat UdpStatus::getNetStat() const {
+    return {0, tx_packets, rx_packets, 0};
 }

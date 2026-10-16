@@ -8,7 +8,12 @@
 
 #include <unistd.h>
 #include <sys/ioctl.h>
+//glibc的netinet/tcp.h中tcp_info缺少tcpi_segs_out等新字段，与linux/tcp.h又不能共存，按平台二选一
+#if __linux__
+#include <linux/tcp.h>
+#else
 #include <netinet/tcp.h>
+#endif
 #include <assert.h>
 #include <errno.h>
 #include <stdlib.h>
@@ -372,31 +377,44 @@ Destination SocketRWer::getDst() const {
 }
 
 
-void SocketRWer::dump_status(Dumper dp, void *param) {
-    double rtt_ms = 0.0;
-    if(protocol == Protocol::TCP && getFd() >= 0) {
-#if __linux__
-        struct tcp_info info{};
-        socklen_t len = sizeof(info);
-        if(getsockopt(getFd(), IPPROTO_TCP, TCP_INFO, &info, &len) == 0) {
-            rtt_ms = info.tcpi_rtt / 1000.0;
-        }
-#elif __APPLE__
-        struct tcp_connection_info info{};
-        socklen_t len = sizeof(struct tcp_connection_info);  
-        if(getsockopt(getFd(), IPPROTO_TCP, TCP_CONNECTION_INFO, &info, &len) == 0) {
-            rtt_ms = info.tcpi_srtt;
-        }
-#endif
+NetStat SocketRWer::getNetStat() {
+    NetStat ns{};
+    if(protocol != Protocol::TCP || getFd() < 0) {
+        return ns;
     }
+#if __linux__
+    struct tcp_info info{};
+    socklen_t len = sizeof(info);
+    if(getsockopt(getFd(), IPPROTO_TCP, TCP_INFO, &info, &len) == 0) {
+        ns.rtt_us = info.tcpi_rtt;
+        ns.tx_pkts = info.tcpi_segs_out;
+        ns.rx_pkts = info.tcpi_segs_in;
+        ns.lost_pkts = info.tcpi_total_retrans;
+    }
+#elif __APPLE__
+    struct tcp_connection_info info{};
+    socklen_t len = sizeof(info);
+    if(getsockopt(getFd(), IPPROTO_TCP, TCP_CONNECTION_INFO, &info, &len) == 0) {
+        ns.rtt_us = (uint64_t)info.tcpi_srtt * 1000;
+        ns.tx_pkts = info.tcpi_txpackets;
+        ns.rx_pkts = info.tcpi_rxpackets;
+        ns.lost_pkts = info.tcpi_txretransmitpackets;
+    }
+#endif
+    return ns;
+}
+
+void SocketRWer::dump_status(Dumper dp, void *param) {
     if(hostname[0]) {
-        dp(param, "SocketRWer <%d> (%s %s): rlen: %zu, wlen: %zu, stats: %d, event: %s, rtt: %.3fms, cb: %ld\n",
+        dp(param, "SocketRWer <%d> (%s %s): rlen: %zu, wlen: %zu, stats: %d, event: %s, %s, cb: %ld\n",
            getFd(), hostname, dumpDest(getDst()).c_str(),
-           rlength(0), wbuff.length(), (int)stats, events_string[(int)getEvents()], rtt_ms, callback.use_count());
+           rlength(0), wbuff.length(), (int)stats, events_string[(int)getEvents()],
+           dumpNetStat(getNetStat()).c_str(), callback.use_count());
     } else {
-        dp(param, "SocketRWer <%d> (%s -> %s): rlen: %zu, wlen: %zu, stats: %d, event: %s, rtt: %.3fms, cb: %ld\n",
+        dp(param, "SocketRWer <%d> (%s -> %s): rlen: %zu, wlen: %zu, stats: %d, event: %s, %s, cb: %ld\n",
            getFd(), dumpDest(getSrc()).c_str(), dumpDest(getDst()).c_str(),
-           rlength(0), wbuff.length(), (int)stats, events_string[(int)getEvents()], rtt_ms, callback.use_count());
+           rlength(0), wbuff.length(), (int)stats, events_string[(int)getEvents()],
+           dumpNetStat(getNetStat()).c_str(), callback.use_count());
     }
 }
 
@@ -490,6 +508,11 @@ ssize_t PacketRWer::Write(std::set<uint64_t>& writed_list) {
         int ret  = 0;
         if(bb->len > 0) {
             ret = write(getFd(), bb->data(), bb->len);
+            if(ret < 0) {
+                send_failed++;
+            }else{
+                tx_pkts++;
+            }
             LOGD(DRWER, "write %d: len: %zd, ret: %d\n", getFd(), bb->len, ret);
         }else{
             LOGD(DRWER, "ignore zero buffer: %p\n", bb->data());
@@ -513,6 +536,7 @@ ssize_t PacketRWer::Write(std::set<uint64_t>& writed_list) {
             LOGD(DRWER, "writem %d: iovs: %zd, ret: %zd\n", getFd(), iovcnt, ret);
             return ret;
         }
+        tx_pkts += ret;
         auto it = wbuff.begin();
         for(size_t i = 0; i < (size_t)ret; i++) {
             assert(iovs[i].iov_len <= it->len);
@@ -544,6 +568,9 @@ void PacketRWer::ReadData() {
         iov[i].iov_len = BUF_LEN;
     }
     ssize_t ret = readm(getFd(), iov, IOV_MAX);
+    if (ret > 0) {
+        rx_pkts += ret;
+    }
     LOGD(DRWER, "packet readm %d: iovcnt: %zd, ret: %zd, cb: %ld\n", getFd(), (size_t)IOV_MAX, ret, callback.use_count());
     if (ret > 0) {
         auto cb = callback.lock();
@@ -578,4 +605,8 @@ void PacketRWer::Send(Buffer&& bb) {
         getFd(), bb.id, bb.len, bb.refs(), wlen);
     wlen += bb.len;
     wbuff.emplace_back(std::move(bb));
+}
+
+NetStat PacketRWer::getNetStat() {
+    return {0, tx_pkts, rx_pkts, send_failed};
 }

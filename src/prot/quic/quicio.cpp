@@ -2023,7 +2023,7 @@ void QuicBase::keepAlive_action() {
 void QuicBase::dump(Dumper dp, void* param) {
     dp(param, "%s -> %s, max_payload: %zd, max_bistream: %zd/%zd, max_unistream: %zd/%zd\n"
               "read: %zd/%zd, write: %zd/%zd, my_window: %zd, his_window: %zd, "
-              "rlen: %zd, fullq: %zd, wlen: %zd, congestion_window: %d, rtt: %.3fms, lost: %zd, pto: %zd\n",
+              "rlen: %zd, fullq: %zd, wlen: %zd, congestion_window: %d, %s, pto: %zd\n",
        dumpHex(myids[myid_idx].c_str(), myids[myid_idx].length()).c_str(),
        dumpHex(hisids[hisid_idx].c_str(), hisids[hisid_idx].length()).c_str(),
        his_max_payload_size,
@@ -2035,8 +2035,8 @@ void QuicBase::dump(Dumper dp, void* param) {
        his_max_data - my_sent_data,
        rblen, fullq.size(),
        qos->PendingSize(ssl_encryption_application), (int)qos->windowLeft(),
-       qos->rtt.latest_rtt/1000.0,
-       qos->lost_packets_count, qos->pto_timeouts);
+       dumpNetStat(netStat()).c_str(),
+       qos->pto_timeouts);
     for(const auto& [id, stream]: streammap){
         auto ranges = stream.rb.get_ranges();
         dp(param, "  0x%lx: rlen: %zd-%zd/%zd, rcap: %zd, my_window: %zd/%zd, his_window: %zd/%zd, flags: 0x%08x\n",
@@ -2247,6 +2247,7 @@ void QuicRWer::ReadData() {
         if(iov[i].iov_len == 0){
             continue;
         }
+        received_packets++;
         Buffer d = all; //共享视图
         d.reserve(i * max_datagram_size);
         d.truncate(iov[i].iov_len);
@@ -2644,6 +2645,10 @@ void QuicRWer::dump_status(Dumper dp, void *param) {
     return dump(dp, param);
 }
 
+NetStat QuicRWer::getNetStat() {
+    return netStat();
+}
+
 size_t QuicRWer::mem_usage() {
     return QuicBase::mem_usage() + sizeof(*this);
 }
@@ -2733,6 +2738,9 @@ void QuicMer::push_data(Buffer&& bb) {
     if(flags & RWER_CLOSING){
         return;
     }
+    if(bb.len) {
+        received_packets++;
+    }
     walkPacket(std::move(bb));
     if(!isClosing) {
         sinkData(0);
@@ -2779,6 +2787,10 @@ void QuicMer::dump_status(Dumper dp, void *param) {
     dp(param, "Quic <%d> (%s), stats: %d, flags: 0x%04x,  event: %s\n",
         getFd(), dumpDest(getSrc()).c_str(), (int)stats, flags, events_string[(int)getEvents()]);
     return dump(dp, param);
+}
+
+NetStat QuicMer::getNetStat() {
+    return netStat();
 }
 
 size_t QuicMer::mem_usage() {

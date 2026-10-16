@@ -54,6 +54,7 @@ public:
     virtual ~SocketRWer() override;
     virtual Destination getSrc() const override;
     virtual Destination getDst() const override;
+    virtual NetStat getNetStat() override;
     virtual void dump_status(Dumper dp, void* param) override;
     void reflect(IVisitor& v) override {
         RWer::reflect(v);
@@ -89,6 +90,9 @@ protected:
     char rb[BUF_LEN];
     std::deque<Buffer> wbuff;
     size_t             wlen;
+    uint64_t tx_pkts = 0;
+    uint64_t rx_pkts = 0;
+    uint64_t send_failed = 0;
     virtual ssize_t Write(std::set<uint64_t>& writed_list) override;
     virtual void ReadData() override;
     virtual void ConsumeRData(uint64_t id) override;
@@ -102,9 +106,10 @@ public:
     }
 
     virtual void Send(Buffer&& bb) override;
+    virtual NetStat getNetStat() override;
     void reflect(IVisitor& v) override {
         SocketRWer::reflect(v);
-        reflect_all(wlen, rb, wbuff);
+        reflect_all(wlen, rb, wbuff, tx_pkts, rx_pkts, send_failed);
     }
 };
 
