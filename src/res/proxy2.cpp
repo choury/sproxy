@@ -62,7 +62,7 @@ Proxy2::Proxy2(std::shared_ptr<RWer> rwer) {
 
 Proxy2::~Proxy2() {
     //we do this, because deleteLater will not be invoked when vpn_stop
-    responsers.erase(this);
+    responsers.erase(pool_key);
 }
 
 void Proxy2::Error(int ret, int code) {
@@ -409,7 +409,7 @@ void Proxy2::AdjustInitalFrameWindowSize(ssize_t diff) {
 }
 
 void Proxy2::deleteLater(uint32_t errcode){
-    responsers.erase(this);
+    responsers.erase(pool_key);
     std::set<uint32_t> keys;
     std::for_each(statusmap.begin(), statusmap.end(), [&keys](auto&& i){ keys.emplace(i.first);});
     for(auto& i: keys){

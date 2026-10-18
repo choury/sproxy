@@ -23,7 +23,7 @@
 #include <random>
 
 
-bimap<std::string, Responser*> responsers;
+std::map<std::string, Responser*> responsers;
 enum class CheckResult{
     Succeed,
     AuthFailed,

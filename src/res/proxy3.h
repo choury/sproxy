@@ -43,6 +43,7 @@ protected:
 public:
     explicit Proxy3(std::shared_ptr<RWer> rwer);
     virtual ~Proxy3() override;
+    std::string pool_key;
 
     virtual void request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw)override;
     virtual bool reconnect() override;

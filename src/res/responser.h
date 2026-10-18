@@ -3,7 +3,8 @@
 
 #include "common/base.h"
 #include "prot/http/http_header.h"
-#include "misc/index.h"
+
+#include <map>
 
 class Requester;
 class MemRWer;
@@ -25,7 +26,7 @@ public:
     }
 };
 
-extern bimap<std::string, Responser*> responsers;
+extern std::map<std::string, Responser*> responsers;
 extern std::map<std::string, Responser*> rproxys;
 
 bool shouldNegotiate(const std::string& hostname, uint16_t port, const strategy* stra = nullptr);

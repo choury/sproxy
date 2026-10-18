@@ -29,7 +29,7 @@ protected:
     virtual void ErrProc(uint64_t id) override;
 
     virtual void request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw) override;
-    virtual void connected(uint32_t resolved_time);
+    virtual void connected(const sockaddr_storage& addr, uint32_t resolved_time);
     void reply();
 public:
     explicit Host(const Destination& dest, const Destination& target = {});

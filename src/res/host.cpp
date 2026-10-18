@@ -9,6 +9,7 @@
 #endif
 #include "prot/socks5/socks5.h"
 #include "misc/config.h"
+#include "misc/net.h"
 #include "hook/hook.h"
 
 #include <string.h>
@@ -22,13 +23,51 @@ static const unsigned char alpn_protos_http12[] =
 __attribute__((unused)) static const unsigned char alpn_protos_http3[] =
     "\x02h3";
 
+static std::string gen_key(const Destination& dest) {
+    std::string key = dest.protocol;
+    key += "://";
+    key += dest.hostname;
+    if(dest.resolved_addr.ss_family == AF_INET || dest.resolved_addr.ss_family == AF_INET6) {
+        key += "@";
+        key += getaddrstring(&dest.resolved_addr);
+    }
+    key += ":";
+    key += std::to_string(dest.port);
+    return key;
+}
+
+//查找逻辑：指定了IP的请求只精确匹配该IP，未指定时查 host:port 匹配，可以匹配任意地址
+static Responser* find_res(const Destination& dest) {
+    std::string key = gen_key(dest);
+    auto it = responsers.find(key);
+    if(it != responsers.end()) {
+        return it->second;
+    }
+    if(dest.resolved_addr.ss_family == AF_INET || dest.resolved_addr.ss_family == AF_INET6) {
+        return nullptr;
+    }
+    std::string prefix = std::string(dest.protocol) + "://" + dest.hostname + "@";
+    std::string suffix = ":" + std::to_string(dest.port);
+    for(it = responsers.lower_bound(prefix);
+        it != responsers.end() && it->first.compare(0, prefix.size(), prefix) == 0; ++it)
+    {
+        const std::string& k = it->first;
+        if(k.size() > prefix.size() + suffix.size()
+           && k.compare(k.size() - suffix.size(), suffix.size(), suffix) == 0)
+        {
+            return it->second;
+        }
+    }
+    return nullptr;
+}
+
 Host::Host(const Destination& dest, const Destination& target){
     assert(dest.port);
     assert(dest.protocol[0]);
     memcpy(&Server, &dest, sizeof(Destination));
     bool isWebsocket = strcmp(dest.protocol, "websocket") == 0;
-    cb = ISocketCallback::create()->onConnect([this](const sockaddr_storage&, uint32_t resolved_time){
-        connected(resolved_time);
+    cb = ISocketCallback::create()->onConnect([this](const sockaddr_storage& addr, uint32_t resolved_time){
+        connected(addr, resolved_time);
     })->onError([this](int ret, int code){
         Error(ret, code);
     });
@@ -88,13 +127,21 @@ void Host::reply(){
     status.rw->SetCallback(status.cb);
 }
 
-void Host::connected(uint32_t resolved_time) {
+void Host::connected(const sockaddr_storage& addr, uint32_t resolved_time) {
     status.req->tracker.emplace_back("dns", resolved_time);
     status.req->tracker.emplace_back("connected", getmtime());
-    std::string key = dumpDest(Server) + '@' + Server.protocol;
+    if(Server.resolved_addr.ss_family == 0
+       && (addr.ss_family == AF_INET || addr.ss_family == AF_INET6))
+    {
+        Server.resolved_addr = addr;
+    }
+    std::string key = gen_key(Server);
     LOGD(DHTTP, "<host> %s (%s) connected\n", dumpDest(rwer->getDst()).c_str(), key.c_str());
-    if(responsers.has(key)) {
-        responsers.at(key)->request(status.req, status.rw);
+    auto pooled = responsers.find(key);
+    if(pooled != responsers.end()) {
+        //请求已转交池内连接，本连接仅待废弃；关闭期间的迟到错误不得再当作该请求的失败
+        cb->onError([](int, int){});
+        pooled->second->request(status.req, status.rw);
         return Server::deleteLater(NOERROR);
     }
     auto srwer = std::dynamic_pointer_cast<SslRWer>(rwer);
@@ -109,7 +156,8 @@ void Host::connected(uint32_t resolved_time) {
             rwer = nullptr;
 
             proxy->init(false, status.req, status.rw);
-            responsers.add(key, proxy);
+            proxy->pool_key = key;
+            responsers.emplace(key, proxy);
             return Server::deleteLater(NOERROR);
         }
     }
@@ -126,7 +174,8 @@ void Host::connected(uint32_t resolved_time) {
             rwer = nullptr;
 
             proxy->init(false, status.req, status.rw);
-            responsers.add(key, proxy);
+            proxy->pool_key = key;
+            responsers.emplace(key, proxy);
             return Server::deleteLater(NOERROR);
         }
         LOGE("(%s) <host> quic only support http3\n", dumpDest(rwer->getDst()).c_str());
@@ -338,9 +387,8 @@ void Host::deleteLater(uint32_t errcode){
 }
 
 void Host::distribute(std::shared_ptr<HttpReqHeader> req, const Destination& dest, std::shared_ptr<MemRWer> rw) {
-    std::string key = dumpDest(dest) + '@' + dest.protocol;
-    if(responsers.has(key)) {
-        return responsers.at(key)->request(req, rw);
+    if(auto* pooled = find_res(dest)) {
+        return pooled->request(req, rw);
     }
     auto target = req->Dest;
     target.port = req->getDport();

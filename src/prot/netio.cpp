@@ -1,6 +1,7 @@
 #include "netio.h"
 #include "multimsg.h"
 #include "dns/resolver.h"
+#include "misc/config.h"
 #include "misc/util.h"
 #include "misc/net.h"
 #include "misc/defer.h"
@@ -75,6 +76,34 @@ SocketRWer::SocketRWer(const Destination& dest, std::shared_ptr<IRWerCallback> c
             RWer(std::move(cb)), port(dest.port), protocol(getRawProtocol(dest.protocol))
 {
     strcpy(this->hostname, dest.hostname);
+    if(dest.assign_src[0] != '\0') {
+        BindInfo src_bind{};
+        if(parseBind(dest.assign_src, &src_bind)){
+            LOGE("Invalid assign_src format: %s\n", dest.assign_src);
+        }else{
+            assign_src = std::make_unique<sockaddr_storage>();
+            if(storage_aton(src_bind.hostname, src_bind.port, assign_src.get()) != 1) {
+                LOGE("Invalid assign_src address: %s\n", src_bind.hostname);
+                assign_src.reset(nullptr);
+            }
+        }
+    }
+    if(dest.resolved_addr.ss_family == AF_INET || dest.resolved_addr.ss_family == AF_INET6){
+        sockaddr_storage addr = dest.resolved_addr;
+        ((sockaddr_in6*)&addr)->sin6_port = htons(dest.port);
+        addrs.emplace(addr);
+        if(opt.ech_mode == Disable || dest.system_resolve) {
+            stats = RWerStats::Connecting;
+            dns_job = AddJob([this]{connect();}, 0, 0);
+            return;
+        }
+        //ech配置按域名取自HTTPS RR，与地址无关，连接前须查得
+        stats = RWerStats::Resolving;
+        dns_job = AddJob([this]{
+            query_host(this->hostname, SocketRWer::Dnscallback, shared_from_this(), QECHRES);
+        }, 0, 0);
+        return;
+    }
     stats = RWerStats::Resolving;
     if(dest.system_resolve){
         //这里使用job,因为shared_from_this不能在构造函数里面用
@@ -85,20 +114,6 @@ SocketRWer::SocketRWer(const Destination& dest, std::shared_ptr<IRWerCallback> c
         dns_job = AddJob([this]{
             query_host(this->hostname, SocketRWer::Dnscallback, shared_from_this());
         }, 0, 0);
-    }
-    if(dest.assign_src[0] == '\0') {
-        return;
-    }
-    BindInfo src_bind{};
-    if(parseBind(dest.assign_src, &src_bind)){
-        LOGE("Invalid assign_src format: %s\n", dest.assign_src);
-        return;
-    }
-
-    assign_src = std::make_unique<sockaddr_storage>();
-    if(storage_aton(src_bind.hostname, src_bind.port, assign_src.get()) != 1) {
-        LOGE("Invalid assign_src address: %s\n", src_bind.hostname);
-        assign_src.reset(nullptr);
     }
 }
 
@@ -124,6 +139,14 @@ void SocketRWer::Dnscallback(const Host_Result& result) {
     if(rwer->flags & RWER_CLOSING){
         return;
     }
+    if(!rwer->addrs.empty()){
+        //指定IP直连的ech补查：地址已定，查询失败不阻断，ech_config留空由apply_ech降级
+        if(result.error == 0){
+            rwer->ech_config = result.ech;
+        }
+        rwer->stats = RWerStats::Connecting;
+        return rwer->connect();
+    }
     if (result.error) {
         return rwer->ErrorHE(DNS_FAILED, result.error);
     }
@@ -143,7 +166,8 @@ void SocketRWer::Dnscallback(const Host_Result& result) {
 
 void SocketRWer::connectFailed(int error) {
     HOOK_BPF(this, hostname, port, protocol, error);
-    if(addrs.empty()) {
+    if(stats == RWerStats::Resolving || addrs.empty()) {
+        //指定ip的连接如果dns(ech)失败会走到这里
         return ErrorHE(CONNECT_FAILED, error);
     }
     RcdBlock(hostname, addrs.front());

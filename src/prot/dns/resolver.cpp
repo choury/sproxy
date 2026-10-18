@@ -622,6 +622,12 @@ void query_host(const char* host, DNSCB func, std::shared_ptr<void> param, uint3
         return func(Host_Result{.param = std::move(param), .addrs = {addr}, .ttl = 0xefffffff});
     }
 
+    //hosts 表懒加载须先于命中检查：否则进程首个 hosts 名字的查询会绕过
+    //空表去查真实 DNS，拿到运营商对 localhost 之类的垃圾应答
+    if(dnsConfig.namecount == 0) {
+        getDnsConfig(&dnsConfig);
+        reload_hosts();
+    }
     if (hosts.count(host)) {
         return func(Host_Result{.param = std::move(param), .addrs = rcdfilter(host, hosts[host]), .ttl = 0xefffffff});
     }

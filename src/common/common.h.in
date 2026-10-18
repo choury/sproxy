@@ -9,6 +9,7 @@
 #include <stdbool.h>
 #include <string.h>
 #include <arpa/inet.h>
+#include <sys/socket.h>
 #include <sys/time.h>
 
 #define VPNADDR  "198.18.0.1"
@@ -302,6 +303,7 @@ struct Destination{
     char hostname[DOMAINLIMIT];
     struct Credit credit;
     uint16_t port;
+    struct sockaddr_storage resolved_addr; //指定IP直连，端口以port为准
     bool system_resolve;
     char assign_src[60];
 };

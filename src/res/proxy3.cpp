@@ -62,7 +62,7 @@ Proxy3::Proxy3(std::shared_ptr<RWer> rwer){
 
 Proxy3::~Proxy3() {
     //we do this, because deleteLater will not be invoked when vpn_stop
-    responsers.erase(this);
+    responsers.erase(pool_key);
 }
 
 void Proxy3::Error(int ret, int code) {
@@ -308,7 +308,7 @@ void Proxy3::setIdle(uint32_t ms) {
 
 void Proxy3::deleteLater(uint32_t errcode) {
     http3_flag |= HTTP3_FLAG_CLEANNING;
-    responsers.erase(this);
+    responsers.erase(pool_key);
     std::set<uint64_t> keys;
     std::for_each(statusmap.begin(), statusmap.end(), [&keys](auto&& i){ keys.emplace(i.first);});
     for(auto& i: keys){
