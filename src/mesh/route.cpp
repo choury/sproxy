@@ -1,7 +1,10 @@
 #include "route.h"
 
+#include "misc/net.h"
+
 #include <algorithm>
 #include <chrono>
+#include <cstdio>
 #include <queue>
 
 namespace {
@@ -117,6 +120,44 @@ void dijkstra(const std::string& self, const std::map<std::string, MeshEntry>& t
 }
 
 } //namespace
+
+void mesh_rebuild_paths(MeshEntry& e) {
+    std::map<std::string, AddrProbe> paths;
+    for(const auto& addr : e.addrs) {
+        Destination d{};
+        if(parseDest(addr.c_str(), &d) || !d.port) {
+            continue; //坏宣告地址：parse 结果不变，不产线路
+        }
+        for(const auto& sa : e.ips) {
+            char key[DOMAINLIMIT + 64];
+            snprintf(key, sizeof(key), "%s|%s", addr.c_str(), getaddrstring(&sa));
+            AddrProbe& path = paths[key];
+            path.addr = sa;
+            ((sockaddr_in6*)&path.addr)->sin6_port = htons(d.port);
+            if(auto old = e.paths.find(key); old != e.paths.end()) {
+                //只继承探测历史
+                path.rtt = old->second.rtt;
+                path.fails = old->second.fails;
+                path.backoff = old->second.backoff;
+                path.next_try = old->second.next_try;
+            }
+        }
+    }
+    e.paths = std::move(paths);
+    //在值线路消失：立即全量重选
+    if(!e.active.empty() && !e.paths.count(e.active)) {
+        mesh_failover(e);
+    }
+    //在值可能被清，边权须随之落账
+    e.cost = mesh_edge_cost(e);
+}
+
+Destination mesh_path_dest(const std::string& key, const sockaddr_storage& addr) {
+    Destination dest{};
+    parseDest(key.substr(0, key.rfind('|')).c_str(), &dest);
+    dest.resolved_addr = addr;
+    return dest;
+}
 
 bool mesh_route(const std::string& self, const std::map<std::string, MeshEntry>& table,
                 const std::string& target, MeshRoutePath& out) {

@@ -15,6 +15,8 @@
 
 #define MESH_SCHEME "mesh://"
 
+struct Host_Result;
+
 class MeshManager {
     std::vector<std::string> self_addrs;
     struct Credit mesh_credit{};
@@ -34,12 +36,14 @@ class MeshManager {
 
     MeshManager();
     void probe_round();
+    void probe_path(const std::string& node, const std::string& key, AddrProbe& lp);
+    void note_fail(MeshEntry& e, const std::string& key);
+    static void dns_cb(const Host_Result& result);
     void sync_round();
     std::string serialize() const;
     void merge(const std::string& body);
-    void recompute_edge(MeshEntry& e);
-    //最优地址；无活样本时退回首地址(排序规范化的宣告序)
-    const std::string& best_addr(const MeshEntry& e) const;
+    //活跃线路的连接目的地(确定ip地址)；无可用活跃线路时返回 false
+    bool pick_conn(const MeshEntry& e, Destination* dest) const;
 
 public:
     static void Start();
