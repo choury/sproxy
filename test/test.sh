@@ -450,8 +450,8 @@ EOF
     done
     grep -q "changed addrs" mesh_a.log
     [ $? -ne 0 ] && echo "mesh test 14 failed: conflict alarm" && exit 1
-    #冲突不被劫持：A 保留既有条目的地址(dump 地址带 [探测状态] 后缀)
-    printf "dump mesh" | ./scli -s ${sp}mesha.sock | grep -q "ip6-localhost \[quic://ip6-localhost:3373\["
+    #冲突不被劫持：A 保留既有条目的线路(dump 线路键为 addr|ip 且带 (探测状态) 后缀)
+    printf "dump mesh" | ./scli -s ${sp}mesha.sock | grep -q "ip6-localhost .*quic://ip6-localhost:3373|.*("
     [ $? -ne 0 ] && echo "mesh test 14 failed: hijacked by conflicting entry" && exit 1
     kill -SIGINT $dpid; wait $dpid
 
@@ -491,8 +491,8 @@ EOF
         --bind 3375 --mesh-peer=http://localhost:3370 \
         --admin unix:${sp}meshe.sock > mesh_e.log 2>&1 &
     local epid=$!
-    wait_mesh_dump ${sp}mesha.sock "noexit.local \[" "mesh test 17 failed: no discovery of noexit node"
-    printf "dump mesh" | ./scli -s ${sp}mesha.sock | grep "noexit.local \[" | grep -qv " exit"
+    wait_mesh_dump ${sp}mesha.sock "noexit.local .*caps" "mesh test 17 failed: no discovery of noexit node"
+    printf "dump mesh" | ./scli -s ${sp}mesha.sock | grep "noexit.local .*caps" | grep -qv " exit"
     [ $? -ne 0 ] && echo "mesh test 17 failed: exit cap should be off" && exit 1
     kill -SIGINT $epid; wait $epid
 
@@ -631,7 +631,7 @@ MDC
     #等 probe 收敛：A 经 B 发现 D（A 对 D 无直连，探测必败，只看条目出现）
     #再留数个 probe 周期让链路状态传播到达 A
     for i in $(seq 1 40); do
-        if printf "dump mesh" | "$PWD/scli" -s $D/a.sock 2>/dev/null | grep -q "10.99.0.5 \["; then break; fi
+        if printf "dump mesh" | "$PWD/scli" -s $D/a.sock 2>/dev/null | grep -q "10.99.0.5 .*caps"; then break; fi
         sleep 1
     done
     sleep 12

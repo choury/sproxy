@@ -1,10 +1,69 @@
 #include "route.h"
+#include "misc/net.h"
 
+#include <arpa/inet.h>
 #include <cassert>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <iostream>
 #include <map>
+
+//C 依赖的最小桩(与 buffer_test 同法)：单测不链接 misc，仅覆盖线路逻辑所需的解析与串化
+extern "C" int parseDest(const char* proxy, Destination* dest) {
+    memset(dest, 0, sizeof(*dest));
+    const char* sep = strstr(proxy, "://");
+    const char* colon = sep ? strrchr(sep + 3, ':') : nullptr;
+    if(!sep || !colon) {
+        return -1;
+    }
+    size_t slen = sep - proxy;
+    size_t hlen = colon - (sep + 3);
+    if(slen >= sizeof(dest->scheme) || hlen >= sizeof(dest->hostname)) {
+        return -1;
+    }
+    memcpy(dest->scheme, proxy, slen);
+    memcpy(dest->hostname, sep + 3, hlen);
+    dest->port = atoi(colon + 1);
+    if(strcmp(dest->scheme, "https") == 0) {
+        strcpy(dest->protocol, "ssl");
+    }else if(strcmp(dest->scheme, "http") == 0) {
+        strcpy(dest->protocol, "tcp");
+    }else{
+        return -1;
+    }
+    return dest->port == 0 ? -1 : 0;
+}
+
+extern "C" const char* getaddrstring(const sockaddr_storage* addr) {
+    static char buff[INET6_ADDRSTRLEN];
+    if(addr->ss_family == AF_INET) {
+        inet_ntop(AF_INET, &((const sockaddr_in*)addr)->sin_addr, buff, sizeof(buff));
+    }else{
+        inet_ntop(AF_INET6, &((const sockaddr_in6*)addr)->sin6_addr, buff, sizeof(buff));
+    }
+    return buff;
+}
+
+extern "C" int storage_aton(const char* ipstr, uint16_t port, sockaddr_storage* addr) {
+    memset(addr, 0, sizeof(*addr));
+    if(strchr(ipstr, ':')) {
+        sockaddr_in6* a6 = (sockaddr_in6*)addr;
+        a6->sin6_family = AF_INET6;
+        if(inet_pton(AF_INET6, ipstr, &a6->sin6_addr) != 1) {
+            return 0;
+        }
+        a6->sin6_port = htons(port);
+    }else{
+        sockaddr_in* a4 = (sockaddr_in*)addr;
+        a4->sin_family = AF_INET;
+        if(inet_pton(AF_INET, ipstr, &a4->sin_addr) != 1) {
+            return 0;
+        }
+        a4->sin_port = htons(port);
+    }
+    return 1;
+}
 
 struct Fixture {
     std::string self;
@@ -17,6 +76,16 @@ struct Fixture {
         return e;
     }
 };
+
+static sockaddr_storage mk_ip(const char* ip) {
+    sockaddr_storage sa{};
+    assert(storage_aton(ip, 0, &sa) == 1);
+    return sa;
+}
+
+static uint16_t ip_port(const AddrProbe& lp) {
+    return ntohs(((sockaddr_in6*)&lp.addr)->sin6_port);
+}
 
 int main(){
     MeshRoutePath p;
@@ -267,6 +336,110 @@ int main(){
         assert(mesh_next_backoff(10'000, 10'000) == 20'000);
         assert(mesh_next_backoff(200'000, 10'000) == MESH_BACKOFF_CAP_MS);
         assert(mesh_next_backoff(MESH_BACKOFF_CAP_MS, 10'000) == MESH_BACKOFF_CAP_MS);
+    }
+
+    std::cout << "---------- t17: line table rebuild ----------" << std::endl;
+    {
+        MeshEntry e;
+        e.addrs = {"https://n:443", "http://n:80"};
+        e.ips = {mk_ip("192.168.1.1"), mk_ip("fd00::2")};
+        mesh_rebuild_paths(e);
+        assert(e.paths.size() == 4);
+        assert(e.paths.count("https://n:443|192.168.1.1"));
+        assert(e.paths.count("http://n:80|fd00::2"));
+        const AddrProbe& lp = e.paths.at("https://n:443|192.168.1.1");
+        assert(lp.addr.ss_family == AF_INET);
+        assert(ip_port(lp) == 443);
+        assert(ip_port(e.paths.at("http://n:80|fd00::2")) == 80);
+        Destination d = mesh_path_dest("https://n:443|192.168.1.1", lp.addr);
+        assert(strcmp(d.hostname, "n") == 0); //SNI/证书校验仍用节点名
+        assert(d.port == 443);
+        assert(d.resolved_addr.ss_family == AF_INET);
+        assert(strcmp(getaddrstring(&d.resolved_addr), "192.168.1.1") == 0);
+        //同集重建：存活线路保留探测状态与在值
+        e.paths.at("https://n:443|192.168.1.1").rtt = 20.0;
+        e.active = "http://n:80|fd00::2";
+        e.paths.at(e.active).rtt = 30.0;
+        e.cost = 30.0;
+        mesh_rebuild_paths(e);
+        assert(e.paths.size() == 4);
+        assert(e.paths.at("https://n:443|192.168.1.1").rtt == 20.0);
+        assert(e.active == "http://n:80|fd00::2");
+        assert(e.cost == 30.0); //在值存活：边权随重建重算不变
+        //IP 消失带走在值线路：清空在值、边权同步归零、立即全量重选
+        e.paths.at("https://n:443|192.168.1.1").next_try = 12345;
+        e.ips = {mk_ip("192.168.1.1")};
+        mesh_rebuild_paths(e);
+        assert(e.paths.size() == 2);
+        assert(e.active.empty());
+        assert(e.cost == 0);
+        for(const auto& [key, path] : e.paths) {
+            assert(path.next_try == 0);
+        }
+        //坏宣告地址不产线路
+        MeshEntry bad;
+        bad.addrs = {"ftp://n:21"};
+        bad.ips = {mk_ip("192.168.1.1")};
+        mesh_rebuild_paths(bad);
+        assert(bad.paths.empty());
+    }
+
+    std::cout << "---------- t18: takeover hysteresis ----------" << std::endl;
+    {
+        MeshEntry e;
+        e.addrs = {"https://n:443"};
+        e.ips = {mk_ip("192.168.1.1"), mk_ip("192.168.1.2")};
+        mesh_rebuild_paths(e);
+        //接管判定的本地复刻(生产逻辑内联在 probe_path 回调里)：候选 rtt 须优于
+        //在值超过滞回带；在值缺失(未选定或被重建删掉)时直接上位
+        auto takeover = [&e](const std::string& active, double rtt) {
+            auto it = e.paths.find(active);
+            return it == e.paths.end() || rtt + MESH_SWITCH_MARGIN_MS < it->second.rtt;
+        };
+        //无在值线路：任何活样本直接上位(故障快速恢复)
+        assert(takeover("", 100.0));
+        e.active = "https://n:443|192.168.1.1";
+        e.paths.at(e.active).rtt = 50.0;
+        //滞回带内不换轨
+        assert(!takeover(e.active, 45.0));
+        assert(!takeover(e.active, 40.0 + 1e-9));
+        //优于在值超过滞回带才换轨
+        assert(takeover(e.active, 39.9));
+        //在值键已消失(线路被重建删掉)：直接上位
+        assert(takeover("gone", 100.0));
+    }
+
+    std::cout << "---------- t19: failover reset ----------" << std::endl;
+    {
+        MeshEntry e;
+        e.addrs = {"https://n:443"};
+        e.ips = {mk_ip("192.168.1.1"), mk_ip("192.168.1.2")};
+        mesh_rebuild_paths(e);
+        e.active = "https://n:443|192.168.1.1";
+        e.paths.at("https://n:443|192.168.1.1").next_try = 12345;
+        e.paths.at("https://n:443|192.168.1.2").next_try = 67890;
+        mesh_failover(e);
+        assert(e.active.empty());
+        for(const auto& [key, path] : e.paths) {
+            assert(path.next_try == 0);
+        }
+    }
+
+    std::cout << "---------- t20: edge cost from active line only ----------" << std::endl;
+    {
+        MeshEntry e;
+        e.addrs = {"https://n:443"};
+        e.ips = {mk_ip("192.168.1.1"), mk_ip("192.168.1.2")};
+        mesh_rebuild_paths(e);
+        //无在值线路：边权 0，即使备线有更优样本(备线平时不探测、不经数据面)
+        e.paths.at("https://n:443|192.168.1.2").rtt = 10.0;
+        assert(mesh_edge_cost(e) == 0);
+        e.active = "https://n:443|192.168.1.1";
+        e.paths.at(e.active).rtt = 50.0;
+        assert(mesh_edge_cost(e) == 50.0);
+        //在值判死：边权归 0，备线样本不顶替
+        e.paths.at(e.active).fails = MESH_FAIL_DEAD;
+        assert(mesh_edge_cost(e) == 0);
     }
 
     std::cout << "all mesh route tests passed" << std::endl;

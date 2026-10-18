@@ -4,6 +4,7 @@
 #include "misc/config.h"
 #include "misc/strategy.h"
 #include "misc/util.h"
+#include "prot/dns/resolver.h"
 #include "res/fetch.h"
 #include "res/responser.h"
 
@@ -47,7 +48,8 @@ uint32_t env_interval(const char* name, uint32_t def) {
     return (uint32_t)v * 1000;
 }
 
-std::string join_str(const std::vector<std::string>& v, char sep) {
+template<typename C>
+std::string join_str(const C& v, char sep) {
     std::string out;
     for(const auto& s : v) {
         if(!out.empty()) {
@@ -58,13 +60,40 @@ std::string join_str(const std::vector<std::string>& v, char sep) {
     return out;
 }
 
-//宣告地址集：map 键天然有序，即排序规范化后的宣告
-std::vector<std::string> addr_set(const MeshEntry& e) {
-    std::vector<std::string> v;
-    for(const auto& [addr, st] : e.addrs) {
-        v.push_back(addr);
+//线路+探测状态：addr|ip (12.3ms*)，*=活跃线路；未解析时退回展示宣告地址
+std::string probe_state_str(const MeshEntry& e) {
+    std::string s;
+    if(e.paths.empty()) {
+        for(const auto& addr : e.addrs) {
+            if(!s.empty()) {
+                s += ' ';
+            }
+            s += addr;
+            s += " (new)";
+        }
+        return s;
     }
-    return v;
+    for(const auto& [key, path] : e.paths) {
+        if(!s.empty()) {
+            s += ' ';
+        }
+        s += key;
+        s += " (";
+        if(path.rtt > 0) {
+            char one[32];
+            snprintf(one, sizeof(one), "%.1fms", path.rtt);
+            s += one;
+        } else if(path.fails > 0) {
+            s += "fail" + std::to_string(path.fails);
+        } else {
+            s += "new";
+        }
+        if(key == e.active) {
+            s += '*';
+        }
+        s += ')';
+    }
+    return s;
 }
 
 std::string caps_str(uint32_t caps) {
@@ -76,29 +105,6 @@ std::string caps_str(uint32_t caps) {
         s += " exit";
     }
     return s.empty() ? " -" : s;
-}
-
-//地址+探测状态：addr[12.3ms] addr[fail2]，new=未探测
-std::string probe_state_str(const MeshEntry& e) {
-    std::string s;
-    for(const auto& [addr, st] : e.addrs) {
-        if(!s.empty()) {
-            s += ' ';
-        }
-        s += addr;
-        s += '[';
-        if(st.rtt > 0) {
-            char one[32];
-            snprintf(one, sizeof(one), "%.1fms", st.rtt);
-            s += one;
-        } else if(st.fails > 0) {
-            s += "fail" + std::to_string(st.fails);
-        } else {
-            s += "new";
-        }
-        s += ']';
-    }
-    return s;
 }
 
 } //namespace
@@ -158,7 +164,7 @@ MeshManager::MeshManager() {
         //种子能力位未知，按可探测假设；收到宣告后覆盖
         e.caps = MESH_CAP_RELAY | MESH_CAP_EXIT;
         //ts 恒 0：种子是本机假设而非对端宣告，须输给任何通过时钟偏差检查的宣告
-        e.addrs[addr]; //哨兵：已宣告未探测
+        e.addrs.insert(addr);
     }
     probe_ms = env_interval("SPROXY_MESH_PROBE_INTERVAL", MESH_DEFAULT_MS);
     sync_ms = env_interval("SPROXY_MESH_SYNC_INTERVAL", MESH_SYNC_DEFAULT_MS);
@@ -167,28 +173,108 @@ MeshManager::MeshManager() {
     sync_job = AddJob([this]{ sync_round(); }, MESH_FIRST_DELAY_MS / 2 + rng() % MESH_FIRST_DELAY_MS, 0);
 }
 
-void MeshManager::recompute_edge(MeshEntry& e) {
-    //活边权值 = 各 addr 中未判死且成功过的最小 rtt，无则 0
-    double best = 0;
-    for(const auto& [paddr, pst] : e.addrs) {
-        if(pst.fails < MESH_FAIL_DEAD && pst.rtt > 0 && (best == 0 || pst.rtt < best)) {
-            best = pst.rtt;
-        }
+bool MeshManager::pick_conn(const MeshEntry& e, Destination* dest) const {
+    const AddrProbe* path = mesh_alive_path(e);
+    if(!path) {
+        return false;
     }
-    e.cost = best;
+    *dest = mesh_path_dest(e.active, path->addr);
+    return true;
 }
 
-const std::string& MeshManager::best_addr(const MeshEntry& e) const {
-    auto best_it = e.addrs.begin();
-    double best = 0;
-    for(auto it = e.addrs.begin(); it != e.addrs.end(); ++it) {
-        const AddrProbe& st = it->second;
-        if(st.fails < MESH_FAIL_DEAD && st.rtt > 0 && (best == 0 || st.rtt < best)) {
-            best = st.rtt;
-            best_it = it;
+void MeshManager::probe_path(const std::string& node, const std::string& key, AddrProbe& lp) {
+    //到期取 0.8 周期：轮次间隔带 ±10% 抖动，取整周期会被高侧轮次擦边错过而白等一轮
+    lp.next_try = now_ms() + probe_ms * 8 / 10;
+    Destination dest = mesh_path_dest(key, lp.addr);
+    char buff[HEADLENLIMIT];
+    int headlen = snprintf(buff, sizeof(buff), "GET localhost:%d/mesh/ping HTTP/1.1" CRLF CRLF, dest.port);
+    auto req = UnpackHttpReq(buff, headlen);
+    req->set("Proxy-Authorization", encodeCredit(&mesh_credit));
+    uint64_t t0 = getutime();
+    uint32_t timeout = std::max(500u, std::min(5000u, probe_ms / 2));
+    http_fetch(std::move(req), dest, "", [this, node, key, t0](std::shared_ptr<HttpResHeader> res, std::string) {
+        auto it = table.find(node);
+        if(it == table.end()) {
+            return;
+        }
+        MeshEntry& e = it->second;
+        auto path = e.paths.find(key);
+        if(path == e.paths.end()) {
+            return; //宣告/DNS 变化可能已清掉该线路
+        }
+        if(res && atoi(res->status) == 200) {
+            e.ok++;
+            double rtt = (getutime() - t0) / 1000.0;
+            LOGD(DMESH, "probe %s ok %s %.1fms\n", node.c_str(), key.c_str(), rtt);
+            AddrProbe& lp = path->second;
+            lp.rtt = rtt;
+            lp.fails = 0;
+            lp.backoff = 0;
+            if(e.active != key) {
+                //在值缺失(未选定或被重建删掉)时直接上位；否则须优于在值超过滞回带
+                auto act = e.paths.find(e.active);
+                if(act == e.paths.end() || rtt + MESH_SWITCH_MARGIN_MS < act->second.rtt) {
+                    LOGD(DMESH, "active path -> %s (%.1fms)\n", key.c_str(), rtt);
+                    e.active = key;
+                }
+            }
+        } else {
+            e.fail++;
+            LOGD(DMESH, "probe %s fail %s (%s)\n", node.c_str(), key.c_str(),
+                 res ? res->status : "no response");
+            note_fail(e, key);
+        }
+        e.cost = mesh_edge_cost(e);
+    }, timeout);
+}
+
+void MeshManager::note_fail(MeshEntry& e, const std::string& key) {
+    auto path = e.paths.find(key);
+    if(path == e.paths.end()) {
+        return;
+    }
+    AddrProbe& lp = path->second;
+    lp.fails++;
+    if(lp.fails < MESH_FAIL_DEAD) {
+        return;
+    }
+    lp.backoff = mesh_next_backoff(lp.backoff, probe_ms);
+    lp.next_try = now_ms() + lp.backoff;
+    if(e.active == key) {
+        //活跃线路判死：全量重选，退避值保留供梯子续算
+        mesh_failover(e);
+    }
+}
+
+void MeshManager::dns_cb(const Host_Result& result) {
+    MeshManager* m = GetInstance();
+    if(!m) {
+        return;
+    }
+    const std::string& node = *std::static_pointer_cast<std::string>(result.param);
+    auto it = m->table.find(node);
+    if(it == m->table.end()) {
+        return;
+    }
+    MeshEntry& e = it->second;
+    if(result.error || result.addrs.empty()) {
+        //解析失败保留旧线路表，下轮重试
+        e.dns_retry = now_ms() + m->probe_ms;
+        return;
+    }
+    e.ips.assign(result.addrs.begin(), result.addrs.end());
+    mesh_rebuild_paths(e);
+    uint64_t ttl = result.ttl * 1000ull;
+    e.dns_retry = now_ms() + std::clamp<uint64_t>(ttl, m->probe_ms, MESH_DNS_RETRY_MAX_MS);
+    if(!e.active.empty()) {
+        return;
+    }
+    //未选定线路：新解析出的未探测线路立即探测，加快收敛
+    for(auto& [key, path] : e.paths) {
+        if(path.next_try == 0) {
+            m->probe_path(node, key, path);
         }
     }
-    return best_it->first;
 }
 
 void MeshManager::probe_round() {
@@ -202,57 +288,24 @@ void MeshManager::probe_round() {
         ++it;
     }
     for(auto& [name, e] : table) {
-        const std::string node = name;
-        for(auto& [addr_key, st] : e.addrs) {
-            const std::string addr = addr_key;
-            if(now < st.next_try) {
-                continue; //退避或节奏未到(全 0 哨兵视为到期，先建基线)
+        if(now >= e.dns_retry && !e.addrs.empty()) {
+            //先占位防重复发起(解析器内部重试可长达 ~15s)，回调按真实 ttl 修正
+            e.dns_retry = now + std::max<uint64_t>(probe_ms, 30'000);
+            //名字拷贝随 param 存活：解析器异步持有 host 裸指针，表键可能在解析期间被擦除
+            auto req = std::make_shared<std::string>(name);
+            query_host(req->c_str(), dns_cb, req);
+        }
+        if(e.active.empty()) {
+            for(auto& [key, path] : e.paths) {
+                if(now >= path.next_try) {
+                    probe_path(name, key, path);
+                }
             }
-            Destination dest{};
-            if(parseDest(addr.c_str(), &dest)) {
-                //坏宣告地址：同一字符串 parse 结果不变，永久放弃探测
-                st.fails = MESH_FAIL_DEAD;
-                st.next_try = UINT64_MAX;
-                continue;
+        } else {
+            auto path = e.paths.find(e.active);
+            if(path != e.paths.end() && now >= path->second.next_try) {
+                probe_path(name, e.active, path->second);
             }
-            //到期取 0.8 周期：轮次间隔带 ±10% 抖动，取整周期会被高侧轮次擦边
-            //错过而白等一轮
-            st.next_try = now + probe_ms * 8 / 10;
-            char buff[HEADLENLIMIT];
-            int headlen = snprintf(buff, sizeof(buff), "GET localhost:%d/mesh/ping HTTP/1.1" CRLF CRLF, dest.port);
-            auto req = UnpackHttpReq(buff, headlen);
-            req->set("Proxy-Authorization", encodeCredit(&mesh_credit));
-            uint64_t t0 = getutime();
-            uint32_t timeout = std::max(500u, std::min(5000u, probe_ms / 2));
-            http_fetch(std::move(req), dest, "", [this, node, addr, t0](std::shared_ptr<HttpResHeader> res, std::string) {
-                auto it = table.find(node);
-                if(it == table.end()) {
-                    return;
-                }
-                MeshEntry& e = it->second;
-                auto st_it = e.addrs.find(addr);
-                if(st_it == e.addrs.end()) {
-                    return; //宣告替换可能已清掉该地址
-                }
-                AddrProbe& st = st_it->second;
-                if(res && atoi(res->status) == 200) {
-                    e.ok++;
-                    st.rtt = (getutime() - t0) / 1000.0;
-                    st.fails = 0;
-                    st.backoff = 0;
-                    LOGD(DMESH, "probe %s ok %s %.1fms\n", node.c_str(), addr.c_str(), st.rtt);
-                } else {
-                    e.fail++;
-                    st.fails++;
-                    LOGD(DMESH, "probe %s fail %s (%s)\n", node.c_str(), addr.c_str(),
-                         res ? res->status : "no response");
-                }
-                if(st.fails >= MESH_FAIL_DEAD) {
-                    st.backoff = mesh_next_backoff(st.backoff, probe_ms);
-                    st.next_try = now_ms() + st.backoff;
-                }
-                recompute_edge(e);
-            }, timeout);
         }
     }
     probe_job = UpdateJob(std::move(probe_job), [this]{ probe_round(); }, jitter_ms(probe_ms));
@@ -263,14 +316,15 @@ void MeshManager::sync_round() {
         if(e.syncing || e.addrs.empty()) {
             continue;
         }
-        //cost = 0 代表没有 ping 成功过(含尚无成功样本的种子)，先不进行同步：
-        //死种子不再每轮白打 POST，可达性由探测轮的退避节奏维护
+        //cost=0 即无活跃线路，不同步：死节点不白打 POST，可达性由探测退避维护
         if(e.cost == 0) {
             continue;
         }
         Destination dest{};
-        const std::string addr = best_addr(e);
-        if(parseDest(addr.c_str(), &dest)) {
+        //回调远晚于本轮迭代执行，结构化绑定按 C++17 语义不能进闭包
+        const std::string node = name;
+        const std::string key = e.active;
+        if(!pick_conn(e, &dest)) {
             continue;
         }
         e.syncing = true;
@@ -278,11 +332,9 @@ void MeshManager::sync_round() {
         int headlen = snprintf(buff, sizeof(buff), "POST localhost:%d/mesh/nodes HTTP/1.1" CRLF CRLF, dest.port);
         auto req = UnpackHttpReq(buff, headlen);
         req->set("Proxy-Authorization", encodeCredit(&mesh_credit));
-        //回调远晚于本轮迭代执行，结构化绑定按 C++17 语义不能进闭包
-        const std::string node = name;
         uint32_t timeout = std::max(2000u, std::min(10'000u, sync_ms));
         http_fetch(std::move(req), dest, serialize(),
-                   [this, node, addr](std::shared_ptr<HttpResHeader> res, std::string body) {
+                   [this, node, key](std::shared_ptr<HttpResHeader> res, std::string body) {
             auto it = table.find(node);
             if(it == table.end()) {
                 return;
@@ -291,24 +343,15 @@ void MeshManager::sync_round() {
             e.syncing = false;
             if(!res || atoi(res->status) != 200) {
                 LOGD(DMESH, "sync %s failed: %s\n", node.c_str(), res ? res->status : "no response");
-                auto st_it = e.addrs.find(addr);
-                if(st_it == e.addrs.end()) {
-                    return;
-                }
-                AddrProbe& st = st_it->second;
-                st.fails++;
-                if(st.fails >= MESH_FAIL_DEAD) {
-                    st.backoff = mesh_next_backoff(st.backoff, probe_ms);
-                    st.next_try = now_ms() + st.backoff;
-                }
-                recompute_edge(e);
+                note_fail(e, key);
+                e.cost = mesh_edge_cost(e);
                 return;
             }
             merge(body);
             //merge 可能擦除本条目(对端自宣 caps=0 降级为纯入口)，须重新定位
             auto it2 = table.find(node);
             if(it2 != table.end()) {
-                recompute_edge(it2->second);
+                it2->second.cost = mesh_edge_cost(it2->second);
             }
         }, timeout);
     }
@@ -329,7 +372,7 @@ std::string MeshManager::serialize() const {
     out << "\n";
     for(const auto& [name, e] : table) {
         out << "N " << name << " " << e.caps << " " << e.ts << " "
-            << (e.addrs.empty() ? "-" : join_str(addr_set(e), '|'));
+            << (e.addrs.empty() ? "-" : join_str(e.addrs, '|'));
         for(const auto& [peer, cost] : e.edges) {
             out << " " << peer << "=" << cost;
         }
@@ -381,18 +424,16 @@ void MeshManager::merge(const std::string& body) {
             }
             continue;
         }
-        std::vector<std::string> addrs;
+        std::set<std::string> addrs;
         if(addrstr != "-") {
             std::istringstream as(addrstr);
             std::string addr;
             while(std::getline(as, addr, '|')) {
                 if(!addr.empty()) {
-                    addrs.emplace_back(addr);
+                    addrs.insert(addr);
                 }
             }
         }
-        //排序规范化：宣告按集合语义比较，存储序即 addrs 键序
-        std::sort(addrs.begin(), addrs.end());
         std::map<std::string, double> edges;
         std::string pair;
         while(ls >> pair) {
@@ -410,29 +451,24 @@ void MeshManager::merge(const std::string& body) {
             MeshEntry e;
             e.caps = caps;
             e.ts = ts;
-            for(const auto& a : addrs) {
-                e.addrs[a]; //哨兵
-            }
+            e.addrs = addrs;
             e.edges = std::move(edges);
             table.emplace(name, std::move(e));
             LOGD(DMESH, "discovered %s addrs=[%s]\n", name.c_str(), join_str(addrs, ' ').c_str());
-        } else if(addr_set(it->second) != addrs && !it->second.seeded) {
+        } else if(it->second.addrs != addrs && !it->second.seeded) {
             LOGE("[mesh] %s changed addrs [%s] -> [%s], keep local\n", name.c_str(),
-                 join_str(addr_set(it->second), ' ').c_str(), join_str(addrs, ' ').c_str());
+                 join_str(it->second.addrs, ' ').c_str(), join_str(addrs, ' ').c_str());
         } else if(ts < it->second.ts) {
             //多径转发下旧轮次乱序到达，整行丢弃防回退
             continue;
         } else {
-            //种子让位与常规刷新同路：旧地址探测状态随宣告集变化作废
+            //种子让位与常规刷新同路：宣告地址集变化时线路表随之重建
             it->second.seeded = false;
-            if(addr_set(it->second) != addrs) {
+            if(it->second.addrs != addrs) {
                 LOGD(DMESH, "%s changed addrs [%s] -> [%s]\n", name.c_str(),
-                     join_str(addr_set(it->second), ' ').c_str(), join_str(addrs, ' ').c_str());
-                it->second.addrs.clear();
-                for(const auto& a : addrs) {
-                    it->second.addrs[a];
-                }
-                it->second.cost = 0;
+                     join_str(it->second.addrs, ' ').c_str(), join_str(addrs, ' ').c_str());
+                it->second.addrs = addrs;
+                mesh_rebuild_paths(it->second);
             }
             it->second.caps = caps;
             it->second.ts = ts;
@@ -472,13 +508,13 @@ strategy MeshManager::Route(const std::string& target, Destination* dest) {
             return strategy{Strategy::proxy, "[[mesh: no route]]\n"};
         }
     }
-    //按既定首跳落账：选首跳最优地址，挂逐跳凭据(identifier=最终目标)
+    //用活跃线路连首跳，挂逐跳凭据(identifier=最终目标)
     auto it = m->table.find(path.first_hop);
     if(it == m->table.end() || it->second.addrs.empty()) {
         //首跳来自活边，正常必有宣告地址；宣告替换可能瞬间清空
         return strategy{Strategy::proxy, "[[mesh: no route]]\n"};
     }
-    if(parseDest(m->best_addr(it->second).c_str(), dest)) {
+    if(!m->pick_conn(it->second, dest)) {
         return strategy{Strategy::proxy, "[[mesh: no route]]\n"};
     }
     dest->credit = m->mesh_credit;
@@ -543,10 +579,13 @@ void MeshManager::dump(Dumper dp, void* param) {
        probe_ms / 1000, sync_ms / 1000, table.size());
     dp(param, "node table:\n");
     for(const auto& [name, e] : table) {
-        dp(param, "  %s [%s] caps:%s cost=%s probes=%u/%u updated=%s%s\n",
+        char cost[32], updated[32];
+        snprintf(cost, sizeof(cost), "%.1fms", e.cost);
+        snprintf(updated, sizeof(updated), "%.1fs", (now - e.ts) / 1000.0);
+        dp(param, "  %s %s caps:%s cost=%s probes=%u/%u updated=%s%s\n",
            name.c_str(), probe_state_str(e).c_str(), caps_str(e.caps).c_str(),
-           e.cost > 0 ? std::to_string(e.cost).c_str() : "-",
-           e.ok, e.fail, e.ts ? std::to_string((now - e.ts)/1000.0).c_str() : "-",
+           e.cost > 0 ? cost : "-",
+           e.ok, e.fail, e.ts ? updated : "-",
            e.seeded ? " seeded" : "");
     }
     dp(param, "auto exit: %s\n", last_auto_exit.empty() ? "-" : last_auto_exit.c_str());
