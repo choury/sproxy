@@ -19,20 +19,20 @@ extern "C" int parseDest(const char* proxy, Destination* dest) {
     }
     size_t slen = sep - proxy;
     size_t hlen = colon - (sep + 3);
-    if(slen >= sizeof(dest->scheme) || hlen >= sizeof(dest->hostname)) {
+    if(slen >= sizeof(dest->addr.scheme) || hlen >= sizeof(dest->addr.hostname)) {
         return -1;
     }
-    memcpy(dest->scheme, proxy, slen);
-    memcpy(dest->hostname, sep + 3, hlen);
-    dest->port = atoi(colon + 1);
-    if(strcmp(dest->scheme, "https") == 0) {
-        strcpy(dest->protocol, "ssl");
-    }else if(strcmp(dest->scheme, "http") == 0) {
-        strcpy(dest->protocol, "tcp");
+    memcpy(dest->addr.scheme, proxy, slen);
+    memcpy(dest->addr.hostname, sep + 3, hlen);
+    dest->addr.port = atoi(colon + 1);
+    if(strcmp(dest->addr.scheme, "https") == 0) {
+        strcpy(dest->addr.protocol, "ssl");
+    }else if(strcmp(dest->addr.scheme, "http") == 0) {
+        strcpy(dest->addr.protocol, "tcp");
     }else{
         return -1;
     }
-    return dest->port == 0 ? -1 : 0;
+    return dest->addr.port == 0 ? -1 : 0;
 }
 
 extern "C" const char* getaddrstring(const sockaddr_storage* addr) {
@@ -84,7 +84,7 @@ static sockaddr_storage mk_ip(const char* ip) {
 }
 
 static uint16_t ip_port(const AddrProbe& lp) {
-    return ntohs(((sockaddr_in6*)&lp.addr)->sin6_port);
+    return ntohs(((sockaddr_in6*)&lp.ip)->sin6_port);
 }
 
 int main(){
@@ -348,12 +348,13 @@ int main(){
         assert(e.paths.count("https://n:443|192.168.1.1"));
         assert(e.paths.count("http://n:80|fd00::2"));
         const AddrProbe& lp = e.paths.at("https://n:443|192.168.1.1");
-        assert(lp.addr.ss_family == AF_INET);
+        assert(lp.ip.ss_family == AF_INET);
         assert(ip_port(lp) == 443);
         assert(ip_port(e.paths.at("http://n:80|fd00::2")) == 80);
-        Destination d = mesh_path_dest("https://n:443|192.168.1.1", lp.addr);
-        assert(strcmp(d.hostname, "n") == 0); //SNI/证书校验仍用节点名
-        assert(d.port == 443);
+        Destination d = mesh_path_dest(lp);
+        assert(strcmp(d.addr.hostname, "n") == 0); //SNI/证书校验仍用节点名
+        assert(d.addr.port == 443);
+        assert(strcmp(d.addr.protocol, "ssl") == 0);
         assert(d.resolved_addr.ss_family == AF_INET);
         assert(strcmp(getaddrstring(&d.resolved_addr), "192.168.1.1") == 0);
         //同集重建：存活线路保留探测状态与在值

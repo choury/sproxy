@@ -11,10 +11,10 @@ void slog(int, const char*, ...) {}
 struct debug_flags_map debug[128] = {};
 //quic_pack.cpp的retry完整性校验与buffer.cpp的日志路径会引用，本测试不触达
 extern "C" {
-struct Destination;
+struct Addr;
 EVP_PKEY* get_default_key(void) { return nullptr; }
 int sign_data(EVP_PKEY*, const void*, int, char**, unsigned int*) { return -1; }
-const char* dumpDest(const Destination*) { return ""; }
+const char* dumpAddr(const Addr*) { return ""; }
 }
 
 static int failures = 0;

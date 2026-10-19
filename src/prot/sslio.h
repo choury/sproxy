@@ -147,7 +147,7 @@ protected:
         }
     }
 public:
-    SslMer(SSL_CTX* ctx, const Destination& src, const Destination& dst,
+    SslMer(SSL_CTX* ctx, const Addr& src, const Addr& dst,
         std::shared_ptr<IMemRWerCallback> _cb):
       SslRWerBase(ctx), MemRWer(src, dst, std::move(_cb))
     {

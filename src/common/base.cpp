@@ -63,7 +63,7 @@ extern void dump_job(Dumper dp, void* param);
 void dump_stat(Dumper dp, void* param){
     dp(param, "======================================\n");
     dp(param, "Proxy server: %s, ipv6: %s%s\n",
-       dumpDest(opt.Server).c_str(),
+       dumpAddr(opt.Server.addr).c_str(),
        opt.ipv6_enabled ? "enabled" : "disabled",
        opt.ipv6_prefer ? " (prefer)" : "");
     dp(param, "--------------------------------------\n");

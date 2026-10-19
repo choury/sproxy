@@ -11,7 +11,7 @@ public:
     explicit Guest_tproxy(int fd, sockaddr_storage* src,
         sockaddr_storage* dst, Buffer&& bb, std::function<void(Server*)> df);
     explicit Guest_tproxy(std::shared_ptr<RWer> rwer,
-        const std::string& rproxy, const Destination* dst, std::function<void(Server*)> df);
+        const std::string& rproxy, const Addr* dst, std::function<void(Server*)> df);
     void push_data(Buffer&& bb) {
         DataProc(bb);
     }
@@ -22,7 +22,7 @@ bool operator<(const sockaddr_storage& a, const sockaddr_storage& b);
 class Tproxy_server: public Ep, public std::enable_shared_from_this<Tproxy_server> {
     int family;
     std::string rproxy;
-    Destination target;
+    Addr target;
     std::map<sockaddr_storage, Guest_tproxy*> tps;
     virtual void acceptHE(RW_EVENT events) {
         if (!!(events & RW_EVENT::ERROR)) {
@@ -161,7 +161,7 @@ public:
             LOGF("unknown socket type/family: family=%d, type=%d\n", family, type);
         }
     }
-    Tproxy_server(int fd, const std::string& rproxy, const Destination& target): Tproxy_server(fd){
+    Tproxy_server(int fd, const std::string& rproxy, const Addr& target): Tproxy_server(fd){
         this->rproxy = rproxy;
         this->target = target;
     }

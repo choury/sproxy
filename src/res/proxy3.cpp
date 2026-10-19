@@ -10,7 +10,7 @@ Proxy3::Proxy3(std::shared_ptr<RWer> rwer){
     this->rwer = rwer;
     cb = IQuicCallback::create()->onRead([this](Buffer&& bb) -> size_t {
         HOOK_BPF(this, statusmap, bb);
-        LOGD(DHTTP3, "<proxy3> (%s) read [%" PRIu64"]: len:%zu\n", dumpDest(this->rwer->getSrc()).c_str(), bb.id, bb.len);
+        LOGD(DHTTP3, "<proxy3> (%s) read [%" PRIu64"]: len:%zu\n", dumpAddr(this->rwer->getSrc()).c_str(), bb.id, bb.len);
         if(bb.len == 0){
             //fin
             if(ctrlid_remote && bb.id == ctrlid_remote){
@@ -66,7 +66,7 @@ Proxy3::~Proxy3() {
 }
 
 void Proxy3::Error(int ret, int code) {
-    LOGE("(%s) <proxy3> error: %d/%d\n", dumpDest(rwer->getSrc()).c_str(), ret, code);
+    LOGE("(%s) <proxy3> error: %d/%d\n", dumpAddr(rwer->getSrc()).c_str(), ret, code);
     http3_flag |= HTTP3_FLAG_ERROR;
     deleteLater(ret);
 }
@@ -211,7 +211,7 @@ void Proxy3::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer
 }
 
 bool Proxy3::reconnect() {
-    LOGD(DHTTP3, "<proxy3> connection (%s) attempting migration\n", dumpDest(rwer->getSrc()).c_str());
+    LOGD(DHTTP3, "<proxy3> connection (%s) attempting migration\n", dumpAddr(rwer->getSrc()).c_str());
     // For QUIC connections, we can attempt migration
     // Trigger migration on the underlying QuicRWer
     if (auto quic_rwer = std::dynamic_pointer_cast<QuicRWer>(rwer)) {
@@ -220,7 +220,7 @@ bool Proxy3::reconnect() {
             setIdle(300000);
             return true; // Keep connection for successful migration
         } else {
-            LOGE("(%s) <proxy3> QUIC migration failed, need to create new connection\n", dumpDest(rwer->getSrc()).c_str());
+            LOGE("(%s) <proxy3> QUIC migration failed, need to create new connection\n", dumpAddr(rwer->getSrc()).c_str());
             return false; // Migration failed, upper layer should create new connection
         }
     }
@@ -260,7 +260,7 @@ void Proxy3::ResProc(uint64_t id, std::shared_ptr<HttpResHeader> header) {
 }
 
 void Proxy3::ErrProc(int errcode) {
-    LOGE("(%s) <proxy3> Http3 error: 0x%08x\n", dumpDest(rwer->getSrc()).c_str(), errcode);
+    LOGE("(%s) <proxy3> Http3 error: 0x%08x\n", dumpAddr(rwer->getSrc()).c_str(), errcode);
     deleteLater(errcode);
 }
 
@@ -300,7 +300,7 @@ void Proxy3::Clean(uint64_t id, uint32_t errcode) {
 
 void Proxy3::setIdle(uint32_t ms) {
     if(statusmap.empty()) {
-        LOG("(%s) has no request, start idle timer\n", dumpDest(rwer->getDst()).c_str());
+        LOG("(%s) has no request, start idle timer\n", dumpAddr(rwer->getDst()).c_str());
         idle_timeout = UpdateJob(std::move(idle_timeout), [this]{deleteLater(CONNECT_AGED);}, ms);
     }
 }

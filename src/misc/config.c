@@ -132,18 +132,6 @@ struct options opt = {
         .port       = 0,
         .systemd_fd = -1,
     },
-    .Server         = {
-        .scheme     = {0},
-        .protocol   = {0},
-        .hostname   = {0},
-        .port       = 0,
-    },
-    .rproxy_server  = {
-        .scheme     = {0},
-        .protocol   = {0},
-        .hostname   = {0},
-        .port       = 0,
-    },
     .rewrite_auth   = {0},
     .ipv6_mode      = Auto,
     .mitm_mode      = Auto,
@@ -512,36 +500,36 @@ int parseDestPath(const char* proxy, struct Destination* server, char* path){
     if(spliturl(proxy, server, path)){
         return -1;
     }
-    const char* scheme = server->scheme;
+    const char* scheme = server->addr.scheme;
     if(scheme[0] == 0 || strcasecmp(scheme, "https") == 0 || strcasecmp(scheme, "ssl") == 0){
-        strcpy(server->scheme, "https");
-        strcpy(server->protocol, "ssl");
+        strcpy(server->addr.scheme, "https");
+        strcpy(server->addr.protocol, "ssl");
     }else if(strcasecmp(scheme, "http") == 0 || strcasecmp(scheme, "tcp") == 0) {
-        strcpy(server->scheme, "http");
-        strcpy(server->protocol, "tcp");
+        strcpy(server->addr.scheme, "http");
+        strcpy(server->addr.protocol, "tcp");
 #ifdef HAVE_QUIC
     }else if(strcasecmp(scheme, "quic") == 0) {
-        strcpy(server->scheme, "https");
-        strcpy(server->protocol, "quic");
+        strcpy(server->addr.scheme, "https");
+        strcpy(server->addr.protocol, "quic");
 #endif
     }else if(strcasecmp(scheme, "socks5") == 0 || strcasecmp(scheme, "socks") == 0) {
-        strcpy(server->scheme, "socks5");
-        strcpy(server->protocol, "tcp");
+        strcpy(server->addr.scheme, "socks5");
+        strcpy(server->addr.protocol, "tcp");
     }else{
         LOGE("unkonw scheme for server: %s\n", scheme);
         return -1;
     }
-    if(server->port != 0) {
+    if(server->addr.port != 0) {
         return 0;
     }
-    if(strcasecmp(server->scheme, "http") == 0){
-        server->port = HTTPPORT;
+    if(strcasecmp(server->addr.scheme, "http") == 0){
+        server->addr.port = HTTPPORT;
     }
-    if(strcasecmp(server->scheme, "https") == 0){
-        server->port = HTTPSPORT;
+    if(strcasecmp(server->addr.scheme, "https") == 0){
+        server->addr.port = HTTPSPORT;
     }
-    if(strcasecmp(server->scheme, "socks5") == 0){
-        server->port = 1080;
+    if(strcasecmp(server->addr.scheme, "socks5") == 0){
+        server->addr.port = 1080;
     }
     return 0;
 }
@@ -840,7 +828,7 @@ void postConfig(){
         LOGE("redirect-http must use with non-sni ssl/quic\n");
         exit(1);
     }
-    LOG("server %s\n", dumpDest(&opt.Server));
+    LOG("server %s\n", dumpAddr(&opt.Server.addr));
 
     if(opt.rproxy_name) {
         // --rproxy 支持 [server/]name 格式，server 格式与位置参数指定的 server 相同，
@@ -859,10 +847,10 @@ void postConfig(){
             free((void*)opt.rproxy_name);
             opt.rproxy_name = new_name;
         }
-        if(opt.rproxy_server.hostname[0] == '\0') {
+        if(opt.rproxy_server.addr.hostname[0] == '\0') {
             opt.rproxy_server = opt.Server;
         }
-        LOG("rproxy server: %s\n", dumpDest(&opt.rproxy_server));
+        LOG("rproxy server: %s\n", dumpAddr(&opt.rproxy_server.addr));
         if(opt.rproxy_name[0] == '\0' || strlen(opt.rproxy_name) >= 100) {
             LOGE("length of rproxy name should between 1 and 100\n");
             exit(1);
@@ -871,7 +859,7 @@ void postConfig(){
             LOGE("rproxy name should not contain '/'\n");
             exit(1);
         }
-        if(opt.rproxy_server.hostname[0] == '\0') {
+        if(opt.rproxy_server.addr.hostname[0] == '\0') {
             LOGE("rproxy mode require server name\n");
             exit(1);
         }
@@ -1010,7 +998,7 @@ void postConfig(){
         LOGE("tun, tap, tun-fd and tap-fd can't be used together\n");
         exit(1);
     }
-    if (opt.doh_server && opt.doh_server[0] == 0 && opt.Server.hostname[0] == 0) {
+    if (opt.doh_server && opt.doh_server[0] == 0 && opt.Server.addr.hostname[0] == 0) {
         LOGE("doh without argument require server address\n");
         exit(1);
     }

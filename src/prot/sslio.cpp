@@ -254,7 +254,7 @@ void SslRWerBase::dump(Dumper dp, void *param) {
 }
 
 SslRWer::SslRWer(const Destination& dest, std::shared_ptr<IRWerCallback> cb):
-        SslRWerBase(dest.hostname), StreamRWer(dest, std::move(cb))
+        SslRWerBase(dest.addr.hostname), StreamRWer(dest, std::move(cb))
 {
         assert(this->protocol == Protocol::TCP);
 }

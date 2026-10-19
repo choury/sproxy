@@ -186,14 +186,14 @@ void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw)
         std::string target = stra.ext.substr(strlen(MESH_SCHEME));
         stra = MeshManager::Route(target, &dest);
         //{direct} 的 port==0 是自身名归一化的正常返回
-        if(stra.s == Strategy::proxy && dest.port == 0) {
+        if(stra.s == Strategy::proxy && dest.addr.port == 0) {
             return response(rw, HttpResHeader::create(S502, sizeof(S502), id), stra.ext);
         }
         //via 为下一跳节点名（addrs 主机名即节点名）；direct 即本节点为出口。
         //none（未知目标）不在此日志，后续 404 兜底
         if(stra.s != Strategy::none) {
             LOGD(DMESH, "mesh dispatch: %s exit=%s via=%s\n", req->geturl().c_str(),
-                 target.c_str(), stra.s == Strategy::proxy ? dest.hostname : opt.mesh_name);
+                 target.c_str(), stra.s == Strategy::proxy ? dest.addr.hostname : opt.mesh_name);
         }
     }
     if(stra.s == Strategy::none) {
@@ -235,13 +235,13 @@ void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw)
     req->append("Via", identify);
     switch(stra.s){
     case Strategy::proxy:
-        if(dest.port == 0) {
+        if(dest.addr.port == 0) {
             memcpy(&dest, &opt.Server, sizeof(dest));
             if(!stra.ext.empty() && parseDest(stra.ext.c_str(), &dest)){
                 return response(rw, HttpResHeader::create(S500, sizeof(S500), id), "[[ext misformat]]\n");
             }
         }
-        if(dest.port == 0){
+        if(dest.addr.port == 0){
             return response(rw, HttpResHeader::create(S400, sizeof(S400), id), "[[server not set]]\n");
         }
         //req->set("X-Forwarded-For", "2001:da8:b000:6803:62eb:69ff:feb4:a6c2");
@@ -253,16 +253,16 @@ void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw)
         }
         break;
     case Strategy::direct:
-        memcpy(&dest, &req->Dest, sizeof(dest));
-        dest.port = req->getDport();
+        dest.addr = req->Dest;
+        dest.addr.port = req->getDport();
         if(!req->backend_name.empty() && req->has("X-Forwarded-For")) {
             if(opt.rproxy_keep_src) strncpy(dest.assign_src, req->get("X-Forwarded-For"), sizeof(dest.assign_src) - 1);
             if(!req->ismethod("CONNECT")) req->del("X-Forwarded-For");
         }
-        if(strcmp(dest.protocol, "icmp") == 0){
+        if(strcmp(dest.addr.protocol, "icmp") == 0){
             return (new Ping(dest))->request(req, rw);
         }
-        if(strcmp(dest.protocol, "udp") == 0) {
+        if(strcmp(dest.addr.protocol, "udp") == 0) {
             return (new Uhost(dest))->request(req, rw);
         }
         break;
@@ -273,16 +273,16 @@ void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw)
         if(stra.ext.empty()){
             return response(rw, HttpResHeader::create(S500, sizeof(S500), id), "[[destination not set]]\n");
         }
-        memcpy(&dest, &req->Dest, sizeof(dest));
-        strcpy(dest.protocol, "tcp"); // rewrite and forward only support tcp
-        if(dest.port == 0) {
-            dest.port = req->getDport();
+        dest.addr = req->Dest;
+        strcpy(dest.addr.protocol, "tcp"); // rewrite and forward only support tcp
+        if(dest.addr.port == 0) {
+            dest.addr.port = req->getDport();
         }
         if(parseDest(stra.ext.c_str(), &dest)){
             return response(rw, HttpResHeader::create(S500, sizeof(S500), id), "[[ext misformat]]\n");
         }
         if(stra.s == Strategy::rewrite) {
-            req->set("host", dumpAuthority(&dest));
+            req->set("host", dumpAuthority(&dest.addr));
         } else {
             auto src = rw->getSrc();
             req->set("X-Forwarded-For", dumpAuthority(&src));
@@ -296,7 +296,7 @@ void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw)
     default:
         return response(rw, HttpResHeader::create(S503, sizeof(S503), id), "[[BUG]]\n");
     }
-    dest.system_resolve = req->Dest.system_resolve;
+    dest.addr.system_resolve = req->Dest.system_resolve;
     return Host::distribute(req, dest, rw);
 }
 
@@ -327,12 +327,12 @@ static bool extract_rproxy_target_url(const std::string& path, std::string& out_
     if(target.empty()) {
         return false;
     }
-    Destination dest{};
+    Addr dest{};
     char parsed_path[URLLIMIT] = {0};
-    if(spliturl(target.c_str(), &dest, parsed_path) != 0) {
+    if(splitAddr(target.c_str(), &dest, parsed_path) != 0) {
         return false;
     }
-    std::string url = dumpDest(&dest);
+    std::string url = dumpAddr(&dest);
     if(parsed_path[0]) {
         url += parsed_path;
     } else {
@@ -343,14 +343,14 @@ static bool extract_rproxy_target_url(const std::string& path, std::string& out_
 }
 
 static bool origin_from_url(const std::string& url, std::string& origin_out) {
-    Destination dest{};
-    if(spliturl(url.c_str(), &dest, nullptr) != 0) {
+    Addr dest{};
+    if(splitAddr(url.c_str(), &dest, nullptr) != 0) {
         return false;
     }
     if(!dest.scheme[0] || !dest.hostname[0]) {
         return false; //无scheme的源不是合法的序列化形态
     }
-    origin_out = dumpDest(&dest);
+    origin_out = dumpAddr(&dest);
     return true;
 }
 
@@ -364,9 +364,9 @@ void rewrite_rproxy_req(std::shared_ptr<HttpReqHeader> req) {
                 req->set("Referer", rewritten_referer);
             }
         } else {
-            Destination tmp{};
+            Addr tmp{};
             char ref_path[URLLIMIT] = {0};
-            if(spliturl(ref.c_str(), &tmp, ref_path) == 0) {
+            if(splitAddr(ref.c_str(), &tmp, ref_path) == 0) {
                 if(extract_rproxy_target_url(ref_path, rewritten_referer)) {
                     req->set("Referer", rewritten_referer);
                 }
@@ -395,7 +395,7 @@ void rewrite_rproxy_req(std::shared_ptr<HttpReqHeader> req) {
         req->set("Origin", page_origin);
     }
     if(req->has("Sec-Fetch-Site") && !req->has("Sec-Fetch-Site", "none")) {
-        req->set("Sec-Fetch-Site", page_origin == dumpDest(&req->Dest) ? "same-origin" : "cross-site");
+        req->set("Sec-Fetch-Site", page_origin == dumpAddr(&req->Dest) ? "same-origin" : "cross-site");
     }
     const char* accept = req->get("Accept");
     bool is_document = req->ismethod("GET") && accept && strstr(accept, "text/html");
@@ -455,7 +455,7 @@ void distribute_rproxy(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRW
             rw->Send(Buffer{buff, (size_t)snprintf(buff, sizeof(buff), "======================================\n")});
             for(auto [name, rproxy]: rproxys) {
                 rw->Send(Buffer{buff, (size_t)snprintf(buff, sizeof(buff), "%s [%p]: %s\n",
-                                                       name.c_str(), rproxy, dumpDest(rproxy->getPeer()).c_str())});
+                                                       name.c_str(), rproxy, dumpAddr(rproxy->getPeer()).c_str())});
             }
             rw->Send(Buffer{buff, (size_t)snprintf(buff, sizeof(buff), "======================================\n")});
             rw->Send(nullptr);
@@ -472,7 +472,7 @@ void distribute_rproxy(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRW
             memset(&req->Dest.protocol, 0, sizeof(req->Dest.protocol));
         }
         strcpy(req->Dest.scheme, "http");
-        if(spliturl(path.c_str() + 9 + rproxy_name.length(), &req->Dest, req->path)) {
+        if(splitAddr(path.c_str() + 9 + rproxy_name.length(), &req->Dest, req->path)) {
             response(rw, HttpResHeader::create(S400, sizeof(S400), id), "");
             return;
         }
@@ -533,7 +533,7 @@ static void rewrite_rproxy_reporting_endpoints(std::shared_ptr<HttpReqHeader> re
 
     std::string endpoints = res->get("Reporting-Endpoints");
     std::string prefix_abs = std::string("/rproxy/") + rproxy + "/";
-    std::string prefix_rel = prefix_abs + dumpDest(&req->Dest);
+    std::string prefix_rel = prefix_abs + dumpAddr(&req->Dest);
 
     std::string new_endpoints;
     new_endpoints.reserve(endpoints.size() * 2);
@@ -601,7 +601,7 @@ static void rewrite_rproxy_cookie(std::shared_ptr<HttpReqHeader> req, std::share
     if(rproxy.empty()) {
         return;
     }
-    std::string prefix = std::string("/rproxy/") + rproxy + "/" + dumpDest(&req->Dest);
+    std::string prefix = std::string("/rproxy/") + rproxy + "/" + dumpAddr(&req->Dest);
 
     std::set<std::string> new_cookies;
     for(const auto& cookie_str : res->cookies) {
@@ -659,9 +659,9 @@ void rewrite_rproxy_res(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<Http
         return;
     }
 
-    Destination parsed{};
+    Addr parsed{};
     char parsed_path[URLLIMIT] = {0};
-    if(spliturl(location.c_str(), &parsed, parsed_path) != 0) {
+    if(splitAddr(location.c_str(), &parsed, parsed_path) != 0) {
         return;
     }
 
@@ -672,6 +672,6 @@ void rewrite_rproxy_res(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<Http
     }
 
     // concat last / + path
-    std::string new_location = prefix + dumpDest(&req->Dest) + (parsed_path[0] ? std::string(parsed_path) : "/");
+    std::string new_location = prefix + dumpAddr(&req->Dest) + (parsed_path[0] ? std::string(parsed_path) : "/");
     res->set("Location", new_location);
 }

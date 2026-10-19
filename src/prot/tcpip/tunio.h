@@ -86,8 +86,8 @@ public:
     virtual size_t rlength(uint64_t id) override;
     virtual ssize_t cap(uint64_t id) override;
     virtual bool idle(uint64_t id) override;
-    virtual Destination getSrc() const override {
-        Destination src{};
+    virtual Addr getSrc() const override {
+        Addr src{};
         strcpy(src.hostname, "<tun>");
         return src;
     }

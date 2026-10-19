@@ -15,7 +15,7 @@
 void Guest3::init() {
     cb = IQuicCallback::create()->onRead([this](Buffer&& bb) -> size_t {
         HOOK_BPF(this, statusmap, bb);
-        LOGD(DHTTP3, "<guest3> (%s) read [%" PRIu64"]: len:%zu\n", dumpDest(this->rwer->getSrc()).c_str(), bb.id, bb.len);
+        LOGD(DHTTP3, "<guest3> (%s) read [%" PRIu64"]: len:%zu\n", dumpAddr(this->rwer->getSrc()).c_str(), bb.id, bb.len);
         if(bb.len == 0){
             //fin
             if(ctrlid_remote && bb.id == ctrlid_remote){
@@ -71,7 +71,7 @@ void Guest3::init() {
         Error(ret, code);
     });
     std::dynamic_pointer_cast<IQuicCallback>(cb)->onDatagram([this](Buffer&& bb){
-        LOGD(DHTTP3, "<guest3> (%s) read datagram, len:%zu\n", dumpDest(this->rwer->getSrc()).c_str(), bb.len);
+        LOGD(DHTTP3, "<guest3> (%s) read datagram, len:%zu\n", dumpAddr(this->rwer->getSrc()).c_str(), bb.len);
         Datagram_Proc(std::move(bb));
     })->onReset([this](uint64_t id, uint32_t error){
         RstProc(id, error);
@@ -87,7 +87,7 @@ void Guest3::connected() {
     unsigned int len;
     qrwer->getAlpn(&data, &len);
     if(data == nullptr || data[0] == 0) {
-        LOGE("(%s) no protocol found\n", dumpDest(rwer->getSrc()).c_str());
+        LOGE("(%s) no protocol found\n", dumpAddr(rwer->getSrc()).c_str());
         return Server::deleteLater(PROTOCOL_ERR);
     }
     if (len == 2 && strncasecmp((const char*)data, "h3", 2) == 0) {
@@ -99,7 +99,7 @@ void Guest3::connected() {
         rwer = nullptr;
         return Server::deleteLater(NOERROR);
     }
-    LOGE("(%s) unknown protocol: %.*s\n", dumpDest(rwer->getSrc()).c_str(), len, data);
+    LOGE("(%s) unknown protocol: %.*s\n", dumpAddr(rwer->getSrc()).c_str(), len, data);
     return Server::deleteLater(PROTOCOL_ERR);
 }
 
@@ -121,7 +121,7 @@ void Guest3::AddInitData(Buffer&& buff) {
 }
 
 void Guest3::Error(int ret, int code){
-    LOGE("(%s): <guest3> error: %d/%d\n", dumpDest(rwer->getSrc()).c_str(), ret, code);
+    LOGE("(%s): <guest3> error: %d/%d\n", dumpAddr(rwer->getSrc()).c_str(), ret, code);
     deleteLater(ret);
 }
 
@@ -158,7 +158,7 @@ size_t Guest3::Recv(Buffer&& bb){
 
 void Guest3::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
     LOGD(DHTTP3, "<guest3> %" PRIu64 " (%s) ReqProc %s\n",
-         header->request_id, dumpDest(rwer->getSrc()).c_str(), header->geturl().c_str());
+         header->request_id, dumpAddr(rwer->getSrc()).c_str(), header->geturl().c_str());
     if(statusmap.count(id)){
         LOGD(DHTTP3, "<guest3> ReqProc dup id: %" PRIu64"\n", id);
         Reset(id, HTTP3_ERR_STREAM_CREATION_ERROR);
@@ -166,7 +166,7 @@ void Guest3::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
     }
     if(statusmap.size() >= MAX_CONCURRENT_REQS) {
         LOGE("(%s): <guest3> too many request streams: %zd, refuse stream %" PRIu64"\n",
-             dumpDest(rwer->getSrc()).c_str(), statusmap.size(), id);
+             dumpAddr(rwer->getSrc()).c_str(), statusmap.size(), id);
         Reset(id, HTTP3_ERR_REQUEST_REJECTED);
         return;
     }
@@ -283,7 +283,7 @@ std::shared_ptr<IMemRWerCallback> Guest3::response(uint64_t id) {
             return;
         }
         LOGD(DHTTP3, "<guest3> get response [%" PRIu64"]: %s\n", id, res->status);
-        HttpLog(dumpDest(rwer->getSrc()), status.req, res);
+        HttpLog(dumpAddr(rwer->getSrc()), status.req, res);
         if(mitmProxy) {
             res->del("Strict-Transport-Security");
         }
@@ -380,7 +380,7 @@ void Guest3::Reset(uint64_t id, uint32_t code) {
 }
 
 void Guest3::ErrProc(int errcode) {
-    LOGE("(%s): Guest3 http3 error:0x%08x\n", dumpDest(rwer->getSrc()).c_str(), errcode);
+    LOGE("(%s): Guest3 http3 error:0x%08x\n", dumpAddr(rwer->getSrc()).c_str(), errcode);
     http3_flag |= HTTP3_FLAG_ERROR;
     deleteLater(errcode);
 }

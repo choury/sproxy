@@ -109,10 +109,10 @@ bool ipremove(const char* ipstr, bool& found, int prefix = -1, uint16_t port = 0
     return false;
 }
 
-// Extract port from host:port or [ipv6]:port via spliturl, modifies host in place
+// Extract port from host:port or [ipv6]:port via splitAddr, modifies host in place
 static uint16_t splitport(string& host) {
-    Destination dest = {};
-    if (spliturl(host.c_str(), &dest, nullptr) == 0) {
+    Addr dest = {};
+    if (splitAddr(host.c_str(), &dest, nullptr) == 0) {
         host = dest.hostname;
         if (host.size() >= 2 && host.front() == '[' && host.back() == ']')
             host = host.substr(1, host.size() - 2);

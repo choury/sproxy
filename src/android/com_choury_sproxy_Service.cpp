@@ -105,13 +105,13 @@ static int vpn_start(){
     if(opt.rproxy_name) {
 #ifdef HAVE_QUIC
         // 根据协议选择rguest2还是rguest3
-        if(strcmp(opt.rproxy_server.protocol, "quic") == 0) {
-            LOG("Starting rproxy3 client to %s\n", dumpDest(opt.rproxy_server).c_str());
+        if(strcmp(opt.rproxy_server.addr.protocol, "quic") == 0) {
+            LOG("Starting rproxy3 client to %s\n", dumpAddr(opt.rproxy_server.addr).c_str());
             new Rguest3(opt.rproxy_server, opt.rproxy_name);
         } else
 #endif
         {
-            LOG("Starting rproxy2 client to %s\n", dumpDest(opt.rproxy_server).c_str());
+            LOG("Starting rproxy2 client to %s\n", dumpAddr(opt.rproxy_server.addr).c_str());
             new Rguest2(opt.rproxy_server, opt.rproxy_name);
         }
     }

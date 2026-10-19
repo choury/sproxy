@@ -253,7 +253,7 @@ std::shared_ptr<IMemRWerCallback> Guest_vpn::response(uint64_t id) {
                 (int) id, status.req->request_id, (int) s);
         } else {
             LOGD(DVPN, "<guest_vpn> signal [%d] %s: %d\n",
-                (int) id, dumpDest(status.rw->getSrc()).c_str(), (int) s);
+                (int) id, dumpAddr(status.rw->getSrc()).c_str(), (int) s);
         }
         std::shared_ptr<TunRWer> trwer = std::dynamic_pointer_cast<TunRWer>(rwer);
         switch(s){
@@ -304,8 +304,8 @@ size_t Guest_vpn::Recv(Buffer&& bb) {
     return cap;
 }
 
-static void storage2Dest(const sockaddr_storage& ss, Destination* dest) {
-    return storage2Dest(&ss, dest);
+static void storage2Addr(const sockaddr_storage& ss, Addr* dest) {
+    return storage2Addr(&ss, dest);
 }
 
 void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
@@ -317,9 +317,9 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
     status.pac = pac;
     char buff[HEADLENLIMIT];
     uint16_t dport = pac->getdport();
-    Destination src, dst;
-    storage2Dest(pac->getsrc(), &src);
-    storage2Dest(pac->getdst(), &dst);
+    Addr src, dst;
+    storage2Addr(pac->getsrc(), &src);
+    storage2Addr(pac->getdst(), &dst);
     bool local = getstrategy(status.host.c_str(), dport).s == Strategy::local;
     std::shared_ptr<TunRWer> trwer = std::dynamic_pointer_cast<TunRWer>(rwer);
     status.cb = response(id);

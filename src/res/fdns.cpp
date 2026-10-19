@@ -365,7 +365,7 @@ void FDns::dump_stat(Dumper dp, void* param) {
     dp(param, "FDns: %p, sessions: %zu, succeed: %zd, failed: %zd\n", this, statusmap.size(), succeed_count, failed_count);
     for(const auto& i : statusmap) {
         const FDnsStatus& status = i.second;
-        dp(param, "  [%" PRIu64 "]: %s\n", i.first, dumpDest(status.rw->getSrc()).c_str());
+        dp(param, "  [%" PRIu64 "]: %s\n", i.first, dumpAddr(status.rw->getSrc()).c_str());
         for(const auto& p : status.quemap) {
             auto que = p.second;
             dp(param, "    %s, id=%d, type=%d\n", que->domain, que->id, que->type);

@@ -16,7 +16,7 @@
 
 size_t Guest::ReadHE(Buffer&& bb){
     HOOK_BPF(this, statuslist, bb);
-    LOGD(DHTTP, "<guest> (%s) read: len:%zu, refs: %zd\n", dumpDest(rwer->getSrc()).c_str(), bb.len, bb.refs());
+    LOGD(DHTTP, "<guest> (%s) read: len:%zu, refs: %zd\n", dumpAddr(rwer->getSrc()).c_str(), bb.len, bb.refs());
     if(bb.len == 0){
         //EOF
         if(statuslist.empty()){
@@ -53,7 +53,7 @@ void Guest::WriteHE(uint64_t id){
         return;
     }
     ReqStatus& status = statuslist.front();
-    LOGD(DHTTP, "<guest> (%s) written, flags:0x%08x\n", dumpDest(rwer->getSrc()).c_str(), status.flags);
+    LOGD(DHTTP, "<guest> (%s) written, flags:0x%08x\n", dumpAddr(rwer->getSrc()).c_str(), status.flags);
     if(status.flags & (HTTP_RES_COMPLETED | HTTP_CLOSED_F | HTTP_RST)){
         return;
     }
@@ -75,7 +75,7 @@ Guest::Guest(int fd, const sockaddr_storage* addr, SSL_CTX* ctx): Requester(null
             const unsigned char *data;
             unsigned int len;
             srwer->get_alpn(&data, &len);
-            LOGD(DHTTP, "<guest> %s connected: %.*s\n", dumpDest(rwer->getSrc()).c_str(), len, (const char*)data);
+            LOGD(DHTTP, "<guest> %s connected: %.*s\n", dumpAddr(rwer->getSrc()).c_str(), len, (const char*)data);
             if (data == nullptr || data[0] == 0) {
                 return;
             }
@@ -122,7 +122,7 @@ Guest::Guest(std::shared_ptr<RWer> rwer): Requester(rwer){
             const unsigned char *data;
             unsigned int len;
             srwer->get_alpn(&data, &len);
-            LOGD(DHTTP, "<guest> %s connected: %.*s\n", dumpDest(this->rwer->getSrc()).c_str(), len, (const char*)data);
+            LOGD(DHTTP, "<guest> %s connected: %.*s\n", dumpAddr(this->rwer->getSrc()).c_str(), len, (const char*)data);
             if (data == nullptr || data[0] == 0) {
                 return;
             }
@@ -147,7 +147,7 @@ bool Guest::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
     if(statuslist.size() >= MAX_CONCURRENT_REQS) {
         //流水线深度超限，多为恶意堆积，断开连接防止内存被耗尽
         LOGE("(%s): too many pipelined requests: %zd, close it\n",
-             dumpDest(rwer->getSrc()).c_str(), statuslist.size());
+             dumpAddr(rwer->getSrc()).c_str(), statuslist.size());
         return false;
     }
     auto _cb = response(id);
@@ -282,7 +282,7 @@ void Guest::ErrProc(uint64_t) {
 
 void Guest::Error(int ret, int code) {
     if(ret == SSL_SHAKEHAND_ERR){
-        LOGE("(%s): <guest> ssl_accept error %d/%d\n", dumpDest(rwer->getSrc()).c_str(), ret, code);
+        LOGE("(%s): <guest> ssl_accept error %d/%d\n", dumpAddr(rwer->getSrc()).c_str(), ret, code);
     }
     if(statuslist.empty()){
         return deleteLater(PEER_LOST_ERR);
@@ -301,7 +301,7 @@ std::shared_ptr<IMemRWerCallback> Guest::response(uint64_t id) {
     return IMemRWerCallback::create()->onHeader([this](std::shared_ptr<HttpResHeader> res){
         ReqStatus& status = statuslist.front();
         status.req->tracker.emplace_back("header", getmtime());
-        HttpLog(dumpDest(rwer->getSrc()), status.req, res);
+        HttpLog(dumpAddr(rwer->getSrc()), status.req, res);
         if (status.req->ismethod("CONNECT")) {
             status.flags |= HTTP_NOEND_F;
             if (headless) {
@@ -432,7 +432,7 @@ void Guest::deleteLater(uint32_t errcode) {
 
 Guest::~Guest() {
     if(rwer) {
-        LOGD(DHTTP, "<guest> (%s) destoryed: rx:%zu, tx:%zu\n", dumpDest(rwer->getSrc()).c_str(), rx_bytes, tx_bytes);
+        LOGD(DHTTP, "<guest> (%s) destoryed: rx:%zu, tx:%zu\n", dumpAddr(rwer->getSrc()).c_str(), rx_bytes, tx_bytes);
     }
 }
 

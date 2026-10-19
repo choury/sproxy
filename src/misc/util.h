@@ -50,9 +50,10 @@ const char* protstr(Protocol p);
 
 int parse_user_pass(const char* input, size_t input_len, struct Credit* credit);
 int spliturl(const char* url, struct Destination* server, char* path);
-const char* dumpDest(const struct Destination* server);
-const char* dumpAuthority(const struct Destination* Server);
-void storage2Dest(const struct sockaddr_storage* addr, struct Destination* dest);
+int splitAddr(const char* url, struct Addr* server, char* path);
+const char* dumpAddr(const struct Addr* server);
+const char* dumpAuthority(const struct Addr* Server);
+void storage2Addr(const struct sockaddr_storage* addr, struct Addr* dest);
 int parseBind(const char* str, struct BindInfo* info);
 const char* dumpBind(const struct BindInfo* info);
 void storage2BindInfo(const struct sockaddr_storage* addr, struct BindInfo* info);

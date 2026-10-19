@@ -8,17 +8,17 @@
 #include <inttypes.h>
 #include <assert.h>
 
-Uhost::Uhost(const Destination& dest, const Destination& target): port(dest.port) {
-    strncpy(hostname, dest.hostname, DOMAINLIMIT);
+Uhost::Uhost(const Destination& dest, const Addr& target): port(dest.addr.port) {
+    strncpy(hostname, dest.addr.hostname, DOMAINLIMIT);
     idle_timeour = AddJob([this]{deleteLater(CONNECT_AGED);}, 30000, 0);
     cb = ISocketCallback::create()->onConnect([this](const sockaddr_storage&, uint32_t){
-        LOGD(DHTTP, "<uhost> %s connected\n", dumpDest(rwer->getDst()).c_str());
+        LOGD(DHTTP, "<uhost> %s connected\n", dumpAddr(rwer->getDst()).c_str());
         status.rw->SetCallback(status.cb);
     })->onRead([this](Buffer&& bb) -> size_t{
         if(JobPending(idle_timeour) < 30000 || JobPending(idle_timeour) == UINT32_MAX) {
             idle_timeour = UpdateJob(std::move(idle_timeour), [this]{deleteLater(CONNECT_AGED);}, 30000);
         }
-        LOGD(DHTTP, "<uhost> (%s) read: len:%zu, refs: %zd\n", dumpDest(rwer->getDst()).c_str(), bb.len, bb.refs());
+        LOGD(DHTTP, "<uhost> (%s) read: len:%zu, refs: %zd\n", dumpAddr(rwer->getDst()).c_str(), bb.len, bb.refs());
         if(!is_responsed){
             status.rw->SendHeader(HttpResHeader::create(S200, sizeof(S200), status.req->request_id));
             is_responsed = true;
@@ -38,13 +38,13 @@ Uhost::Uhost(const Destination& dest, const Destination& target): port(dest.port
         }
     })->onWrite([this](uint64_t id){
         idle_timeour = UpdateJob(std::move(idle_timeour), [this]{deleteLater(CONNECT_AGED);}, 120000);
-        LOGD(DHTTP, "<uhost> (%s) written\n", dumpDest(rwer->getDst()).c_str());
+        LOGD(DHTTP, "<uhost> (%s) written\n", dumpAddr(rwer->getDst()).c_str());
         status.rw->Unblock(id);
     })->onError([this](int ret, int code){
-        LOGE("(%s) UDP error: %d/%d\n", dumpDest(rwer->getDst()).c_str(), ret, code);
+        LOGE("(%s) UDP error: %d/%d\n", dumpAddr(rwer->getDst()).c_str(), ret, code);
         deleteLater(ret);
     });
-    if(strcmp(dest.scheme, "socks5") == 0){
+    if(strcmp(dest.addr.scheme, "socks5") == 0){
         rwer = std::make_shared<Socks5RWer>(dest, target, cb);
     }else{
         rwer = std::make_shared<PacketRWer>(dest, cb);
@@ -54,7 +54,7 @@ Uhost::Uhost(const Destination& dest, const Destination& target): port(dest.port
 Uhost::~Uhost() {
     if(rwer){
         LOGD(DHTTP, "<uhost> (%s) destoryed: rx:%zu, tx:%zu, drop: %zu\n",
-             dumpDest(rwer->getDst()).c_str(), rx_bytes, tx_bytes, rx_dropped);
+             dumpAddr(rwer->getDst()).c_str(), rx_bytes, tx_bytes, rx_dropped);
     }else{
         LOGD(DHTTP, "<uhost> null destoryed: rx:%zu, tx:%zu, drop: %zu\n",
              rx_bytes, tx_bytes, rx_dropped);

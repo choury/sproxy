@@ -247,9 +247,8 @@ std::shared_ptr<HttpReqHeader> UnpackHttpReq(const void* header, size_t len){
     sscanf(httpheader.c_str(), "%19s%*[ ]%8192[^" CRLF " ]", method, &url[0]);
     headers.emplace(":method", method);
 
-    Destination dest;
-    memset(&dest, 0, sizeof(dest));
-    if (spliturl(url.c_str(), &dest, &path[0])) {
+    Addr dest{};
+    if (splitAddr(url.c_str(), &dest, &path[0])) {
         LOGE("wrong url format:%s\n", url.c_str());
         return nullptr;
     }

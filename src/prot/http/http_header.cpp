@@ -139,7 +139,7 @@ HttpReqHeader::HttpReqHeader(HeaderMap&& headers) {
 
     memset(&Dest, 0, sizeof(Dest));
     if (has(":authority")){
-        spliturl(get(":authority"), &Dest, nullptr);
+        splitAddr(get(":authority"), &Dest, nullptr);
     }
     if(has(":scheme")){
         snprintf(Dest.scheme, sizeof(Dest.scheme), "%s", get(":scheme"));
@@ -279,7 +279,7 @@ uint16_t HttpReqHeader::getDport() const {
 }
 
 std::string HttpReqHeader::geturl() const {
-    std::string url = dumpDest(&Dest);
+    std::string url = dumpAddr(&Dest);
     assert(path[0] == '/');
     if(path[1]){
         url += path;

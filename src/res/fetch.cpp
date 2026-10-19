@@ -70,9 +70,9 @@ void http_fetch(std::shared_ptr<HttpReqHeader> req, const Destination& dest, std
     })->onWrite([](uint64_t){});
     state->cb = cb;
 
-    Destination local{};
+    Addr local{};
     strcpy(local.hostname, "localhost");
-    state->rw = std::make_shared<MemRWer>(local, dest, cb);
+    state->rw = std::make_shared<MemRWer>(local, dest.addr, cb);
     addjob_with_name([state]{finish(state);}, "http_fetch timeout",
                      timeout_ms, JOB_FLAGS_AUTORELEASE);
     if(!body.empty()) {

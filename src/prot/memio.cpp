@@ -4,11 +4,11 @@
 #include "hook/hook.h"
 #include <inttypes.h>
 
-MemRWer::MemRWer(const Destination& src, const Destination& dst, std::shared_ptr<IMemRWerCallback> cb):
+MemRWer::MemRWer(const Addr& src, const Addr& dst, std::shared_ptr<IMemRWerCallback> cb):
     FullRWer(IRWerCallback::create()->onError([](int, int){})), _callback(std::move(cb))
 {
-    memcpy(&this->src, &src, sizeof(Destination));
-    memcpy(&this->dst, &dst, sizeof(Destination));
+    this->src = src;
+    this->dst = dst;
 }
 
 MemRWer::~MemRWer() {
@@ -45,7 +45,7 @@ void MemRWer::push_data(Buffer&& bb) {
     HOOK_BPF(this, rb, bb);
     assert(stats != RWerStats::ReadEOF);
     LOGD(DRWER, "<MemRWer> <%d> %s push_data [%" PRIu64"]: %zd, refs: %zd\n",
-         getFd(), dumpDest(src).c_str(), bb.id, bb.len, bb.refs());
+         getFd(), dumpAddr(src).c_str(), bb.id, bb.len, bb.refs());
     if(bb.len == 0){
         stats = RWerStats::ReadEOF;
     } else if(rb.put(std::move(bb)) < 0){
@@ -59,7 +59,7 @@ void MemRWer::push_data(Buffer&& bb) {
 
 void MemRWer::push_signal(Signal s) {
     LOGD(DRWER, "<MemRWer> <%d> %s push_signal: %d, cb: %ld\n",
-         getFd(), dumpDest(src).c_str(), (int)s, callback.use_count());
+         getFd(), dumpAddr(src).c_str(), (int)s, callback.use_count());
     if (flags & RWER_CLOSING){
         return;
     }
@@ -124,7 +124,7 @@ void MemRWer::ConsumeRData(uint64_t id) {
 
 ssize_t MemRWer::Write(std::set<uint64_t>& writed_list) {
     if(_callback.expired()){
-        if(!drained()) LOGE("MemRWer <%d> %s callback expired, left: %zd\n", getFd(), dumpDest(src).c_str(), wbuff.length());
+        if(!drained()) LOGE("MemRWer <%d> %s callback expired, left: %zd\n", getFd(), dumpAddr(src).c_str(), wbuff.length());
         delEvents(RW_EVENT::WRITE);
         errno = EPIPE;
         return -1;
@@ -137,11 +137,11 @@ ssize_t MemRWer::Write(std::set<uint64_t>& writed_list) {
         ssize_t ret = write_cb(std::move(bb));
         if (blen) {
             LOGD(DRWER, "<MemRWer> <%d> %s write_cb %d wlen: %zd, len: %zd, ret: %zd\n",
-                 getFd(), dumpDest(src).c_str(), (int)bb.id, wbuff.length(), blen, ret);
+                 getFd(), dumpAddr(src).c_str(), (int)bb.id, wbuff.length(), blen, ret);
         } else {
             assert(flags & RWER_SHUTDOWN);
             LOGD(DRWER, "<MemRWer> <%d> %s write_cb %d EOF, wlen: %zd\n",
-                 getFd(), dumpDest(src).c_str(), (int)bb.id, wbuff.length());
+                 getFd(), dumpAddr(src).c_str(), (int)bb.id, wbuff.length());
         }
         if(ret < 0 || (blen > 0 && ret == 0)){
             delEvents(RW_EVENT::WRITE);
@@ -175,7 +175,7 @@ void MemRWer::closeHE(RW_EVENT) {
 
 void MemRWer::dump_status(Dumper dp, void* param) {
     dp(param, "MemRWer <%d> (%s): rlen: %zu, wlen: %zu, stats: %d, flags: 0x%04x, event: %s, cb: %ld, _cb: %ld\n",
-        getFd(), dumpDest(src).c_str(), rlength(0), wbuff.length(),
+        getFd(), dumpAddr(src).c_str(), rlength(0), wbuff.length(),
         (int)stats, flags, events_string[(int)getEvents()], callback.use_count(), _callback.use_count());
 }
 
@@ -188,7 +188,7 @@ void PMemRWer::push_data(Buffer&& bb) {
 
     assert(stats != RWerStats::ReadEOF);
     LOGD(DRWER, "<PMemRWer> <%d> %s push_data [%" PRIu64"]: %zd, refs: %zd, cb: %ld\n",
-         getFd(), dumpDest(src).c_str(), bb.id, bb.len, bb.refs(), callback.use_count());
+         getFd(), dumpAddr(src).c_str(), bb.id, bb.len, bb.refs(), callback.use_count());
     if(flags & RWER_CLOSING){
         return;
     }
@@ -225,7 +225,7 @@ void PMemRWer::Send(Buffer&& bb) {
         flags |= RWER_SHUTDOWN;
     }
     LOGD(DRWER, "<PMemRWer> <%d> %s Send [%" PRIu64"]: %zd, refs: %zd, _cb: %ld\n",
-        getFd(), dumpDest(src).c_str(), bb.id, bb.len, bb.refs(), _callback.use_count());
+        getFd(), dumpAddr(src).c_str(), bb.id, bb.len, bb.refs(), _callback.use_count());
     if(auto _cb = _callback.lock(); _cb){
         _cb->write_data(std::move(bb));
     }

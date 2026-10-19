@@ -173,7 +173,7 @@ Guest_tproxy::Guest_tproxy(int fd, sockaddr_storage* src, sockaddr_storage* dst,
 
 // Already has Destination (for backend listener)
 Guest_tproxy::Guest_tproxy(std::shared_ptr<RWer> rwer,
-    const std::string& rproxy, const Destination* dst, std::function<void(Server*)> df): Guest(rwer)
+    const std::string& rproxy, const Addr* dst, std::function<void(Server*)> df): Guest(rwer)
 {
     this->df = std::move(df);
     headless = true;
@@ -186,7 +186,7 @@ Guest_tproxy::Guest_tproxy(std::shared_ptr<RWer> rwer,
         dst->hostname, dst->port, dst->protocol);
     std::shared_ptr<HttpReqHeader> header = UnpackHttpReq(buff);
     if(header == nullptr) {
-        LOGE("(%s) Guest_tproxy: UnpackHttpReq failed: %s\n", dumpDest(src).c_str(), dumpDest(*dst).c_str());
+        LOGE("(%s) Guest_tproxy: UnpackHttpReq failed: %s\n", dumpAddr(src).c_str(), dumpAddr(*dst).c_str());
         deleteLater(TPROXY_HOST_ERR);
         return;
     }

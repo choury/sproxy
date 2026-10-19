@@ -92,8 +92,8 @@ class HttpResolver: public ResolverBase {
         auto req = UnpackHttpReq(buff, headlen);
         //DoH 服务器自身的解析必须走系统解析，否则自引用死循环
         Destination dest = server;
-        dest.system_resolve = true;
-        req->Dest = dest;
+        dest.addr.system_resolve = true;
+        req->Dest = dest.addr;
         if(server.credit.user[0]) {
             req->set("Authorization", encodeCredit(&server.credit));
         }
@@ -109,7 +109,7 @@ class HttpResolver: public ResolverBase {
     }
 public:
     explicit HttpResolver(const Destination& server): server(server) {
-        url = dumpDest(server) + "/dns-query";
+        url = dumpAddr(server.addr) + "/dns-query";
     }
 
     virtual int query(const void *data, size_t len, std::function<void(const char *, size_t)> cb) override {
@@ -427,7 +427,7 @@ void getDnsConfig(struct DnsConfig* config){
     if(opt.doh_server) {
         if(opt.doh_server[0]) {
             parseDest(opt.doh_server, &config->doh);
-        }else if(opt.Server.hostname[0]) {
+        }else if(opt.Server.addr.hostname[0]) {
             config->doh = opt.Server;
         }
     }
@@ -487,7 +487,7 @@ void getDnsConfig(struct DnsConfig* config){
     if(opt.doh_server) {
         if(opt.doh_server[0]) {
             parseDest(opt.doh_server, &config->doh);
-        }else if(opt.Server.hostname[0]) {
+        }else if(opt.Server.addr.hostname[0]) {
             config->doh = opt.Server;
         }
     }
@@ -569,7 +569,7 @@ static void query_host_real(int retries, const char* host, DNSCB func, std::shar
     }
 
     HostResolver* resolver = nullptr;
-    if(dnsConfig.doh.hostname[0] && !(flags & RAWRESOLVER)) {
+    if(dnsConfig.doh.addr.hostname[0] && !(flags & RAWRESOLVER)) {
         resolver = new HostResolver(dnsConfig.doh);
     }else{
         if (dnsConfig.namecount == 0) {
@@ -650,7 +650,7 @@ void query_dns(const char* host, int type, DNSRAWCB func, std::shared_ptr<void> 
     }
 
     ResolverBase* resolver = nullptr;
-    if(dnsConfig.doh.hostname[0]) {
+    if(dnsConfig.doh.addr.hostname[0]) {
         resolver = new HttpResolver(dnsConfig.doh);
     }else{
         if (dnsConfig.namecount == 0) {
@@ -675,7 +675,7 @@ void query_raw(const void *data, size_t len, DNSRAWCB func, std::shared_ptr<void
         reload_hosts();
     }
     ResolverBase* resolver = nullptr;
-    if(dnsConfig.doh.hostname[0]) {
+    if(dnsConfig.doh.addr.hostname[0]) {
         resolver = new HttpResolver(dnsConfig.doh);
     }else {
         if (dnsConfig.namecount == 0) {

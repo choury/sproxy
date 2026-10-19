@@ -37,7 +37,7 @@ extern "C" void slog(int level, const char* fmt, ...) {
     va_end(ap);
 }
 
-extern "C" std::string dumpDest(const Destination* addr) {
+extern "C" std::string dumpAddr(const Addr* addr) {
     (void)addr;
     return "mock_destination";
 }

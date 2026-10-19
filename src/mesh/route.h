@@ -39,10 +39,11 @@ struct MeshRoutePath {
     int hops = 0;
 };
 
-//单条线路(键="宣告地址|IP")：addr 钉住该 IP(端口取宣告地址的)；
+//单条线路(键="宣告地址|IP")：addr 存宣告地址解析结果，ip 钉住该 IP；
 //探测状态是探测方本地状态，不随宣告序列化
 struct AddrProbe {
-    sockaddr_storage addr{};  //线路IP，含端口
+    Addr addr{};              //宣告地址
+    sockaddr_storage ip{};    //线路IP，端口取宣告地址的
     double rtt = 0;
     int fails = 0;
     uint32_t backoff = 0;
@@ -94,9 +95,8 @@ inline void mesh_failover(MeshEntry& e) {
 //宣告地址集 × 解析结果重建线路表；active线路消失则触发全量重选
 void mesh_rebuild_paths(MeshEntry& e);
 
-//按线路键前段的宣告地址现算连接参数并钉住线路IP(键两段都不含 '|')；
-//hostname 即节点名，承载 SNI/证书校验
-Destination mesh_path_dest(const std::string& key, const sockaddr_storage& addr);
+//由线路条目组装连接参数；hostname 即节点名，承载 SNI/证书校验
+Destination mesh_path_dest(const AddrProbe& path);
 
 bool mesh_route(const std::string& self, const std::map<std::string, MeshEntry>& table,
                 const std::string& target, MeshRoutePath& out);

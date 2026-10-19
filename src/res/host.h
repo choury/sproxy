@@ -32,7 +32,7 @@ protected:
     virtual void connected(const sockaddr_storage& addr, uint32_t resolved_time);
     void reply();
 public:
-    explicit Host(const Destination& dest, const Destination& target = {});
+    explicit Host(const Destination& dest, const Addr& target = {});
     virtual ~Host() override;
 
     virtual void dump_stat(Dumper dp, void* param) override;

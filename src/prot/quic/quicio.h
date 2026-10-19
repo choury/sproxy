@@ -398,7 +398,7 @@ protected:
     virtual void ConsumeRData(uint64_t) override;
 public:
     explicit QuicMer(SSL_CTX *ctx,
-                    const Destination& src, const Destination& dst,
+                    const Addr& src, const Addr& dst,
                     std::shared_ptr<IMemRWerCallback> _cb);
 
     virtual bool isTls() override {

@@ -11,7 +11,7 @@
 #include <inttypes.h>
 
 void Guest2::connection_lost(){
-    LOGE("(%s): <guest2> Nothing got too long, so close it\n", dumpDest(rwer->getSrc()).c_str());
+    LOGE("(%s): <guest2> Nothing got too long, so close it\n", dumpAddr(rwer->getSrc()).c_str());
     deleteLater(PEER_LOST_ERR);
 }
 
@@ -26,7 +26,7 @@ bool Guest2::wantmore(const ReqStatus& status) {
 Guest2::Guest2(std::shared_ptr<RWer> rwer): Requester(rwer) {
     cb = ISocketCallback::create()->onRead([this](Buffer&& bb) -> size_t {
         HOOK_BPF(this, statusmap, bb);
-        LOGD(DHTTP2, "<guest2> (%s) read: len:%zu\n", dumpDest(this->rwer->getSrc()).c_str(), bb.len);
+        LOGD(DHTTP2, "<guest2> (%s) read: len:%zu\n", dumpAddr(this->rwer->getSrc()).c_str(), bb.len);
         if(bb.len == 0){
             //EOF
             deleteLater(NOERROR);
@@ -73,7 +73,7 @@ Guest2::~Guest2() {
 }
 
 void Guest2::Error(int ret, int code){
-    LOGE("(%s): <guest2> error: %d/%d\n", dumpDest(rwer->getSrc()).c_str(), ret, code);
+    LOGE("(%s): <guest2> error: %d/%d\n", dumpAddr(rwer->getSrc()).c_str(), ret, code);
     deleteLater(ret);
 }
 
@@ -115,7 +115,7 @@ size_t Guest2::Recv(Buffer&& bb){
 
 void Guest2::ReqProc(uint32_t id, std::shared_ptr<HttpReqHeader> header) {
     LOGD(DHTTP2, "<guest2> %" PRIu64 " (%s) ReqProc %s\n",
-         header->request_id, dumpDest(rwer->getSrc()).c_str(), header->geturl().c_str());
+         header->request_id, dumpAddr(rwer->getSrc()).c_str(), header->geturl().c_str());
     if(statusmap.count(id)){
         LOGD(DHTTP2, "<guest2> ReqProc dup id: %d\n", id);
         Reset(id, HTTP2_ERR_STREAM_CLOSED);
@@ -123,7 +123,7 @@ void Guest2::ReqProc(uint32_t id, std::shared_ptr<HttpReqHeader> header) {
     }
     if(statusmap.size() >= MAX_CONCURRENT_REQS) {
         LOGE("(%s): <guest2> too many concurrent streams: %zd, refuse stream %d\n",
-             dumpDest(rwer->getSrc()).c_str(), statusmap.size(), id);
+             dumpAddr(rwer->getSrc()).c_str(), statusmap.size(), id);
         Reset(id, HTTP2_ERR_REFUSED_STREAM);
         return;
     }
@@ -256,7 +256,7 @@ std::shared_ptr<IMemRWerCallback> Guest2::response(uint64_t id) {
         }
         status.req->tracker.emplace_back("header", getmtime());
         LOGD(DHTTP2, "<guest2> get response [%" PRIu64"]: %s\n", id, res->status);
-        HttpLog(dumpDest(rwer->getSrc()), status.req, res);
+        HttpLog(dumpAddr(rwer->getSrc()), status.req, res);
 
         Block buff(BUF_LEN);
         Http2_header* const h2header = (Http2_header*) buff.data();
@@ -397,7 +397,7 @@ void Guest2::GoawayProc(const Http2_header* header) {
 }
 
 void Guest2::ErrProc(int errcode) {
-    LOGE("(%s): Guest2 http2 error:0x%08x\n", dumpDest(rwer->getSrc()).c_str(), errcode);
+    LOGE("(%s): Guest2 http2 error:0x%08x\n", dumpAddr(rwer->getSrc()).c_str(), errcode);
     http2_flag |= HTTP2_FLAG_ERROR;
     deleteLater(errcode);
 }

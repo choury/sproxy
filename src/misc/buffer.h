@@ -229,6 +229,6 @@ public:
     }
 };
 
-std::string dumpDest(const Destination& addr);
+std::string dumpAddr(const Addr& addr);
 
 #endif //SPROXY_BUFFER_H

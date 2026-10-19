@@ -41,8 +41,8 @@ protected:
 public:
     explicit TapRWer(int fd, bool enable_offload, std::shared_ptr<IRWerCallback> cb);
     virtual ~TapRWer() override = default;
-    virtual Destination getSrc() const override {
-        Destination src{};
+    virtual Addr getSrc() const override {
+        Addr src{};
         strcpy(src.hostname, "<tap>");
         return src;
     }

@@ -21,7 +21,7 @@ public:
     // Called when network interfaces change
     virtual bool reconnect() { return false; }
 
-    virtual Destination getPeer() {
+    virtual Addr getPeer() {
         return rwer->getSrc();
     }
 };

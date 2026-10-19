@@ -155,10 +155,10 @@ class handler: public CgiHandler{
                     Destination custom_dest;
                     if(parseDest(ext_str.c_str(), &custom_dest) == 0) {
                         std::string custom_proxy;
-                        if(custom_dest.scheme[0] && strcasecmp(custom_dest.scheme, "https") == 0) {
-                            custom_proxy = "HTTPS " + std::string(dumpAuthority(&custom_dest));
+                        if(custom_dest.addr.scheme[0] && strcasecmp(custom_dest.addr.scheme, "https") == 0) {
+                            custom_proxy = "HTTPS " + std::string(dumpAuthority(&custom_dest.addr));
                         } else {
-                            custom_proxy = "PROXY " + std::string(dumpAuthority(&custom_dest));
+                            custom_proxy = "PROXY " + std::string(dumpAuthority(&custom_dest.addr));
                         }
                         pac_content += "        return \"" + custom_proxy + "\"; // Custom proxy\n";
                     } else {

@@ -14,7 +14,7 @@ Rguest3::Rguest3(const Destination& dest, const std::string& name):
     auto qrwer = std::dynamic_pointer_cast<QuicRWer>(rwer);
     qrwer->setAlpn(alpn_protos_rproxy3, sizeof(alpn_protos_rproxy3)-1);
     std::dynamic_pointer_cast<IQuicCallback>(cb)->onConnect([this](const sockaddr_storage&, uint32_t){
-        LOG("connected to rproxy3 server: %s\n", dumpDest(rwer->getDst()).c_str());
+        LOG("connected to rproxy3 server: %s\n", dumpAddr(rwer->getDst()).c_str());
         //注册请求等服务端MAX_PUSH_ID授权后推送(MaxPushIdProc)
         Http3Base::Init();
     });

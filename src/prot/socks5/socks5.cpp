@@ -76,12 +76,12 @@ static size_t DecodeAddressPort(Buffer& bb, Socks5AddrType type, sockaddr_storag
     return 0;
 }
 
-Socks5RWer::Socks5RWer(const Destination& server, const Destination& dst, std::shared_ptr<IRWerCallback> cb):
+Socks5RWer::Socks5RWer(const Destination& server, const Addr& dst, std::shared_ptr<IRWerCallback> cb):
     StreamRWer(server, std::move(cb)) {
     assert(this->protocol == Protocol::TCP);
     this->server = server;
     this->dst = dst;
-    LOGD(DSOCKS, "<socks5> init: server=%s dst=%s\n", dumpDest(this->server).c_str(), dumpDest(this->dst).c_str());
+    LOGD(DSOCKS, "<socks5> init: server=%s dst=%s\n", dumpAddr(this->server.addr).c_str(), dumpAddr(this->dst).c_str());
 }
 
 size_t Socks5RWer::ProcUdp(Buffer& bb) {
@@ -122,7 +122,7 @@ void Socks5RWer::waitconnectHE(RW_EVENT events) {
         return;
     }
     if (!!(events & RW_EVENT::WRITE)) {
-        LOGD(DSOCKS, "<socks5> connected to server %s\n", dumpDest(server).c_str());
+        LOGD(DSOCKS, "<socks5> connected to server %s\n", dumpAddr(server.addr).c_str());
         con_failed_job.reset(nullptr);
         setEvents(RW_EVENT::READWRITE);
         stats = RWerStats::Connected;
@@ -244,12 +244,12 @@ size_t Socks5RWer::ReplyProc(Buffer&& bb) {
     if (reply_bound_ss.ss_family == AF_INET) {
         auto* sin = (sockaddr_in*)&reply_bound_ss;
         if (sin->sin_port == 0) {
-            sin->sin_port = htons(server.port);
+            sin->sin_port = htons(server.addr.port);
         }
     } else if (reply_bound_ss.ss_family == AF_INET6) {
         auto* sin6 = (sockaddr_in6*)&reply_bound_ss;
         if (sin6->sin6_port == 0) {
-            sin6->sin6_port = htons(server.port);
+            sin6->sin6_port = htons(server.addr.port);
         }
     }
 
@@ -312,7 +312,7 @@ void Socks5RWer::SendAuth() {
     state = Socks5State::AuthSent;
 }
 
-static size_t EncodeSocks5Address(Buffer& bb, const Destination& dst) {
+static size_t EncodeSocks5Address(Buffer& bb, const Addr& dst) {
     Socks5AddrType type = Socks5AddrType::Domain;
     const char* host = dst.hostname;
     size_t host_len = strnlen(host, DOMAINLIMIT);
@@ -374,7 +374,7 @@ void Socks5RWer::SendRequest() {
         (uchar)Socks5Cmd::UdpAssociate : (uchar)Socks5Cmd::Connect;
     data[2] = 0x00;
 
-    LOGD(DSOCKS, "<socks5> send request: cmd=%u dst=%s\n", (unsigned)data[1], dumpDest(dst).c_str());
+    LOGD(DSOCKS, "<socks5> send request: cmd=%u dst=%s\n", (unsigned)data[1], dumpAddr(dst).c_str());
     StreamRWer::Send(std::move(bb));
     state = Socks5State::RequestSent;
 }
@@ -394,7 +394,7 @@ void Socks5RWer::SendUdpPayload(Buffer&& payload) {
     data[1] = 0x00;
     data[2] = 0x00;
 
-    LOGD(DSOCKS, "<socks5> udp send: %s len:%zu\n", dumpDest(dst).c_str(), payload.len);
+    LOGD(DSOCKS, "<socks5> udp send: %s len:%zu\n", dumpAddr(dst).c_str(), payload.len);
     udp_rwer->Send(std::move(payload));
 }
 
@@ -458,7 +458,7 @@ void Socks5RWer::ConsumeRData(uint64_t id) {
 
 void Socks5RWer::dump_status(Dumper dp, void* param) {
     dp(param, "Socks5RWer <%d> (%s -> %s): rlen: %zu, wlen: %zu, stats: %d, state: %s, event: %s, cb: %ld\n",
-       getFd(), dumpDest(server).c_str(), dumpDest(dst).c_str(),
+       getFd(), dumpAddr(server.addr).c_str(), dumpAddr(dst).c_str(),
        rlength(0), wbuff.length(), (int)stats, Socks5StateStrings[(int)state], events_string[(int)getEvents()], callback.use_count());
     if(udp_rwer) {
         udp_rwer->dump_status(dp, param);

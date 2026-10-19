@@ -73,9 +73,9 @@ Protocol getRawProtocol(const char* proto) {
 }
 
 SocketRWer::SocketRWer(const Destination& dest, std::shared_ptr<IRWerCallback> cb):
-            RWer(std::move(cb)), port(dest.port), protocol(getRawProtocol(dest.protocol))
+            RWer(std::move(cb)), port(dest.addr.port), protocol(getRawProtocol(dest.addr.protocol))
 {
-    strcpy(this->hostname, dest.hostname);
+    strcpy(this->hostname, dest.addr.hostname);
     if(dest.assign_src[0] != '\0') {
         BindInfo src_bind{};
         if(parseBind(dest.assign_src, &src_bind)){
@@ -90,9 +90,9 @@ SocketRWer::SocketRWer(const Destination& dest, std::shared_ptr<IRWerCallback> c
     }
     if(dest.resolved_addr.ss_family == AF_INET || dest.resolved_addr.ss_family == AF_INET6){
         sockaddr_storage addr = dest.resolved_addr;
-        ((sockaddr_in6*)&addr)->sin6_port = htons(dest.port);
+        ((sockaddr_in6*)&addr)->sin6_port = htons(dest.addr.port);
         addrs.emplace(addr);
-        if(opt.ech_mode == Disable || dest.system_resolve) {
+        if(opt.ech_mode == Disable || dest.addr.system_resolve) {
             stats = RWerStats::Connecting;
             dns_job = AddJob([this]{connect();}, 0, 0);
             return;
@@ -105,7 +105,7 @@ SocketRWer::SocketRWer(const Destination& dest, std::shared_ptr<IRWerCallback> c
         return;
     }
     stats = RWerStats::Resolving;
-    if(dest.system_resolve){
+    if(dest.addr.system_resolve){
         //这里使用job,因为shared_from_this不能在构造函数里面用
         dns_job = AddJob([this]{
             query_host(this->hostname, SocketRWer::Dnscallback, shared_from_this(), QARES | QAAAARES | RAWRESOLVER);
@@ -122,8 +122,8 @@ SocketRWer::SocketRWer(const sockaddr_storage& addr, Protocol protocol, std::sha
     addrs.push(addr);
     stats = RWerStats::Connecting;
     this->protocol = protocol;
-    Destination server;
-    storage2Dest(&addr, &server);
+    Addr server;
+    storage2Addr(&addr, &server);
     strcpy(hostname, server.hostname);
     port = server.port;
     connect();
@@ -297,8 +297,8 @@ void SocketRWer::waitconnectHE(RW_EVENT events) {
     }
 }
 
-Destination SocketRWer::getSrc() const {
-    Destination src{};
+Addr SocketRWer::getSrc() const {
+    Addr src{};
     if(getFd() < 0) {
         snprintf(src.hostname, sizeof(src.hostname), "<null>");
         return src;
@@ -312,7 +312,7 @@ Destination SocketRWer::getSrc() const {
             snprintf(src.hostname, sizeof(src.hostname), "<null>");
         } else {
             PadUnixPath(&myaddr, addr_len);
-            storage2Dest(&myaddr, &src);
+            storage2Addr(&myaddr, &src);
         }
     } else {
         // bind (peer -> me)
@@ -324,11 +324,11 @@ Destination SocketRWer::getSrc() const {
                 snprintf(src.hostname, sizeof(src.hostname), "<null>");
             } else {
                 PadUnixPath(&peer, addr_len);
-                storage2Dest(&peer, &src);
+                storage2Addr(&peer, &src);
             }
         } else {
             peer = addrs.front();
-            storage2Dest(&peer, &src);
+            storage2Addr(&peer, &src);
         }
         if(peer.ss_family == AF_UNIX){
 #if defined(SO_PEERCRED)
@@ -367,8 +367,8 @@ Destination SocketRWer::getSrc() const {
     return src;
 }
 
-Destination SocketRWer::getDst() const {
-    Destination dst{};
+Addr SocketRWer::getDst() const {
+    Addr dst{};
     if(protocol != Protocol::NONE) {
         strcpy(dst.protocol, protstr(protocol));
     }
@@ -379,7 +379,7 @@ Destination SocketRWer::getDst() const {
             strcpy(dst.hostname, hostname);
             dst.port = port;
         } else {
-            storage2Dest(&addrs.front(), &dst);
+            storage2Addr(&addrs.front(), &dst);
         }
     } else {
         // bind (peer -> me)
@@ -394,7 +394,7 @@ Destination SocketRWer::getDst() const {
             snprintf(dst.hostname, sizeof(dst.hostname), "<null>");
         } else {
             PadUnixPath(&myaddr, addr_len);
-            storage2Dest(&myaddr, &dst);
+            storage2Addr(&myaddr, &dst);
         }
     }
     return dst;
@@ -431,12 +431,12 @@ NetStat SocketRWer::getNetStat() {
 void SocketRWer::dump_status(Dumper dp, void *param) {
     if(hostname[0]) {
         dp(param, "SocketRWer <%d> (%s %s): rlen: %zu, wlen: %zu, stats: %d, event: %s, %s, cb: %ld\n",
-           getFd(), hostname, dumpDest(getDst()).c_str(),
+           getFd(), hostname, dumpAddr(getDst()).c_str(),
            rlength(0), wbuff.length(), (int)stats, events_string[(int)getEvents()],
            dumpNetStat(getNetStat()).c_str(), callback.use_count());
     } else {
         dp(param, "SocketRWer <%d> (%s -> %s): rlen: %zu, wlen: %zu, stats: %d, event: %s, %s, cb: %ld\n",
-           getFd(), dumpDest(getSrc()).c_str(), dumpDest(getDst()).c_str(),
+           getFd(), dumpAddr(getSrc()).c_str(), dumpAddr(getDst()).c_str(),
            rlength(0), wbuff.length(), (int)stats, events_string[(int)getEvents()],
            dumpNetStat(getNetStat()).c_str(), callback.use_count());
     }

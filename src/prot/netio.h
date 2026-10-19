@@ -52,8 +52,8 @@ public:
     //virtual void SetConnectCB(std::function<void(const sockaddr_storage&, uint32_t resolved_time)> connectCB);
     virtual void SetCallback(std::shared_ptr<IRWerCallback> cb) override;
     virtual ~SocketRWer() override;
-    virtual Destination getSrc() const override;
-    virtual Destination getDst() const override;
+    virtual Addr getSrc() const override;
+    virtual Addr getDst() const override;
     virtual NetStat getNetStat() override;
     virtual void dump_status(Dumper dp, void* param) override;
     void reflect(IVisitor& v) override {

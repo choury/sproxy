@@ -508,6 +508,6 @@ size_t EBuffer::continuous_length_at(size_t pos) const {
 }
 
 #include "util.h"
-std::string dumpDest(const Destination& addr) {
-    return dumpDest(&addr);
+std::string dumpAddr(const Addr& addr) {
+    return dumpAddr(&addr);
 }

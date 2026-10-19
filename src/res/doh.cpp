@@ -160,7 +160,7 @@ void Doh::dump_stat(Dumper dp, void* param) {
     dp(param, "DoH: %p, sessions: %zu, succeed: %zd, failed: %zd, rtt: %.3fms\n",
         this, statusmap.size(), succeed_count, failed_count, last_rtt);
     for(auto& [name, status]: statusmap) {
-        dp(param, "  [%" PRIu64 "]: %s\n", name, dumpDest(status.rw->getSrc()).c_str());
+        dp(param, "  [%" PRIu64 "]: %s\n", name, dumpAddr(status.rw->getSrc()).c_str());
     }
 }
 

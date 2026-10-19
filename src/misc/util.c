@@ -443,7 +443,8 @@ int parse_user_pass(const char* input, size_t input_len, struct Credit* credit) 
     return 0;
 }
 
-int spliturl(const char* url, struct Destination* server, char* path) {
+//cred为NULL时丢弃userinfo不校验
+static int spliturl_impl(const char* url, struct Addr* server, char* path, struct Credit* cred) {
     if (url == NULL) {
         return -1; // Invalid input
     }
@@ -500,7 +501,7 @@ int spliturl(const char* url, struct Destination* server, char* path) {
             return -2; // Invalid userinfo format
         }
         size_t userinfo_len = (size_t)(atsplit - tmpaddr);
-        if (parse_user_pass(tmpaddr, userinfo_len, &server->credit)) {
+        if (cred && parse_user_pass(tmpaddr, userinfo_len, cred)) {
             return -2;
         }
         memmove(tmpaddr, atsplit + 1, strlen(atsplit + 1) + 1);
@@ -536,27 +537,19 @@ int spliturl(const char* url, struct Destination* server, char* path) {
     return 0;
 }
 
-/*
-int dumpDestToBuffer(const struct Destination* Server, char* buff, size_t buflen){
-    uint16_t port = Server->port;
-    if(strcasecmp(Server->scheme, "http") == 0 && port == HTTPPORT){
-        port = 0;
+int spliturl(const char* url, struct Destination* server, char* path) {
+    if(!server) {
+        return -1;
     }
-    if(strcasecmp(Server->scheme, "https") == 0 && port == HTTPSPORT){
-        port = 0;
-    }
-    int pos = 0;
-    if(Server->scheme[0])
-        pos = snprintf(buff, buflen, "%s://%s", Server->scheme, Server->hostname);
-    else
-        pos = snprintf(buff, buflen, "%s", Server->hostname);
-    if(port)
-        pos += snprintf(buff + pos, buflen - pos, ":%d", port);
-    return pos;
+    return spliturl_impl(url, &server->addr, path, &server->credit);
 }
-*/
 
-const char* dumpDest(const struct Destination* Server){
+int splitAddr(const char* url, struct Addr* server, char* path) {
+    return spliturl_impl(url, server, path, NULL);
+}
+
+
+const char* dumpAddr(const struct Addr* Server){
     static char buff[URLLIMIT];
     uint16_t port = Server->port;
     if(strcasecmp(Server->scheme, "http") == 0 && port == HTTPPORT){
@@ -578,7 +571,7 @@ const char* dumpDest(const struct Destination* Server){
     return buff;
 }
 
-const char* dumpAuthority(const struct Destination* Server){
+const char* dumpAuthority(const struct Addr* Server){
     static char buff[URLLIMIT];
     uint16_t port = Server->port;
     if(strcasecmp(Server->scheme, "http") == 0 && port == HTTPPORT){
@@ -594,8 +587,8 @@ const char* dumpAuthority(const struct Destination* Server){
     return Server->hostname;
 }
 
-void storage2Dest(const struct sockaddr_storage* addr, struct Destination* dest) {
-    memset(dest, 0, sizeof(struct Destination));
+void storage2Addr(const struct sockaddr_storage* addr, struct Addr* dest) {
+    memset(dest, 0, sizeof(struct Addr));
     addrstring(addr, dest->hostname, sizeof(dest->hostname));
     if(addr->ss_family == AF_INET){
         const struct sockaddr_in* in = (struct sockaddr_in*)addr;

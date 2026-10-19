@@ -35,7 +35,7 @@ enum class Socks5AddrType : uint8_t {
 class Socks5RWer: public StreamRWer {
     Socks5State state = Socks5State::Idle;
     Destination server{};
-    Destination dst{};
+    Addr dst{};
     std::unique_ptr<sockaddr_storage> bound_ss;
     std::shared_ptr<PacketRWer> udp_rwer;
     std::shared_ptr<IRWerCallback> udp_cb;
@@ -59,7 +59,7 @@ protected:
     void waitconnectHE(RW_EVENT events) override;
 
 public:
-    Socks5RWer(const Destination& server, const Destination& dst,
+    Socks5RWer(const Destination& server, const Addr& dst,
         std::shared_ptr<IRWerCallback> cb);
 
     bool IsConnected() override;

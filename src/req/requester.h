@@ -12,10 +12,10 @@ protected:
 public:
     explicit Requester(std::shared_ptr<RWer> rwer);
 
-    virtual Destination getSrc() const {
+    virtual Addr getSrc() const {
         return rwer->getSrc();
     }
-    virtual Destination getDst() const {
+    virtual Addr getDst() const {
         return rwer->getDst();
     };
     virtual std::shared_ptr<IMemRWerCallback> response(uint64_t id) = 0;

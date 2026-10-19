@@ -212,24 +212,24 @@ size_t Guest_sni::sniffer_quic(Buffer&& bb) {
         QuicCursor pkt((const unsigned char*)ib.data(), ib.len);
         auto meta = unpack_meta(pkt, 0);
         if (!meta) {
-            LOGE("[%s] QUIC sni meta unpack failed, bufflen: %zd\n", dumpDest(rwer->getSrc()).c_str(), ib.len);
+            LOGE("[%s] QUIC sni meta unpack failed, bufflen: %zd\n", dumpAddr(rwer->getSrc()).c_str(), ib.len);
             goto Forward;
         }
         static_cast<quic_meta&>(header) = std::move(*meta);
         if(header.type != QUIC_PACKET_INITIAL) {
-            LOGE("[%s] QUIC sni packet type is not initial: 0x%x\n", dumpDest(rwer->getSrc()).c_str(), header.type);
+            LOGE("[%s] QUIC sni packet type is not initial: 0x%x\n", dumpAddr(rwer->getSrc()).c_str(), header.type);
             goto Forward;
         }
         quic_secret secret{};
         if(quic_generate_initial_key(1, header.dcid.c_str(), header.dcid.size(), &secret, header.version) < 0){
-            LOGE("[%s] Quic sni faild to generate initial key\n", dumpDest(rwer->getSrc()).c_str());
+            LOGE("[%s] Quic sni faild to generate initial key\n", dumpAddr(rwer->getSrc()).c_str());
             goto Forward;
         }
         //secret内嵌的加密上下文持有资源,离作用域(含goto Forward)时统一释放
         defer(quic_secret_release, &secret);
         std::deque<quic_frame> frames;
         if(decode_packet(Buffer(ib), &header, &secret, &frames) != quic_decode_status::ok){
-            LOGE("[%s] Quic sni decode packet failed\n", dumpDest(rwer->getSrc()).c_str());
+            LOGE("[%s] Quic sni decode packet failed\n", dumpAddr(rwer->getSrc()).c_str());
             goto Forward;
         }
         for(const auto& frame: frames) {
@@ -239,7 +239,7 @@ size_t Guest_sni::sniffer_quic(Buffer&& bb) {
             LOGD(DQUIC, "sni get crypto %zd - %zd\n", (size_t)frame.crypto.offset,
                 (size_t)frame.crypto.offset + (size_t)frame.crypto.length);
             if(frame.crypto.length + frame.crypto.offset > (size_t)BUF_LEN) {
-                LOGE("[%s] Quic sni get crypto overflow bufflen: %zd\n", dumpDest(rwer->getSrc()).c_str(),
+                LOGE("[%s] Quic sni get crypto overflow bufflen: %zd\n", dumpAddr(rwer->getSrc()).c_str(),
                     (size_t)frame.crypto.length + (size_t)frame.crypto.offset);
                 goto Forward;
             }
@@ -258,7 +258,7 @@ size_t Guest_sni::sniffer_quic(Buffer&& bb) {
         return 0;
     }
     if (ret <= 0) {
-        LOGE("[%s] Quic faild to parse sni from clientHello: %d\n", dumpDest(rwer->getSrc()).c_str(), ret);
+        LOGE("[%s] Quic faild to parse sni from clientHello: %d\n", dumpAddr(rwer->getSrc()).c_str(), ret);
         goto Forward;
     }
 Forward:

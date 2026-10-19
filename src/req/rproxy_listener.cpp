@@ -6,7 +6,7 @@ struct ListenerState {
     size_t id = 0;
     BindInfo bind;
     std::string rproxy;
-    Destination target;
+    Addr target;
     std::shared_ptr<Tproxy_server> server;
 };
 
@@ -69,7 +69,7 @@ bool add_rproxy_listener(const std::string& bind_spec, const std::string& target
     state.id = g_next_listener_id++;
     g_listeners[state.id] = state;
     LOG("rproxy listen #%zd %s -> %s@%s\n",
-        state.id, dumpBind(&state.bind), state.rproxy.c_str(), dumpDest(&state.target));
+        state.id, dumpBind(&state.bind), state.rproxy.c_str(), dumpAddr(&state.target));
     return true;
 }
 
@@ -79,7 +79,7 @@ bool remove_rproxy_listener(uint64_t id) {
         return false;
     }
     LOG("rproxy close #%zd %s@%s\n",
-        it->second.id, it->second.rproxy.c_str(), dumpDest(it->second.target).c_str());
+        it->second.id, it->second.rproxy.c_str(), dumpAddr(it->second.target).c_str());
     g_listeners.erase(it);
     return true;
 }
@@ -91,7 +91,7 @@ std::vector<std::string> list_rproxy_listeners() {
             std::to_string(id) + " " +
             dumpBind(&state.bind) + std::string(" -> ") +
             state.rproxy + "@" +
-            dumpDest(state.target).c_str()
+            dumpAddr(state.target).c_str()
         );
     }
     return list;

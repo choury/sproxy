@@ -49,8 +49,8 @@ struct IMemRWerCallback: std::enable_shared_from_this<IMemRWerCallback> {
 
 class MemRWer: public FullRWer{
 protected:
-    Destination src;
-    Destination dst;
+    Addr src;
+    Addr dst;
     std::weak_ptr<IMemRWerCallback> _callback;
     CBuffer rb;
     //std::function<void(const sockaddr_storage&)> connectCB = [](const sockaddr_storage&){};
@@ -63,7 +63,7 @@ protected:
     virtual size_t rlength(uint64_t id) override;
 
 public:
-    explicit MemRWer(const Destination& src, const Destination& dst, std::shared_ptr<IMemRWerCallback> cb);
+    explicit MemRWer(const Addr& src, const Addr& dst, std::shared_ptr<IMemRWerCallback> cb);
     ~MemRWer() override;
 
     virtual size_t bufsize() {
@@ -75,7 +75,7 @@ public:
     virtual void pull(uint64_t id) {
         //let owner call Send to fill the buffer
         LOGD(DRWER, "<MemRWer> <%d> %s pull %d\n",
-            getFd(), dumpDest(src).c_str(), (int)id);
+            getFd(), dumpAddr(src).c_str(), (int)id);
         if (auto cb = callback.lock(); cb) {
             cb->writeCB(id);
         }
@@ -97,10 +97,10 @@ public:
     virtual void SetCallback(std::shared_ptr<IRWerCallback> cb) override;
     virtual ssize_t cap(uint64_t id) override;
     virtual void ConsumeRData(uint64_t) override;
-    virtual Destination getSrc() const override {
+    virtual Addr getSrc() const override {
         return src;
     }
-    virtual Destination getDst() const override {
+    virtual Addr getDst() const override {
         return dst;
     }
     virtual void dump_status(Dumper dp, void* param) override;

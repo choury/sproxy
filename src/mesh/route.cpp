@@ -125,15 +125,16 @@ void mesh_rebuild_paths(MeshEntry& e) {
     std::map<std::string, AddrProbe> paths;
     for(const auto& addr : e.addrs) {
         Destination d{};
-        if(parseDest(addr.c_str(), &d) || !d.port) {
+        if(parseDest(addr.c_str(), &d) || !d.addr.port) {
             continue; //坏宣告地址：parse 结果不变，不产线路
         }
         for(const auto& sa : e.ips) {
             char key[DOMAINLIMIT + 64];
             snprintf(key, sizeof(key), "%s|%s", addr.c_str(), getaddrstring(&sa));
             AddrProbe& path = paths[key];
-            path.addr = sa;
-            ((sockaddr_in6*)&path.addr)->sin6_port = htons(d.port);
+            path.addr = d.addr;
+            path.ip = sa;
+            ((sockaddr_in6*)&path.ip)->sin6_port = htons(d.addr.port);
             if(auto old = e.paths.find(key); old != e.paths.end()) {
                 //只继承探测历史
                 path.rtt = old->second.rtt;
@@ -152,10 +153,10 @@ void mesh_rebuild_paths(MeshEntry& e) {
     e.cost = mesh_edge_cost(e);
 }
 
-Destination mesh_path_dest(const std::string& key, const sockaddr_storage& addr) {
+Destination mesh_path_dest(const AddrProbe& path) {
     Destination dest{};
-    parseDest(key.substr(0, key.rfind('|')).c_str(), &dest);
-    dest.resolved_addr = addr;
+    dest.addr = path.addr;
+    dest.resolved_addr = path.ip;
     return dest;
 }
 

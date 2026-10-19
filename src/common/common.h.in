@@ -297,14 +297,18 @@ struct Credit {
     char identifier[AUTHLIMIT];
 };
 
-struct Destination{
+struct Addr {
     char scheme[16];
     char protocol[16];
     char hostname[DOMAINLIMIT];
-    struct Credit credit;
     uint16_t port;
-    struct sockaddr_storage resolved_addr; //指定IP直连，端口以port为准
     bool system_resolve;
+};
+
+struct Destination{
+    struct Addr addr;
+    struct sockaddr_storage resolved_addr; //指定IP直连，端口以port为准
+    struct Credit credit;
     char assign_src[60];
 };
 

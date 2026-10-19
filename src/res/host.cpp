@@ -24,15 +24,15 @@ __attribute__((unused)) static const unsigned char alpn_protos_http3[] =
     "\x02h3";
 
 static std::string gen_key(const Destination& dest) {
-    std::string key = dest.protocol;
+    std::string key = dest.addr.protocol;
     key += "://";
-    key += dest.hostname;
+    key += dest.addr.hostname;
     if(dest.resolved_addr.ss_family == AF_INET || dest.resolved_addr.ss_family == AF_INET6) {
         key += "@";
         key += getaddrstring(&dest.resolved_addr);
     }
     key += ":";
-    key += std::to_string(dest.port);
+    key += std::to_string(dest.addr.port);
     return key;
 }
 
@@ -46,8 +46,8 @@ static Responser* find_res(const Destination& dest) {
     if(dest.resolved_addr.ss_family == AF_INET || dest.resolved_addr.ss_family == AF_INET6) {
         return nullptr;
     }
-    std::string prefix = std::string(dest.protocol) + "://" + dest.hostname + "@";
-    std::string suffix = ":" + std::to_string(dest.port);
+    std::string prefix = std::string(dest.addr.protocol) + "://" + dest.addr.hostname + "@";
+    std::string suffix = ":" + std::to_string(dest.addr.port);
     for(it = responsers.lower_bound(prefix);
         it != responsers.end() && it->first.compare(0, prefix.size(), prefix) == 0; ++it)
     {
@@ -61,21 +61,21 @@ static Responser* find_res(const Destination& dest) {
     return nullptr;
 }
 
-Host::Host(const Destination& dest, const Destination& target){
-    assert(dest.port);
-    assert(dest.protocol[0]);
+Host::Host(const Destination& dest, const Addr& target){
+    assert(dest.addr.port);
+    assert(dest.addr.protocol[0]);
     memcpy(&Server, &dest, sizeof(Destination));
-    bool isWebsocket = strcmp(dest.protocol, "websocket") == 0;
+    bool isWebsocket = strcmp(dest.addr.protocol, "websocket") == 0;
     cb = ISocketCallback::create()->onConnect([this](const sockaddr_storage& addr, uint32_t resolved_time){
         connected(addr, resolved_time);
     })->onError([this](int ret, int code){
         Error(ret, code);
     });
-    if(strcmp(dest.scheme, "socks5") == 0){
+    if(strcmp(dest.addr.scheme, "socks5") == 0){
         rwer = std::make_shared<Socks5RWer>(dest, target, cb);
-    }else if(strcmp(dest.protocol, "tcp") == 0 || (isWebsocket && strcmp(dest.scheme, "http") == 0)){
+    }else if(strcmp(dest.addr.protocol, "tcp") == 0 || (isWebsocket && strcmp(dest.addr.scheme, "http") == 0)){
         rwer = std::make_shared<StreamRWer>(dest, cb);
-    }else if(strcmp(dest.protocol, "ssl") == 0 || (isWebsocket && strcmp(dest.scheme, "https") == 0)){
+    }else if(strcmp(dest.addr.protocol, "ssl") == 0 || (isWebsocket && strcmp(dest.addr.scheme, "https") == 0)){
         auto srwer = std::make_shared<SslRWer>(dest, cb);
         if(!opt.disable_http2 && !isWebsocket){
             //FIXME: 基于http2的websocket协议暂时禁用，因为在连接之前无法判断服务端是否能支持
@@ -84,19 +84,19 @@ Host::Host(const Destination& dest, const Destination& target){
         }
         rwer = srwer;
 #ifdef HAVE_QUIC
-    }else if(strcmp(dest.protocol, "quic") == 0){
+    }else if(strcmp(dest.addr.protocol, "quic") == 0){
         auto qrwer = std::make_shared<QuicRWer>(dest, cb);
         qrwer->setAlpn(alpn_protos_http3, sizeof(alpn_protos_http3) - 1);
         rwer = qrwer;
 #endif
     }else{
-        LOGE("Unknown protocol: %s\n", dest.protocol);
+        LOGE("Unknown protocol: %s\n", dest.addr.protocol);
     }
 }
 
 Host::~Host(){
     if(rwer){
-        LOGD(DHTTP, "<host> (%s) destoryed: rx:%zu, tx:%zu\n", dumpDest(rwer->getDst()).c_str(), rx_bytes, tx_bytes);
+        LOGD(DHTTP, "<host> (%s) destoryed: rx:%zu, tx:%zu\n", dumpAddr(rwer->getDst()).c_str(), rx_bytes, tx_bytes);
     }else{
         LOGD(DHTTP, "<host> null destoryed: rx:%zu, tx:%zu\n", rx_bytes, tx_bytes);
     }
@@ -136,7 +136,7 @@ void Host::connected(const sockaddr_storage& addr, uint32_t resolved_time) {
         Server.resolved_addr = addr;
     }
     std::string key = gen_key(Server);
-    LOGD(DHTTP, "<host> %s (%s) connected\n", dumpDest(rwer->getDst()).c_str(), key.c_str());
+    LOGD(DHTTP, "<host> %s (%s) connected\n", dumpAddr(rwer->getDst()).c_str(), key.c_str());
     auto pooled = responsers.find(key);
     if(pooled != responsers.end()) {
         //请求已转交池内连接，本连接仅待废弃；关闭期间的迟到错误不得再当作该请求的失败
@@ -178,13 +178,13 @@ void Host::connected(const sockaddr_storage& addr, uint32_t resolved_time) {
             responsers.emplace(key, proxy);
             return Server::deleteLater(NOERROR);
         }
-        LOGE("(%s) <host> quic only support http3\n", dumpDest(rwer->getDst()).c_str());
+        LOGE("(%s) <host> quic only support http3\n", dumpAddr(rwer->getDst()).c_str());
         return deleteLater(PROTOCOL_ERR);
     }
 #endif
     cb->onRead([this](Buffer&& bb) -> size_t {
         HOOK_BPF(this, status, bb);
-        LOGD(DHTTP, "<host> (%s) read: len:%zu\n", dumpDest(rwer->getDst()).c_str(), bb.len);
+        LOGD(DHTTP, "<host> (%s) read: len:%zu\n", dumpAddr(rwer->getDst()).c_str(), bb.len);
         if((status.flags & HTTP_RECV_1ST_BYTE) == 0){
             status.req->tracker.emplace_back("ttfb", getmtime());
             status.flags |= HTTP_RECV_1ST_BYTE;
@@ -206,7 +206,7 @@ void Host::connected(const sockaddr_storage& addr, uint32_t resolved_time) {
         while((bb.len >  0) &&  (this->*Http_Proc)(bb));
         return len - bb.len;
     })->onWrite([this](uint64_t){
-        LOGD(DHTTP, "<host> (%s) written, flags:0x%08x\n", dumpDest(rwer->getDst()).c_str(), status.flags);
+        LOGD(DHTTP, "<host> (%s) written, flags:0x%08x\n", dumpAddr(rwer->getDst()).c_str(), status.flags);
         if(status.flags & (HTTP_RES_COMPLETED | HTTP_CLOSED_F | HTTP_RST)){
             return;
         }
@@ -356,7 +356,7 @@ void Host::Error(int ret, int code) {
             ret, code, status.flags, http_flag);
     }else{
         LOGE("(%s) <host> error %d/%d http_flag:0x%x\n",
-             dumpDest(rwer->getDst()).c_str(), ret, code, http_flag);
+             dumpAddr(rwer->getDst()).c_str(), ret, code, http_flag);
     }
     deleteLater(ret);
 }
@@ -392,7 +392,7 @@ void Host::distribute(std::shared_ptr<HttpReqHeader> req, const Destination& des
     }
     auto target = req->Dest;
     target.port = req->getDport();
-    if(strcmp(dest.scheme, "socks5") == 0 && strcmp(target.protocol, "udp") == 0) {
+    if(strcmp(dest.addr.scheme, "socks5") == 0 && strcmp(target.protocol, "udp") == 0) {
         return (new Uhost(dest, target))->request(req, rw);
     } else {
         return (new Host(dest, target))->request(req, rw);

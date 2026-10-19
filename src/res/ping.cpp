@@ -8,7 +8,7 @@
 #include <inttypes.h>
 #include <assert.h>
 
-Ping::Ping(const Destination& dest): id(dest.port?:random()&0xffff) {
+Ping::Ping(const Destination& dest): id(dest.addr.port?:random()&0xffff) {
     cb = ISocketCallback::create()->onConnect([this](const sockaddr_storage& addr, uint32_t){
         const sockaddr_in6 *addr6 = (const sockaddr_in6*)&addr;
         family = addr6->sin6_family;
@@ -47,7 +47,7 @@ Ping::Ping(const Destination& dest): id(dest.port?:random()&0xffff) {
         }
         return len;
     })->onError([this](int ret, int code){
-        LOGE("(%s) Ping error: %d/%d\n", dumpDest(rwer->getDst()).c_str(), ret, code);
+        LOGE("(%s) Ping error: %d/%d\n", dumpAddr(rwer->getDst()).c_str(), ret, code);
         deleteLater(ret);
     });
     rwer = std::make_shared<PacketRWer>(dest, cb);

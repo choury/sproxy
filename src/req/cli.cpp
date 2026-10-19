@@ -56,7 +56,7 @@ size_t Cli::ReadHE(const Buffer& bb) {
         if(ret == 0){
             break;
         }
-        LOGE("(%s) <cli> rpc error: %s\n", dumpDest(rwer->getSrc()).c_str(), strerror(-ret));
+        LOGE("(%s) <cli> rpc error: %s\n", dumpAddr(rwer->getSrc()).c_str(), strerror(-ret));
         deleteLater(PROTOCOL_ERR);
         break;
     }
@@ -64,26 +64,26 @@ size_t Cli::ReadHE(const Buffer& bb) {
 }
 
 void Cli::Error(int ret, int code) {
-    LOGE("(%s) <cli> socket error: %d/%d\n", dumpDest(rwer->getSrc()).c_str(), ret, code);
+    LOGE("(%s) <cli> socket error: %d/%d\n", dumpAddr(rwer->getSrc()).c_str(), ret, code);
     deleteLater(ret);
 }
 
 
 bool Cli::AddStrategy(const std::string &host, const std::string &strategy, const std::string &ext) {
-    LOG("%s [%s] %s %s %s\n", dumpDest(rwer->getSrc()).c_str(), __func__, host.c_str(), strategy.c_str(), ext.c_str());
+    LOG("%s [%s] %s %s %s\n", dumpAddr(rwer->getSrc()).c_str(), __func__, host.c_str(), strategy.c_str(), ext.c_str());
     return addstrategy(host.c_str(), strategy.c_str(), ext.c_str());
 }
 
 bool Cli::DelStrategy(const std::string &host) {
-    LOG("%s [%s] %s\n", dumpDest(rwer->getSrc()).c_str(), __func__, host.c_str());
+    LOG("%s [%s] %s\n", dumpAddr(rwer->getSrc()).c_str(), __func__, host.c_str());
     return delstrategy(host.c_str());
 }
 
 std::string Cli::TestStrategy(const std::string &host) {
-    LOG("%s [%s] %s\n", dumpDest(rwer->getSrc()).c_str(), __func__, host.c_str());
-    Destination dest;
+    LOG("%s [%s] %s\n", dumpAddr(rwer->getSrc()).c_str(), __func__, host.c_str());
+    Addr dest{};
     char path[URLLIMIT];
-    spliturl(host.c_str(), &dest, path);
+    splitAddr(host.c_str(), &dest, path);
     auto stra = getstrategy(dest.hostname, dest.port, path);
     if(stra.ext.empty()){
         return getstrategystring(stra.s);
@@ -92,7 +92,7 @@ std::string Cli::TestStrategy(const std::string &host) {
 }
 
 std::vector<std::string> Cli::DumpStrategy() {
-    LOG("%s [%s]\n", dumpDest(rwer->getSrc()).c_str(), __func__);
+    LOG("%s [%s]\n", dumpAddr(rwer->getSrc()).c_str(), __func__);
     std::vector<std::string> lists;
     auto slist = getallstrategy();
     for (const auto &i: slist) {
@@ -106,32 +106,32 @@ std::vector<std::string> Cli::DumpStrategy() {
 }
 
 void Cli::FlushCgi() {
-    LOG("%s [%s]\n", dumpDest(rwer->getSrc()).c_str(), __func__);
+    LOG("%s [%s]\n", dumpAddr(rwer->getSrc()).c_str(), __func__);
     flushcgi();
 }
 
 void Cli::FlushDns() {
-    LOG("%s [%s]\n", dumpDest(rwer->getSrc()).c_str(), __func__);
+    LOG("%s [%s]\n", dumpAddr(rwer->getSrc()).c_str(), __func__);
     flushdns();
 }
 
 void Cli::FlushStrategy() {
-    LOG("%s [%s]\n", dumpDest(rwer->getSrc()).c_str(), __func__);
+    LOG("%s [%s]\n", dumpAddr(rwer->getSrc()).c_str(), __func__);
     reloadstrategy();
 }
 
 bool Cli::FlushCert() {
-    LOG("%s [%s]\n", dumpDest(rwer->getSrc()).c_str(), __func__);
+    LOG("%s [%s]\n", dumpAddr(rwer->getSrc()).c_str(), __func__);
     return flushcert() == 0;
 }
 
 void Cli::FlushNetwork() {
-    LOG("%s [%s]\n", dumpDest(rwer->getSrc()).c_str(), __func__);
+    LOG("%s [%s]\n", dumpAddr(rwer->getSrc()).c_str(), __func__);
     network_changed();
 }
 
 bool Cli::SetServer(const std::string &server) {
-    LOG("%s [%s] %s\n", dumpDest(rwer->getSrc()).c_str(), __func__, server.c_str());
+    LOG("%s [%s] %s\n", dumpAddr(rwer->getSrc()).c_str(), __func__, server.c_str());
     Destination proxy;
     if(parseDest(server.c_str(), &proxy) == 0){
         memcpy(&opt.Server, &proxy, sizeof(proxy));
@@ -141,12 +141,12 @@ bool Cli::SetServer(const std::string &server) {
 }
 
 std::string Cli::GetServer() {
-    LOG("%s [%s]\n", dumpDest(rwer->getSrc()).c_str(), __func__);
-    return dumpDest(opt.Server);
+    LOG("%s [%s]\n", dumpAddr(rwer->getSrc()).c_str(), __func__);
+    return dumpAddr(opt.Server.addr);
 }
 
 std::string Cli::Login(const std::string &token, const std::string &source) {
-    LOG("%s [%s] %s\n", dumpDest(rwer->getSrc()).c_str(), __func__, source.c_str());
+    LOG("%s [%s] %s\n", dumpAddr(rwer->getSrc()).c_str(), __func__, source.c_str());
     struct Credit cr;
     if(!decodeauth(token.c_str(), &cr)) {
         return "";
@@ -174,47 +174,47 @@ static void sstream_dumper(void* param, const char* fmt, ...) {
 }
 
 std::string Cli::DumpStatus() {
-    LOG("%s [%s]\n", dumpDest(rwer->getSrc()).c_str(), __func__);
+    LOG("%s [%s]\n", dumpAddr(rwer->getSrc()).c_str(), __func__);
     std::string ss;
     ::dump_stat(sstream_dumper, &ss);
     return ss;
 }
 
 std::string Cli::DumpDns() {
-    LOG("%s [%s]\n", dumpDest(rwer->getSrc()).c_str(), __func__);
+    LOG("%s [%s]\n", dumpAddr(rwer->getSrc()).c_str(), __func__);
     std::string ss;
     ::dump_dns(sstream_dumper, &ss);
     return ss;
 }
 
 std::string Cli::DumpMesh() {
-    LOG("%s [%s]\n", dumpDest(rwer->getSrc()).c_str(), __func__);
+    LOG("%s [%s]\n", dumpAddr(rwer->getSrc()).c_str(), __func__);
     std::string ss;
     ::dump_mesh(sstream_dumper, &ss);
     return ss.empty() ? "mesh not enabled\n" : ss;
 }
 
 std::string Cli::DumpMemUsage() {
-    LOG("%s [%s]\n", dumpDest(rwer->getSrc()).c_str(), __func__);
+    LOG("%s [%s]\n", dumpAddr(rwer->getSrc()).c_str(), __func__);
     std::string ss;
     ::dump_usage(sstream_dumper, &ss);
     return ss;
 }
 
 std::string Cli::DumpHooker() {
-    LOG("%s [%s]\n", dumpDest(rwer->getSrc()).c_str(), __func__);
+    LOG("%s [%s]\n", dumpAddr(rwer->getSrc()).c_str(), __func__);
     std::string ss;
     hookManager.dump(sstream_dumper, &ss);
     return ss;
 }
 
 bool Cli::Debug(const std::string& module, bool enable) {
-    LOG("%s [%s] %s %s\n", dumpDest(rwer->getSrc()).c_str(), __func__, enable?"enable":"disable", module.c_str());
+    LOG("%s [%s] %s %s\n", dumpAddr(rwer->getSrc()).c_str(), __func__, enable?"enable":"disable", module.c_str());
     return debugon(module.c_str(), enable);
 }
 
 bool Cli::killCon(const std::string &address) {
-    LOG("%s [%s] %s\n", dumpDest(rwer->getSrc()).c_str(), __func__, address.c_str());
+    LOG("%s [%s] %s\n", dumpAddr(rwer->getSrc()).c_str(), __func__, address.c_str());
     char *endptr;
     uint64_t num = strtoull(address.c_str(), &endptr, 16);
     if (*endptr != '\0') {
@@ -224,7 +224,7 @@ bool Cli::killCon(const std::string &address) {
 }
 
 bool Cli::HookerAdd(const std::string &hooker, const std::string &lib) {
-    LOG("%s [%s] %s %s\n", dumpDest(rwer->getSrc()).c_str(), __func__, hooker.c_str(), lib.c_str());
+    LOG("%s [%s] %s %s\n", dumpAddr(rwer->getSrc()).c_str(), __func__, hooker.c_str(), lib.c_str());
     std::string msg;
     std::shared_ptr<IHookCallback> cb = nullptr;
 
@@ -258,22 +258,22 @@ bool Cli::HookerAdd(const std::string &hooker, const std::string &lib) {
 }
 
 bool Cli::HookerDel(const std::string &hooker) {
-    LOG("%s [%s] %s\n", dumpDest(rwer->getSrc()).c_str(), __func__, hooker.c_str());
+    LOG("%s [%s] %s\n", dumpAddr(rwer->getSrc()).c_str(), __func__, hooker.c_str());
     return hookManager.Unregister((const void*)std::stoull(hooker, nullptr, 16));
 }
 
 bool Cli::ListenAdd(const std::string& bind, const std::string& target) {
-    LOG("%s [%s] %s %s\n", dumpDest(rwer->getSrc()).c_str(), __func__, bind.c_str(), target.c_str());
+    LOG("%s [%s] %s %s\n", dumpAddr(rwer->getSrc()).c_str(), __func__, bind.c_str(), target.c_str());
     return add_rproxy_listener(bind, target);
 }
 
 bool Cli::ListenDel(uint64_t id) {
-    LOG("%s [%s] %" PRIu64 "\n", dumpDest(rwer->getSrc()).c_str(), __func__, id);
+    LOG("%s [%s] %" PRIu64 "\n", dumpAddr(rwer->getSrc()).c_str(), __func__, id);
     return remove_rproxy_listener(id);
 }
 
 std::vector<std::string> Cli::ListenList() {
-    LOG("%s [%s]\n", dumpDest(rwer->getSrc()).c_str(), __func__);
+    LOG("%s [%s]\n", dumpAddr(rwer->getSrc()).c_str(), __func__);
     return list_rproxy_listeners();
 }
 

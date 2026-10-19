@@ -132,7 +132,7 @@ struct Range{
 class HttpReqHeader: public HttpHeader{
 public:
     char method[20];
-    struct Destination Dest;
+    struct Addr Dest;
     char path[URLLIMIT];
     std::string filename;
     std::vector<Range> ranges;

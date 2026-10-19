@@ -126,13 +126,13 @@ public:
     virtual void SetCallback(std::shared_ptr<IRWerCallback> cb);
     virtual void Unblock(uint64_t id);
     virtual void Close();
-    virtual Destination getSrc() const {
-        Destination addr{};
+    virtual Addr getSrc() const {
+        Addr addr{};
         strcpy(addr.hostname, "<null>");
         return addr;
     }
-    virtual Destination getDst() const {
-        Destination addr{};
+    virtual Addr getDst() const {
+        Addr addr{};
         strcpy(addr.hostname, "<null>");
         return addr;
     }
@@ -187,8 +187,8 @@ public:
     virtual size_t sndbufLeft() override;
     virtual ssize_t cap(uint64_t id) override;
     virtual void ConsumeRData(uint64_t) override;
-    virtual Destination getSrc() const override {
-        Destination addr{};
+    virtual Addr getSrc() const override {
+        Addr addr{};
         strcpy(addr.hostname, "<full>");
         return addr;
     }

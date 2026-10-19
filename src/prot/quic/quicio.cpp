@@ -2074,7 +2074,7 @@ size_t QuicBase::mem_usage() {
 
 
 QuicRWer::QuicRWer(const Destination& dest, std::shared_ptr<IRWerCallback> cb):
-        QuicBase(dest.hostname), SocketRWer(dest, std::move(cb))
+        QuicBase(dest.addr.hostname), SocketRWer(dest, std::move(cb))
 {
     assert(protocol == Protocol::QUIC);
     con_failed_job = UpdateJob(std::move(con_failed_job),
@@ -2635,11 +2635,11 @@ QuicRWer::~QuicRWer() {
 void QuicRWer::dump_status(Dumper dp, void *param) {
     if(hostname[0]) {
         dp(param, "Quic <%d> (%s  %s), stats: %d, events: %s\n",
-                getFd(), hostname, dumpDest(getDst()).c_str(),
+                getFd(), hostname, dumpAddr(getDst()).c_str(),
                 (int)stats, events_string[(int)getEvents()]);
     }else {
         dp(param, "Quic <%d> (%s - %s), stats: %d, events: %s\n",
-                getFd(), dumpDest(getSrc()).c_str(), dumpDest(getDst()).c_str(),
+                getFd(), dumpAddr(getSrc()).c_str(), dumpAddr(getDst()).c_str(),
                 (int)stats, events_string[(int)getEvents()]);
     }
     return dump(dp, param);
@@ -2653,7 +2653,7 @@ size_t QuicRWer::mem_usage() {
     return QuicBase::mem_usage() + sizeof(*this);
 }
 
-QuicMer::QuicMer(SSL_CTX *ctx, const Destination& src, const Destination& dst,
+QuicMer::QuicMer(SSL_CTX *ctx, const Addr& src, const Addr& dst,
                  std::shared_ptr<IMemRWerCallback> _cb):
         QuicBase(ctx), MemRWer(src, dst, std::move(_cb))
 {
@@ -2785,7 +2785,7 @@ void QuicMer::Close() {
 
 void QuicMer::dump_status(Dumper dp, void *param) {
     dp(param, "Quic <%d> (%s), stats: %d, flags: 0x%04x,  event: %s\n",
-        getFd(), dumpDest(getSrc()).c_str(), (int)stats, flags, events_string[(int)getEvents()]);
+        getFd(), dumpAddr(getSrc()).c_str(), (int)stats, flags, events_string[(int)getEvents()]);
     return dump(dp, param);
 }
 

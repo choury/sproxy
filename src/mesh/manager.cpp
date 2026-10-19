@@ -149,17 +149,17 @@ MeshManager::MeshManager() {
     }
     for(struct arg_list* p = opt.mesh_peers; p; p = p->next) {
         Destination dest{};
-        if(parseDest(p->arg, &dest) || !dest.port) {
+        if(parseDest(p->arg, &dest) || !dest.addr.port) {
             LOGE("[mesh] bad mesh-peer: %s\n", p->arg);
             continue;
         }
-        //dumpDest 会把 quic 的 scheme 序列化成 https，须按 protocol 还原，
+        //dumpAddr 会把 quic 的 scheme 序列化成 https，须按 protocol 还原，
         //否则 quic-only 节点的种子探测走了 TCP+TLS
-        const char* scheme = strcmp(dest.protocol, "quic") == 0 ? "quic"
-                           : strcmp(dest.protocol, "ssl") == 0 ? "https" : "http";
+        const char* scheme = strcmp(dest.addr.protocol, "quic") == 0 ? "quic"
+                           : strcmp(dest.addr.protocol, "ssl") == 0 ? "https" : "http";
         char addr[DOMAINLIMIT + 32];
-        snprintf(addr, sizeof(addr), "%s://%s:%u", scheme, dest.hostname, dest.port);
-        MeshEntry& e = table[dest.hostname];
+        snprintf(addr, sizeof(addr), "%s://%s:%u", scheme, dest.addr.hostname, dest.addr.port);
+        MeshEntry& e = table[dest.addr.hostname];
         e.seeded = true;
         //种子能力位未知，按可探测假设；收到宣告后覆盖
         e.caps = MESH_CAP_RELAY | MESH_CAP_EXIT;
@@ -178,21 +178,20 @@ bool MeshManager::pick_conn(const MeshEntry& e, Destination* dest) const {
     if(!path) {
         return false;
     }
-    *dest = mesh_path_dest(e.active, path->addr);
+    *dest = mesh_path_dest(*path);
     return true;
 }
 
 void MeshManager::probe_path(const std::string& node, const std::string& key, AddrProbe& lp) {
     //到期取 0.8 周期：轮次间隔带 ±10% 抖动，取整周期会被高侧轮次擦边错过而白等一轮
     lp.next_try = now_ms() + probe_ms * 8 / 10;
-    Destination dest = mesh_path_dest(key, lp.addr);
     char buff[HEADLENLIMIT];
-    int headlen = snprintf(buff, sizeof(buff), "GET localhost:%d/mesh/ping HTTP/1.1" CRLF CRLF, dest.port);
+    int headlen = snprintf(buff, sizeof(buff), "GET localhost:%d/mesh/ping HTTP/1.1" CRLF CRLF, lp.addr.port);
     auto req = UnpackHttpReq(buff, headlen);
     req->set("Proxy-Authorization", encodeCredit(&mesh_credit));
     uint64_t t0 = getutime();
     uint32_t timeout = std::max(500u, std::min(5000u, probe_ms / 2));
-    http_fetch(std::move(req), dest, "", [this, node, key, t0](std::shared_ptr<HttpResHeader> res, std::string) {
+    http_fetch(std::move(req), mesh_path_dest(lp), "", [this, node, key, t0](std::shared_ptr<HttpResHeader> res, std::string) {
         auto it = table.find(node);
         if(it == table.end()) {
             return;
@@ -329,7 +328,7 @@ void MeshManager::sync_round() {
         }
         e.syncing = true;
         char buff[HEADLENLIMIT];
-        int headlen = snprintf(buff, sizeof(buff), "POST localhost:%d/mesh/nodes HTTP/1.1" CRLF CRLF, dest.port);
+        int headlen = snprintf(buff, sizeof(buff), "POST localhost:%d/mesh/nodes HTTP/1.1" CRLF CRLF, dest.addr.port);
         auto req = UnpackHttpReq(buff, headlen);
         req->set("Proxy-Authorization", encodeCredit(&mesh_credit));
         uint32_t timeout = std::max(2000u, std::min(10'000u, sync_ms));

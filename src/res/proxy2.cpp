@@ -10,7 +10,7 @@
 #include <string_view>
 
 void Proxy2::connection_lost(){
-    LOGE("(%s) <proxy2> the ping timeout, so close it\n", dumpDest(rwer->getDst()).c_str());
+    LOGE("(%s) <proxy2> the ping timeout, so close it\n", dumpAddr(rwer->getDst()).c_str());
     deleteLater(PEER_LOST_ERR);
 }
 
@@ -25,7 +25,7 @@ void Proxy2::ping_check(){
 
 void Proxy2::setIdle(uint32_t ms){
     if(statusmap.empty()) {
-        LOG("(%s) has no request, start idle timer\n", dumpDest(rwer->getDst()).c_str());
+        LOG("(%s) has no request, start idle timer\n", dumpAddr(rwer->getDst()).c_str());
         idle_timeout = UpdateJob(std::move(idle_timeout), [this]{deleteLater(CONNECT_AGED);}, ms);
     }
 }
@@ -66,7 +66,7 @@ Proxy2::~Proxy2() {
 }
 
 void Proxy2::Error(int ret, int code) {
-    LOGE("(%s) <proxy2> error: %d/%d\n", dumpDest(rwer->getDst()).c_str(), ret, code);
+    LOGE("(%s) <proxy2> error: %d/%d\n", dumpAddr(rwer->getDst()).c_str(), ret, code);
     deleteLater(ret);
 }
 
@@ -173,7 +173,7 @@ void Proxy2::EndProc(uint32_t id) {
 }
 
 void Proxy2::ErrProc(int errcode) {
-    LOGE("(%s) <proxy2> Http2 error: 0x%08x\n", dumpDest(rwer->getDst()).c_str(), errcode);
+    LOGE("(%s) <proxy2> Http2 error: 0x%08x\n", dumpAddr(rwer->getDst()).c_str(), errcode);
     http2_flag |= HTTP2_FLAG_ERROR;
     deleteLater(errcode);
 }
@@ -254,7 +254,7 @@ void Proxy2::PingProc(const Http2_header *header){
         last_ping_rtt = (getutime()-get64(header+1))/1000.0;
         LOG("<proxy2> Get a ping time=%.3fms\n", last_ping_rtt);
         if(last_ping_rtt >= 1000){
-            LOGE("(%s) <proxy2> The ping time too long!\n", dumpDest(rwer->getDst()).c_str());
+            LOGE("(%s) <proxy2> The ping time too long!\n", dumpAddr(rwer->getDst()).c_str());
         }
     }
     Http2Base::PingProc(header);
@@ -361,7 +361,7 @@ void Proxy2::init(bool enable_push, std::shared_ptr<HttpReqHeader> req, std::sha
     cb->onRead([this](Buffer&& bb) -> size_t {
         HOOK_BPF(this, statusmap, bb);
         uint32_t start = getmtime();
-        LOGD(DHTTP2, "<proxy2> (%s) read: len:%zu, refs: %zd\n", dumpDest(this->rwer->getDst()).c_str(), bb.len, bb.refs());
+        LOGD(DHTTP2, "<proxy2> (%s) read: len:%zu, refs: %zd\n", dumpAddr(this->rwer->getDst()).c_str(), bb.len, bb.refs());
         if(bb.len == 0){
             //EOF
             deleteLater(NOERROR);

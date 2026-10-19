@@ -15,7 +15,7 @@ Rguest2::Rguest2(const Destination& dest, const std::string& name):
     auto srwer = std::dynamic_pointer_cast<SslRWer>(rwer);
     srwer->set_alpn(alpn_protos_rproxy, sizeof(alpn_protos_rproxy)-1);
     std::dynamic_pointer_cast<ISocketCallback>(cb)->onConnect([this](const sockaddr_storage&, uint32_t){
-        LOG("connected to rproxy server: %s\n", dumpDest(rwer->getDst()).c_str());
+        LOG("connected to rproxy server: %s\n", dumpAddr(rwer->getDst()).c_str());
     });
 }
 
