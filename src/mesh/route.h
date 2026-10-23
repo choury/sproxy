@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <map>
+#include <memory>
 #include <set>
 #include <string>
 #include <vector>
@@ -19,13 +20,15 @@ constexpr uint64_t MESH_FRESHNESS_MS = 120'000;
 //rproxy 出口宣告边的固定权值(ms)：出口只有宣告节点一条可达路径，
 //rtt 无选路意义，取正值以区别于死边(0)
 constexpr double MESH_RPROXY_RTT_MS = 50.0;
-//判死阈值：探测与 sync 失败都累积，仅成功清零
+//判死阈值：探测失败累积，仅成功清零
 constexpr int MESH_FAIL_DEAD = 3;
 constexpr uint32_t MESH_BACKOFF_CAP_MS = 300'000; //失败退避上限
 //换轨滞回带(ms)：候选须优于活跃线路超过此值才切换，抑制探测噪声下来回翻转
 constexpr double MESH_SWITCH_MARGIN_MS = 10.0;
 //DNS 重解析间隔上限(ms)，实际取记录 ttl 夹在 [探测周期, 此值]
 constexpr uint64_t MESH_DNS_RETRY_MAX_MS = 3'600'000;
+//活跃线路重算周期(ms)：active 有效时直接沿用，到期才遍历重选
+constexpr uint64_t MESH_PATH_REFRESH_MS = 120'000;
 
 //失败退避的下一档：首档取 base，之后倍增至封顶
 constexpr uint32_t mesh_next_backoff(uint32_t cur, uint32_t base) {
@@ -39,69 +42,69 @@ struct MeshRoutePath {
     int hops = 0;
 };
 
-//单条线路(键="宣告地址|IP")：addr 存宣告地址解析结果，ip 钉住该 IP；
+//单条线路：ip 固定住该 IP，端口取所属宣告地址的；
 //探测状态是探测方本地状态，不随宣告序列化
-struct AddrProbe {
-    Addr addr{};              //宣告地址
+struct MeshPath {
     sockaddr_storage ip{};    //线路IP，端口取宣告地址的
     double rtt = 0;
     int fails = 0;
     uint32_t backoff = 0;
     uint64_t next_try = 0;
+
+    //组装连接参数；hostname 取宣告地址，承载 SNI/证书校验
+    Destination getDest(const Addr& addr) const {
+        Destination dest{};
+        dest.addr = addr;
+        dest.resolved_addr = ip;
+        return dest;
+    }
+};
+
+//一个宣告地址一个 endpoint：dns 按宣告地址的 hostname 发起，解析结果展开成线路表
+struct MeshEndpoint {
+    Addr addr{};              //宣告地址
+    uint64_t dns_retry = 0;   //下次dns解析的时间
+    uint64_t reselect_at = 0; //下次允许重算活跃线路的时间
+    std::vector<std::shared_ptr<MeshPath>> paths;
+    std::weak_ptr<MeshPath> active;         //本地址活跃线路，空=未选定
+
+    std::shared_ptr<MeshPath> activePath();
 };
 
 //节点表条目：seeded 表示来自 --mesh-peer 静态种子，
 struct MeshEntry {
     uint32_t caps = 0;
     uint64_t ts = 0;     //源节点宣告时间(ms)，宣告与邻边共用此新鲜度
+    uint64_t reselect_at = 0; //下次允许重算选用地址的时间
     bool seeded = false;
-    std::set<std::string> addrs;             //宣告地址集合
-    std::vector<sockaddr_storage> ips;       //最近一次解析结果,不含端口
-    std::map<std::string, AddrProbe> paths;  //ip线路表
-    std::string active;                      //最优线路的key，空=未选定
-    uint64_t dns_retry = 0;                  //下次dns解析的时间
-    double cost = 0;     //与自身的活边权值(ms)，0=非邻居或已判死
+    std::map<std::string, std::shared_ptr<MeshEndpoint>> endpoints; //宣告地址 -> endpoint
+    std::weak_ptr<MeshEndpoint> active;         //选用的 endpoint，空=未选定
     std::map<std::string, double> edges; //该节点上报的它的邻边(仅活边)：对端 -> 边权
-    uint32_t ok = 0, fail = 0; //探测成功/失败累计
     bool syncing = false;
 
     [[nodiscard]] bool fresh(uint64_t now) const {
         return seeded || now <= ts + MESH_FRESHNESS_MS;
     }
+
+    std::shared_ptr<MeshPath> activePath();
+
+    //与自身的活边权值(ms)：活跃线路的 rtt，0=非邻居或已判死
+    double cost() {
+        std::shared_ptr<MeshPath> live = activePath();
+        return live ? live->rtt : 0;
+    }
+
+    std::set<std::string> addrs() const;
+    void setAddrs(const std::set<std::string>& addrs);
+    //活跃线路的连接目的地(确定ip地址)；调用方以 cost()>0 保证有活跃线路
+    Destination activeDest() const;
+    std::string probeState() const;
 };
 
-//在值线路可用(未判死且有成功样本)时的查询入口：边权与连接目标共用此守卫，
-//保证路由决策与数据面实际转发的线路一致
-inline const AddrProbe* mesh_alive_path(const MeshEntry& e) {
-    auto it = e.paths.find(e.active);
-    if(it == e.paths.end() || it->second.fails >= MESH_FAIL_DEAD || it->second.rtt == 0) {
-        return nullptr;
-    }
-    return &it->second;
-}
-
-inline double mesh_edge_cost(const MeshEntry& e) {
-    const AddrProbe* path = mesh_alive_path(e);
-    return path ? path->rtt : 0;
-}
-
-inline void mesh_failover(MeshEntry& e) {
-    e.active.clear();
-    for(auto& [key, lp] : e.paths) {
-        lp.next_try = 0;
-    }
-}
-
-//宣告地址集 × 解析结果重建线路表；active线路消失则触发全量重选
-void mesh_rebuild_paths(MeshEntry& e);
-
-//由线路条目组装连接参数；hostname 即节点名，承载 SNI/证书校验
-Destination mesh_path_dest(const AddrProbe& path);
-
-bool mesh_route(const std::string& self, const std::map<std::string, MeshEntry>& table,
+bool mesh_route(const std::string& self, const std::map<std::string, std::shared_ptr<MeshEntry>>& table,
                 const std::string& target, MeshRoutePath& out);
 
-bool mesh_pick_exit(const std::string& self, const std::map<std::string, MeshEntry>& table,
+bool mesh_pick_exit(const std::string& self, const std::map<std::string, std::shared_ptr<MeshEntry>>& table,
                     std::string& exit_name, MeshRoutePath& out);
 
 #endif

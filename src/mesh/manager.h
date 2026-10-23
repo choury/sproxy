@@ -17,6 +17,13 @@
 
 struct Host_Result;
 
+//endpoint 级 dns 请求标识：解析器异步持有 host 裸指针，
+//节点条目与 endpoint 都可能在解析期间被擦除，凭 weak 过期感知
+struct MeshDnsReq {
+    std::weak_ptr<MeshEndpoint> endpoint;
+    std::string host; //解析主机名
+};
+
 class MeshManager {
     std::vector<std::string> self_addrs;
     struct Credit mesh_credit{};
@@ -24,7 +31,7 @@ class MeshManager {
     uint32_t sync_ms = 0;
     Job probe_job;
     Job sync_job;
-    std::map<std::string, MeshEntry> table; //不含自身
+    std::map<std::string, std::shared_ptr<MeshEntry>> table; //不含自身
     std::string last_auto_exit;
     struct SyncStatus {
         std::shared_ptr<HttpReqHeader> req;
@@ -36,14 +43,11 @@ class MeshManager {
 
     MeshManager();
     void probe_round();
-    void probe_path(const std::string& node, const std::string& key, AddrProbe& lp);
-    void note_fail(MeshEntry& e, const std::string& key);
+    void probe_path(const std::shared_ptr<MeshEndpoint>& endpoint, const std::shared_ptr<MeshPath>& lp);
     static void dns_cb(const Host_Result& result);
     void sync_round();
     std::string serialize() const;
     void merge(const std::string& body);
-    //活跃线路的连接目的地(确定ip地址)；无可用活跃线路时返回 false
-    bool pick_conn(const MeshEntry& e, Destination* dest) const;
 
 public:
     static void Start();

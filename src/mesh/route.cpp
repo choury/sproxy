@@ -1,11 +1,11 @@
 #include "route.h"
 
-#include "misc/net.h"
-
+#include <assert.h>
+#include <float.h>
 #include <algorithm>
 #include <chrono>
-#include <cstdio>
 #include <queue>
+#include <set>
 
 namespace {
 
@@ -14,7 +14,7 @@ uint64_t now_ms() {
                std::chrono::system_clock::now().time_since_epoch()).count();
 }
 
-void dijkstra(const std::string& self, const std::map<std::string, MeshEntry>& table,
+void dijkstra(const std::string& self, const std::map<std::string, std::shared_ptr<MeshEntry>>& table,
               const std::set<std::string>& terminals,
               std::map<std::string, MeshRoutePath>& reach) {
     uint64_t now = now_ms();
@@ -22,21 +22,21 @@ void dijkstra(const std::string& self, const std::map<std::string, MeshEntry>& t
     //已判死邻接)，但权值与全网一致取两端上报的最小值——若各节点对同一条边
     //各用各的私有测量，独立最短路计算会互指成环
     std::map<std::string, std::map<std::string, double>> adj;
-    for(const auto& [peer, e] : table) {
-        if(!e.fresh(now) || e.cost <= 0) {
+    for(const auto& [peer, entry] : table) {
+        if(!entry->fresh(now) || entry->cost() <= 0) {
             continue;
         }
-        double w = e.cost;
-        if(auto it = e.edges.find(self); it != e.edges.end()) {
+        double w = entry->cost();
+        if(auto it = entry->edges.find(self); it != entry->edges.end()) {
             w = std::min(w, it->second);
         }
         adj[self][peer] = w;
     }
-    for(const auto& [reporter, e] : table) {
-        if(reporter == self || !e.fresh(now)) {
+    for(const auto& [reporter, entry] : table) {
+        if(reporter == self || !entry->fresh(now)) {
             continue;
         }
-        for(const auto& [peer, cost] : e.edges) {
+        for(const auto& [peer, cost] : entry->edges) {
             if(peer == self || cost <= 0) {
                 continue;
             }
@@ -49,7 +49,7 @@ void dijkstra(const std::string& self, const std::map<std::string, MeshEntry>& t
     }
     auto caps_of = [&](const std::string& name) -> uint32_t {
         auto it = table.find(name);
-        return (it == table.end() || !it->second.fresh(now)) ? 0u : it->second.caps;
+        return (it == table.end() || !it->second->fresh(now)) ? 0u : it->second->caps;
     };
 
     using State = std::pair<std::string, int>;
@@ -121,46 +121,52 @@ void dijkstra(const std::string& self, const std::map<std::string, MeshEntry>& t
 
 } //namespace
 
-void mesh_rebuild_paths(MeshEntry& e) {
-    std::map<std::string, AddrProbe> paths;
-    for(const auto& addr : e.addrs) {
-        Destination d{};
-        if(parseDest(addr.c_str(), &d) || !d.addr.port) {
-            continue; //坏宣告地址：parse 结果不变，不产线路
-        }
-        for(const auto& sa : e.ips) {
-            char key[DOMAINLIMIT + 64];
-            snprintf(key, sizeof(key), "%s|%s", addr.c_str(), getaddrstring(&sa));
-            AddrProbe& path = paths[key];
-            path.addr = d.addr;
-            path.ip = sa;
-            ((sockaddr_in6*)&path.ip)->sin6_port = htons(d.addr.port);
-            if(auto old = e.paths.find(key); old != e.paths.end()) {
-                //只继承探测历史
-                path.rtt = old->second.rtt;
-                path.fails = old->second.fails;
-                path.backoff = old->second.backoff;
-                path.next_try = old->second.next_try;
-            }
+std::shared_ptr<MeshPath> MeshEndpoint::activePath() {
+    std::shared_ptr<MeshPath> cur = active.lock();
+    if(cur && now_ms() < reselect_at) {
+        return cur;
+    }
+    reselect_at = now_ms() + MESH_PATH_REFRESH_MS;
+    double cur_rtt = cur ? cur->rtt : DBL_MAX;
+    std::shared_ptr<MeshPath> best;
+    for(const auto& p : paths) {
+        if(p->rtt > 0 && (!best || p->rtt < best->rtt) && (p->rtt + MESH_SWITCH_MARGIN_MS < cur_rtt)) {
+            best = p;
         }
     }
-    e.paths = std::move(paths);
-    //在值线路消失：立即全量重选
-    if(!e.active.empty() && !e.paths.count(e.active)) {
-        mesh_failover(e);
+    if(best) {
+        best->next_try = 0; //新上位线路立即探测
+        active = best;
     }
-    //在值可能被清，边权须随之落账
-    e.cost = mesh_edge_cost(e);
+    return active.lock();
 }
 
-Destination mesh_path_dest(const AddrProbe& path) {
-    Destination dest{};
-    dest.addr = path.addr;
-    dest.resolved_addr = path.ip;
-    return dest;
+std::shared_ptr<MeshPath> MeshEntry::activePath() {
+    std::shared_ptr<MeshEndpoint> cur = active.lock();
+    std::shared_ptr<MeshPath> curlive = cur ? cur->activePath() : nullptr;
+    if(curlive && now_ms() < reselect_at) {
+        return curlive;
+    }
+    reselect_at = now_ms() + MESH_PATH_REFRESH_MS;
+    double cur_rtt = curlive ? curlive->rtt : DBL_MAX;
+    std::shared_ptr<MeshPath> bestlive;
+    std::shared_ptr<MeshEndpoint> best;
+    for(const auto& [addr, endpoint] : endpoints) {
+        std::shared_ptr<MeshPath> live = endpoint->activePath();
+        assert(!live || live->rtt > 0);
+        if(live && (!bestlive || live->rtt < bestlive->rtt) && (live->rtt + MESH_SWITCH_MARGIN_MS < cur_rtt)) {
+            bestlive = live;
+            best = endpoint;
+        }
+    }
+    if(best) {
+        active = best;
+    }
+    return active.expired() ? nullptr : active.lock()->activePath();
 }
 
-bool mesh_route(const std::string& self, const std::map<std::string, MeshEntry>& table,
+
+bool mesh_route(const std::string& self, const std::map<std::string, std::shared_ptr<MeshEntry>>& table,
                 const std::string& target, MeshRoutePath& out) {
     if(target == self) {
         return false;
@@ -175,12 +181,12 @@ bool mesh_route(const std::string& self, const std::map<std::string, MeshEntry>&
     return true;
 }
 
-bool mesh_pick_exit(const std::string& self, const std::map<std::string, MeshEntry>& table,
+bool mesh_pick_exit(const std::string& self, const std::map<std::string, std::shared_ptr<MeshEntry>>& table,
                     std::string& exit_name, MeshRoutePath& out) {
     uint64_t now = now_ms();
     std::set<std::string> terminals;
-    for(const auto& [name, e] : table) {
-        if(e.fresh(now) && (e.caps & MESH_CAP_EXIT)) {
+    for(const auto& [name, entry] : table) {
+        if(entry->fresh(now) && (entry->caps & MESH_CAP_EXIT)) {
             terminals.insert(name);
         }
     }
