@@ -360,11 +360,11 @@ EOF
     wait_udp_port 3373
 
     #等 A 对种子 B 的首次探测成功（DNS 失败重试下可能要到第三拍）
-    wait_mesh_dump ${sp}mesha.sock "([0-9]*\.[0-9]ms" "mesh test 1 failed: no probe result"
+    wait_mesh_dump ${sp}mesha.sock "[0-9]*\.[0-9]ms" "mesh test 1 failed: no probe result"
     #发现：A 的节点表应出现 C（仅经同步学得，无静态配置）且探测已有样本（路由需要活边）
-    wait_mesh_dump ${sp}mesha.sock "ip6-localhost.*([0-9]*\.[0-9]ms" "mesh test 2 failed: no discovery"
+    wait_mesh_dump ${sp}mesha.sock "ip6-localhost.*[0-9]*\.[0-9]ms" "mesh test 2 failed: no discovery"
     #中继路由需要 B->C 活边
-    wait_mesh_dump ${sp}meshb.sock "ip6-localhost.*([0-9]*\.[0-9]ms" "mesh test 2 failed: no edge to relay exit"
+    wait_mesh_dump ${sp}meshb.sock "ip6-localhost.*[0-9]*\.[0-9]ms" "mesh test 2 failed: no edge to relay exit"
 
     #经 mesh 转发到固定出口 B：B 对目标配了 block，仍应 200（出口不套本地策略）
     curl -sf -m 10 -x client:pass@127.0.0.1:3370 http://127.0.0.1:3333/status -o mesh_out \

@@ -133,7 +133,7 @@ Destination MeshEntry::activeDest() const {
     return live->getDest(endpoint->addr);
 }
 
-//线路+探测状态：addr|ip (12.3ms*)，*=活跃线路；未解析时退回展示宣告地址
+//线路+探测状态：addr|ip (12.3+8.0ms*)，*=活跃线路；未解析时退回展示宣告地址
 std::string MeshEntry::probeState() const {
     std::string s;
     for(const auto& [addr, endpoint] : endpoints) {
@@ -155,7 +155,7 @@ std::string MeshEntry::probeState() const {
             s += " (";
             if(path->rtt > 0) {
                 char one[32];
-                snprintf(one, sizeof(one), "%.1fms", path->rtt);
+                snprintf(one, sizeof(one), "%.1f+%.1fms", path->rtt, 4 * path->rttvar);
                 s += one;
             } else if(path->fails > 0) {
                 s += "fail" + std::to_string(path->fails);
@@ -266,7 +266,7 @@ void MeshManager::probe_path(const std::shared_ptr<MeshEndpoint>& endpoint,
         if(res && atoi(res->status) == 200) {
             double rtt = (getutime() - t0) / 1000.0;
             LOGD(DMESH, "probe ok %s %.1fms\n", getaddrstring(&path->ip), rtt);
-            path->rtt = rtt;
+            path->sample(rtt);
             path->fails = 0;
             path->backoff = 0;
             return;
