@@ -46,7 +46,8 @@ struct MeshRoutePath {
 //探测状态是探测方本地状态，不随宣告序列化
 struct MeshPath {
     sockaddr_storage ip{};    //线路IP，端口取宣告地址的
-    double rtt = 0;
+    double rtt = 0;    //平滑rtt，0=未测得/判死
+    double rttvar = 0;
     int fails = 0;
     uint32_t backoff = 0;
     uint64_t next_try = 0;
@@ -58,6 +59,11 @@ struct MeshPath {
         dest.resolved_addr = ip;
         return dest;
     }
+
+    //RTO 式预期时延：可靠传输下丢包表现为重传等待，计入方差而非失败
+    double cost() const { return rtt + 4 * rttvar; }
+    //收敛参数与 tcp/quic 的 RTO 估计一致(RFC6298)
+    void sample(double rtt);
 };
 
 //一个宣告地址一个 endpoint：dns 按宣告地址的 hostname 发起，解析结果展开成线路表
@@ -88,10 +94,10 @@ struct MeshEntry {
 
     std::shared_ptr<MeshPath> activePath();
 
-    //与自身的活边权值(ms)：活跃线路的 rtt，0=非邻居或已判死
+    //与自身的活边权值(ms)：活跃线路的代价，0=非邻居或已判死
     double cost() {
         std::shared_ptr<MeshPath> live = activePath();
-        return live ? live->rtt : 0;
+        return live ? live->cost() : 0;
     }
 
     std::set<std::string> addrs() const;

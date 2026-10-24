@@ -19,8 +19,8 @@ struct Fixture {
         entry->seeded = true;
         return *entry;
     }
-    //布一条活跃线路，边权即活跃线路的 rtt；rtt=0 清活跃(判死)
-    void edge(const std::string& n, double rtt) {
+    //布一条活跃线路，边权即活跃线路的代价(var=0 时代价==rtt)；rtt=0 清活跃(判死)
+    void edge(const std::string& n, double rtt, double var = 0.0) {
         MeshEntry& entry = node(n);
         entry.endpoints.clear();
         entry.active.reset();
@@ -30,6 +30,7 @@ struct Fixture {
         auto endpoint = std::make_shared<MeshEndpoint>();
         auto path = std::make_shared<MeshPath>();
         path->rtt = rtt;
+        path->rttvar = var;
         endpoint->paths.push_back(path);
         endpoint->active = path;
         entry.endpoints.emplace("edge", endpoint);
@@ -188,18 +189,22 @@ int main(){
         assert(!mesh_route(f.self, f.table, "n", p));
     }
 
-    std::cout<<"---------- t11: own edge weight takes min of both reports ----------"<<std::endl;
+    std::cout<<"---------- t11: own edge weight takes max of both reports ----------"<<std::endl;
     {
         Fixture f("s");
         f.node("n").caps = MESH_CAP_RELAY;
         f.node("x").caps = MESH_CAP_EXIT;
         f.edge("n", 5.0);
         f.node("n").edges = {{"x", 5.0}};
-        //自己测得 5ms，n 上报到我 1ms：自身边权值须与全网一致取 1ms，
-        //否则我按 5ms 绕行而他节点按 1ms 直发，互指成环
+        //n 上报的 1ms 低于自身测量：宣告值低的一端未必是穿越端，
+        //取 min 会低估实际穿越代价
         f.node("n").edges["s"] = 1.0;
         assert(mesh_route(f.self, f.table, "x", p) && p.first_hop == "n"
-               && std::fabs(p.cost - (6.0 + 2 * MESH_HOP_PENALTY)) < 1e-9);
+               && std::fabs(p.cost - (10.0 + 2 * MESH_HOP_PENALTY)) < 1e-9);
+        //对端上报高于自身测量时同样取大，全网对该边的估价才一致
+        f.node("n").edges["s"] = 8.0;
+        assert(mesh_route(f.self, f.table, "x", p) && p.first_hop == "n"
+               && std::fabs(p.cost - (13.0 + 2 * MESH_HOP_PENALTY)) < 1e-9);
         f.node("n").edges.erase("s");
         assert(mesh_route(f.self, f.table, "x", p)
                && std::fabs(p.cost - (10.0 + 2 * MESH_HOP_PENALTY)) < 1e-9); //无对端上报时用自身测量
@@ -277,6 +282,67 @@ int main(){
         assert(mesh_pick_exit(f.self, f.table, exit_name, p) && exit_name == "x");
         //宣告节点自身不经 mesh 路由到 x：无宣告地址无法落账首跳，走本地 rproxy 分发
         assert(!mesh_route("r", f.table, "x", p));
+    }
+
+    std::cout<<"---------- t16: rtt estimator converges ----------"<<std::endl;
+    {
+        MeshPath path;
+        path.sample(100.0); //首样本：srtt=R, rttvar=R/4
+        assert(std::fabs(path.rtt - 100.0) < 1e-9);
+        assert(std::fabs(path.rttvar - 25.0) < 1e-9);
+        assert(std::fabs(path.cost() - 200.0) < 1e-9);
+        path.sample(10.0); //rttvar=(3*25+90)/4=41.25, srtt=(700+10)/8=88.75
+        assert(std::fabs(path.rttvar - 41.25) < 1e-9);
+        assert(std::fabs(path.rtt - 88.75) < 1e-9);
+        for(int i = 0; i < 100; i++) {
+            path.sample(10.0);
+        }
+        assert(path.cost() < 11.0); //收敛回真实 rtt
+    }
+
+    std::cout<<"---------- t17: jittery fast path loses to stable path ----------"<<std::endl;
+    {
+        Fixture f("s");
+        MeshEntry& entry = f.node("n");
+        auto endpoint = std::make_shared<MeshEndpoint>();
+        auto jittery = std::make_shared<MeshPath>();
+        jittery->rtt = 10;
+        jittery->rttvar = 10; //代价 50：快但尖峰多
+        auto stable = std::make_shared<MeshPath>();
+        stable->rtt = 40;     //代价 40：慢但稳
+        endpoint->paths = {jittery, stable};
+        entry.endpoints.emplace("https://n:443", endpoint);
+        assert(endpoint->activePath() == stable);
+        entry.active = endpoint;
+        assert(std::fabs(entry.cost() - 40.0) < 1e-9); //边权按代价宣告
+    }
+
+    std::cout<<"---------- t18: rttvar penalty affects network-wide route ----------"<<std::endl;
+    {
+        Fixture f("s");
+        f.node("a").caps = MESH_CAP_RELAY;
+        f.node("x").caps = MESH_CAP_EXIT;
+        f.edge("a", 1.0);
+        f.node("a").edges = {{"x", 1.0}};
+        f.edge("x", 5.0); //直连干净：5+罚时 < 绕行 2+2*罚时
+        assert(mesh_route(f.self, f.table, "x", p) && p.first_hop == "x" && p.hops == 1);
+        f.edge("x", 5.0, 10.0); //方差罚时 40：直连 45+罚时，绕行 12 胜出
+        assert(mesh_route(f.self, f.table, "x", p) && p.first_hop == "a" && p.hops == 2);
+        assert(std::fabs(p.cost - (2.0 + 2 * MESH_HOP_PENALTY)) < 1e-9);
+    }
+
+    std::cout<<"---------- t19: cheap unilateral report must not lure detour ----------"<<std::endl;
+    {
+        Fixture f("b");
+        f.node("a").caps = MESH_CAP_RELAY;
+        f.node("c").caps = MESH_CAP_EXIT;
+        //c 用廉价传输(h1)宣告到 a 的边(2)，a 的自身测量(quic)是 48：
+        //取 min 时 b 被吸上绕行 a，实际支付 2+48 贵过直连 48
+        f.edge("c", 48.0);
+        f.edge("a", 2.0);
+        f.node("a").edges = {{"c", 48.0}};
+        f.node("c").edges = {{"a", 2.0}, {"b", 40.0}};
+        assert(mesh_route(f.self, f.table, "c", p) && p.first_hop == "c" && p.hops == 1);
     }
 
     std::cout << "all mesh route tests passed" << std::endl;

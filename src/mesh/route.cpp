@@ -2,6 +2,7 @@
 
 #include <assert.h>
 #include <float.h>
+#include <math.h>
 #include <algorithm>
 #include <chrono>
 #include <queue>
@@ -19,8 +20,9 @@ void dijkstra(const std::string& self, const std::map<std::string, std::shared_p
               std::map<std::string, MeshRoutePath>& reach) {
     uint64_t now = now_ms();
     //邻接表：边的存在性只认自己的探测(首跳须自己验证，对端陈旧上报不得复活
-    //已判死邻接)，但权值与全网一致取两端上报的最小值——若各节点对同一条边
-    //各用各的私有测量，独立最短路计算会互指成环
+    //已判死邻接)，权值与全网一致取两端上报的最大值——各节点对同一条边用
+    //各自的私有测量会互指成环，取小值则计算代价低于实际穿越代价，
+    //把流量吸上实际更贵的路径
     std::map<std::string, std::map<std::string, double>> adj;
     for(const auto& [peer, entry] : table) {
         if(!entry->fresh(now) || entry->cost() <= 0) {
@@ -28,7 +30,7 @@ void dijkstra(const std::string& self, const std::map<std::string, std::shared_p
         }
         double w = entry->cost();
         if(auto it = entry->edges.find(self); it != entry->edges.end()) {
-            w = std::min(w, it->second);
+            w = std::max(w, it->second);
         }
         adj[self][peer] = w;
     }
@@ -40,11 +42,11 @@ void dijkstra(const std::string& self, const std::map<std::string, std::shared_p
             if(peer == self || cost <= 0) {
                 continue;
             }
-            //两端各自上报同一链路时取较小者，消除处理顺序依赖
+            //两端各自上报同一链路时取较大者，消除处理顺序依赖
             auto& a1 = adj[reporter][peer];
-            a1 = a1 > 0 ? std::min(a1, cost) : cost;
+            a1 = a1 > 0 ? std::max(a1, cost) : cost;
             auto& a2 = adj[peer][reporter];
-            a2 = a2 > 0 ? std::min(a2, cost) : cost;
+            a2 = a2 > 0 ? std::max(a2, cost) : cost;
         }
     }
     auto caps_of = [&](const std::string& name) -> uint32_t {
@@ -121,16 +123,26 @@ void dijkstra(const std::string& self, const std::map<std::string, std::shared_p
 
 } //namespace
 
+void MeshPath::sample(double rtt) {
+    if(this->rtt == 0) {
+        this->rtt = rtt;
+        rttvar = rtt / 4;
+        return;
+    }
+    rttvar = (3 * rttvar + fabs(this->rtt - rtt)) / 4;
+    this->rtt = (7 * this->rtt + rtt) / 8;
+}
+
 std::shared_ptr<MeshPath> MeshEndpoint::activePath() {
     std::shared_ptr<MeshPath> cur = active.lock();
     if(cur && now_ms() < reselect_at) {
         return cur;
     }
     reselect_at = now_ms() + MESH_PATH_REFRESH_MS;
-    double cur_rtt = cur ? cur->rtt : DBL_MAX;
+    double cur_cost = cur ? cur->cost() : DBL_MAX;
     std::shared_ptr<MeshPath> best;
     for(const auto& p : paths) {
-        if(p->rtt > 0 && (!best || p->rtt < best->rtt) && (p->rtt + MESH_SWITCH_MARGIN_MS < cur_rtt)) {
+        if(p->rtt > 0 && (!best || p->cost() < best->cost()) && (p->cost() + MESH_SWITCH_MARGIN_MS < cur_cost)) {
             best = p;
         }
     }
@@ -148,13 +160,13 @@ std::shared_ptr<MeshPath> MeshEntry::activePath() {
         return curlive;
     }
     reselect_at = now_ms() + MESH_PATH_REFRESH_MS;
-    double cur_rtt = curlive ? curlive->rtt : DBL_MAX;
+    double cur_cost = curlive ? curlive->cost() : DBL_MAX;
     std::shared_ptr<MeshPath> bestlive;
     std::shared_ptr<MeshEndpoint> best;
     for(const auto& [addr, endpoint] : endpoints) {
         std::shared_ptr<MeshPath> live = endpoint->activePath();
         assert(!live || live->rtt > 0);
-        if(live && (!bestlive || live->rtt < bestlive->rtt) && (live->rtt + MESH_SWITCH_MARGIN_MS < cur_rtt)) {
+        if(live && (!bestlive || live->cost() < bestlive->cost()) && (live->cost() + MESH_SWITCH_MARGIN_MS < cur_cost)) {
             bestlive = live;
             best = endpoint;
         }
