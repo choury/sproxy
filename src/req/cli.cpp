@@ -133,7 +133,11 @@ void Cli::FlushNetwork() {
 bool Cli::SetServer(const std::string &server) {
     LOG("%s [%s] %s\n", dumpAddr(rwer->getSrc()).c_str(), __func__, server.c_str());
     Destination proxy;
-    if(parseDest(server.c_str(), &proxy) == 0){
+    if(parseServer(server.c_str(), &proxy) == 0){
+        if(opt.mesh_name == NULL && strcasecmp(proxy.addr.scheme, "mesh") == 0) {
+            LOGE("mesh server require mesh enabled\n");
+            return false;
+        }
         memcpy(&opt.Server, &proxy, sizeof(proxy));
         return true;
     }

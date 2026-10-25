@@ -495,6 +495,57 @@ int parseDest(const char* proxy, struct Destination* server){
     return parseDestPath(proxy, server, NULL);
 }
 
+//server 选项专用：在 parseDest 之外额外接受 mesh://节点名
+int parseServer(const char* proxy, struct Destination* server){
+    memset(server, 0, sizeof(struct Destination));
+    if(spliturl(proxy, server, NULL)){
+        return -1;
+    }
+    const char* scheme = server->addr.scheme;
+    if(scheme[0] == 0 || strcasecmp(scheme, "https") == 0 || strcasecmp(scheme, "ssl") == 0){
+        strcpy(server->addr.scheme, "https");
+        strcpy(server->addr.protocol, "ssl");
+    }else if(strcasecmp(scheme, "http") == 0 || strcasecmp(scheme, "tcp") == 0) {
+        strcpy(server->addr.scheme, "http");
+        strcpy(server->addr.protocol, "tcp");
+#ifdef HAVE_QUIC
+    }else if(strcasecmp(scheme, "quic") == 0) {
+        strcpy(server->addr.scheme, "https");
+        strcpy(server->addr.protocol, "quic");
+#endif
+    }else if(strcasecmp(scheme, "socks5") == 0 || strcasecmp(scheme, "socks") == 0) {
+        strcpy(server->addr.scheme, "socks5");
+        strcpy(server->addr.protocol, "tcp");
+    }else if(strcasecmp(scheme, "mesh") == 0) {
+        //mesh 目标是 mesh 节点名，无端口/协议
+        if(server->addr.hostname[0] == 0) {
+            LOGE("mesh server need a target: %s\n", proxy);
+            return -1;
+        }
+        if(server->addr.port != 0) {
+            LOGE("mesh server need no port: %s\n", proxy);
+            return -1;
+        }
+        return 0;
+    }else{
+        LOGE("unknown scheme for server: %s\n", scheme);
+        return -1;
+    }
+    if(server->addr.port != 0) {
+        return 0;
+    }
+    if(strcasecmp(server->addr.scheme, "http") == 0){
+        server->addr.port = HTTPPORT;
+    }
+    if(strcasecmp(server->addr.scheme, "https") == 0){
+        server->addr.port = HTTPSPORT;
+    }
+    if(strcasecmp(server->addr.scheme, "socks5") == 0){
+        server->addr.port = 1080;
+    }
+    return 0;
+}
+
 int parseDestPath(const char* proxy, struct Destination* server, char* path){
     memset(server, 0, sizeof(struct Destination));
     if(spliturl(proxy, server, path)){
@@ -516,7 +567,7 @@ int parseDestPath(const char* proxy, struct Destination* server, char* path){
         strcpy(server->addr.scheme, "socks5");
         strcpy(server->addr.protocol, "tcp");
     }else{
-        LOGE("unkonw scheme for server: %s\n", scheme);
+        LOGE("unknown scheme for server: %s\n", scheme);
         return -1;
     }
     if(server->addr.port != 0) {
@@ -809,7 +860,7 @@ void postConfig(){
         }
     }
 
-    if(server_string && parseDest(server_string, &opt.Server)){
+    if(server_string && parseServer(server_string, &opt.Server)){
         LOGE("wrong server format: %s\n", server_string);
         exit(1);
     }
@@ -847,7 +898,7 @@ void postConfig(){
             free((void*)opt.rproxy_name);
             opt.rproxy_name = new_name;
         }
-        if(opt.rproxy_server.addr.hostname[0] == '\0') {
+        if(opt.rproxy_server.addr.hostname[0] == '\0' || opt.Server.addr.port != 0) {
             opt.rproxy_server = opt.Server;
         }
         LOG("rproxy server: %s\n", dumpAddr(&opt.rproxy_server.addr));
@@ -998,8 +1049,8 @@ void postConfig(){
         LOGE("tun, tap, tun-fd and tap-fd can't be used together\n");
         exit(1);
     }
-    if (opt.doh_server && opt.doh_server[0] == 0 && opt.Server.addr.hostname[0] == 0) {
-        LOGE("doh without argument require server address\n");
+    if (opt.doh_server && opt.doh_server[0] == 0 && opt.Server.addr.port == 0) {
+        LOGE("doh without argument require specific server address\n");
         exit(1);
     }
     for(struct arg_list* p = secrets.next; p != NULL; p = p->next){
@@ -1055,6 +1106,10 @@ void postConfig(){
         }
         opt.mesh_secret = mesh_secret;
         opt.mesh_peers = mesh_peer_list.next;
+    }
+    if(opt.mesh_name == NULL && strcasecmp(opt.Server.addr.scheme, "mesh") == 0) {
+        LOGE("mesh server require mesh enabled\n");
+        exit(1);
     }
     for(struct arg_list* p = debug_list.next; p != NULL; p = p->next){
         if(!debugon(p->arg, true)){

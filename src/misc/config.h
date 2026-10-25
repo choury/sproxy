@@ -151,6 +151,7 @@ void parseConfig(int argc, char **argv);
 void postConfig();
 int parseDest(const char* proxy, struct Destination* server);
 int parseDestPath(const char* proxy, struct Destination* server, char* path);
+int parseServer(const char* proxy, struct Destination* server);
 bool debugon(const char* module, bool enable);
 bool is_http_listen_port(uint16_t port);
 void append_bind_list(struct bind_list*** tail, const struct BindInfo* info);

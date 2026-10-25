@@ -181,10 +181,17 @@ void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw)
         stra = getstrategy(req->Dest.hostname, req->Dest.port, req->path);
     }
     Destination dest{};
-    if(stra.s == Strategy::proxy && startwith(stra.ext.c_str(), MESH_SCHEME)) {
-        //mesh：裸名字（identifier/rproxy 委托）、策略、alias 三种来源在此汇合。
-        std::string target = stra.ext.substr(strlen(MESH_SCHEME));
-        stra = MeshManager::Route(target, &dest);
+    std::string mesh_target;
+    if(stra.s == Strategy::proxy) {
+        if(stra.ext.empty() && strcasecmp(opt.Server.addr.scheme, "mesh") == 0) {
+            mesh_target = opt.Server.addr.hostname;
+        }else if(startwith(stra.ext.c_str(), MESH_SCHEME)) {
+            mesh_target = stra.ext.substr(strlen(MESH_SCHEME));
+        }
+    }
+    if(!mesh_target.empty()) {
+        //mesh：裸名字（identifier/rproxy 委托）、策略、alias、默认 server 四种来源在此汇合。
+        stra = MeshManager::Route(mesh_target, &dest);
         //{direct} 的 port==0 是自身名归一化的正常返回
         if(stra.s == Strategy::proxy && dest.addr.port == 0) {
             return response(rw, HttpResHeader::create(S502, sizeof(S502), id), stra.ext);
@@ -193,7 +200,7 @@ void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw)
         //none（未知目标）不在此日志，后续 404 兜底
         if(stra.s != Strategy::none) {
             LOGD(DMESH, "mesh dispatch: %s exit=%s via=%s\n", req->geturl().c_str(),
-                 target.c_str(), stra.s == Strategy::proxy ? dest.addr.hostname : opt.mesh_name);
+                 mesh_target.c_str(), stra.s == Strategy::proxy ? dest.addr.hostname : opt.mesh_name);
         }
     }
     if(stra.s == Strategy::none) {
