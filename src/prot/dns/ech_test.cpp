@@ -28,8 +28,8 @@ extern "C" void slog(int, const char* fmt, ...) {
 
 struct debug_flags_map debug[]{
     {}, //DNONE
-    {"event"}, {"dns"}, {"ssl"}, {"http2"}, {"job"}, {"vpn"}, {"hpack"},
-    {"http"}, {"file"}, {"net"}, {"quic"}, {"http3"}, {"rwer"}, {"socks"},
+    {"event", false}, {"dns", false}, {"ssl", false}, {"http2", false}, {"job", false}, {"vpn", false}, {"hpack", false},
+    {"http", false}, {"file", false}, {"net", false}, {"quic", false}, {"http3", false}, {"rwer", false}, {"socks", false},
 };
 
 //桩实现，仅为满足dns.cpp的链接

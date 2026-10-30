@@ -117,7 +117,7 @@ void dump(uint64_t addr, const bpf_insn* insn) {
             fprintf(stderr, "Invalid mode for ld\n");
             return;
         }
-        printf("r%d 0x%lx\n", insn->dst_reg, (uint64_t)(insn+1)->imm << 32 | (uint32_t)insn->imm);
+        printf("r%d 0x%" PRIx64 "\n", insn->dst_reg, (uint64_t)(insn+1)->imm << 32 | (uint32_t)insn->imm);
         break;
     }
     case BPF_LDX: {
@@ -262,7 +262,7 @@ bool vm::push_frame(uint64_t return_addr, bool is_signal) {
     }
     if(options.verbose) {
         std::lock_guard<std::mutex> lock(log_mutex);
-        printf("[#%d] [STACK] PUSH sp=%lx ret=%lx sig=%d size=%d caller_len=%lu\n",
+        printf("[#%d] [STACK] PUSH sp=%" PRIx64 " ret=%" PRIx64 " sig=%d size=%d caller_len=%" PRIu64 "\n",
             options.sys->id(), r(10), return_addr, is_signal, frame_size, caller_total_len);
     }
     uint64_t sp = r(10) - caller_total_len;
@@ -368,7 +368,7 @@ uint64_t vm::pop_frame() {
 
     if(options.verbose) {
         std::lock_guard<std::mutex> lock(log_mutex);
-        printf("[#%d] [STACK] POP sp=%lx new_sp=%lx ret=%lx sig=%d\n",
+        printf("[#%d] [STACK] POP sp=%" PRIx64 " new_sp=%" PRIx64 " ret=%" PRIx64 " sig=%d\n",
             options.sys->id(), sp, old_sp, ret_addr, is_signal);
     }
     r(10) = old_sp;
@@ -1594,7 +1594,7 @@ bool vm::setup_stack(const std::vector<std::string>& argv,
     size_t env_base = 1 + (argv.size() + 1);
     size_t env_idx = 0;
     for(const auto& [k, val] : envp) {
-        int n = sprintf(reinterpret_cast<char*>(stack_base + cursor), "%s=%s", k.c_str(), val.c_str());
+        int n = snprintf(reinterpret_cast<char*>(stack_base + cursor), total_bytes - cursor, "%s=%s", k.c_str(), val.c_str());
         header[env_base + env_idx] = STACK_BASE + cursor;
         cursor += n + 1;  // +1 for '\0'（sprintf 返回不含 '\0'）
         env_idx++;

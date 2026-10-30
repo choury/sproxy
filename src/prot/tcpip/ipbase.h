@@ -46,6 +46,7 @@ struct IpStatus{
 #define  TUN_SEND_EOF    2
     uint32_t    flags = 0;
 
+    virtual ~IpStatus() = default;
     virtual NetStat getNetStat() const;
 };
 
