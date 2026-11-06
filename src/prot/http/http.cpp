@@ -476,7 +476,14 @@ size_t PackHttpRes(std::shared_ptr<const HttpResHeader> res, void* data, size_t 
         || res->no_body() || res->has("Upgrade"))
     {
         APPEND_HEADER("HTTP/1.1 %s" CRLF, status);
-        APPEND_HEADER("Connection: keep-alive" CRLF);
+        // A 101 upgrade response must carry exactly one Connection header:
+        // "Connection: Upgrade" (appended below together with Upgrade). The
+        // generic keep-alive line here would produce "keep-alive, Upgrade",
+        // which strict WebSocket clients (browsers, undici) reject with 1006.
+        const bool ws101 = res->isWebsocket && memcmp(res->status, "101", 3) == 0;
+        if (!ws101) {
+            APPEND_HEADER("Connection: keep-alive" CRLF);
+        }
     }else {
         APPEND_HEADER("HTTP/1.0 %s" CRLF, status);
         APPEND_HEADER("Connection: close" CRLF);
