@@ -391,6 +391,14 @@ void rewrite_rproxy_req(std::shared_ptr<HttpReqHeader> req) {
         //标记头经Sec-Fetch-Site门控后可信
     } else if(!rewritten_referer.empty() && origin_from_url(rewritten_referer, page_origin)) {
         //门控未过或无标记头时，退回Referer推导
+    } else if(req->has("Origin") && req->has("Sec-Fetch-Site", "same-origin")
+              && req->Dest.hostname[0]) {
+        //标记头与Referer都推不出页面源：典型是 blob: Worker 内发起的请求，
+        //注入脚本进不去 Worker scope，Referer 也只带代理域名。same-origin 由
+        //浏览器生成、页面 JS 不可伪造，说明发起页面本身经 /rproxy/ 提供，
+        //其真实源就是请求目标，用目标源兜底改写，避免目标站的 Host/Origin
+        //同源校验把请求拒成 403。
+        page_origin = dumpAddr(&req->Dest);
     }
     if(strcmp(req->Dest.protocol, "websocket") == 0) {
         req->del("Origin");
