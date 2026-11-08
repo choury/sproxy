@@ -86,10 +86,8 @@ jobs:
         include:
         - image: debian:12
           name: debian-12
-          cargo-name: cargo-web
-        - image: debian:trixie-backports
+        - image: debian:13
           name: debian-13
-          cargo-name: -t trixie-backports cargo
     runs-on: ubuntu-latest
     container:
       image: ${{ matrix.image }}
@@ -98,8 +96,7 @@ jobs:
       run: |
         apt-get update
         apt-get install -y --no-install-recommends git build-essential cmake ninja-build pkg-config ca-certificates \
-        libz-dev libjson-c-dev libelf-dev libreadline-dev liburing-dev libjemalloc-dev libxml2-dev
-        apt-get install -y --no-install-recommends ${{matrix.cargo-name}}
+        libz-dev libjson-c-dev libelf-dev libreadline-dev liburing-dev libjemalloc-dev libxml2-dev cargo-web
     - uses: actions/checkout@v7
       with:
         fetch-depth: 0
@@ -225,7 +222,7 @@ jobs:
       matrix:
         # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
         build_type: [RelWithDebInfo, Debug]
-        os: [macos-15, macos-14]
+        os: [macos-26, macos-15]
     # The CMake configure and build commands are platform agnostic and should work equally well on Windows or Mac.
     # You can convert this to a matrix build if you need cross-platform coverage.
     # See: https://docs.github.com/en/free-pro-team@latest/actions/learn-github-actions/managing-complex-workflows#using-a-build-matrix
