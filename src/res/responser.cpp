@@ -391,6 +391,9 @@ void rewrite_rproxy_req(std::shared_ptr<HttpReqHeader> req) {
         //标记头经Sec-Fetch-Site门控后可信
     } else if(!rewritten_referer.empty() && origin_from_url(rewritten_referer, page_origin)) {
         //门控未过或无标记头时，退回Referer推导
+    } else if(req->has("Origin") && req->has("Sec-Fetch-Site", "same-origin") && req->Dest.hostname[0]) {
+        //标记头与Referer都推不出页面源：典型是 blob: Worker 内发起的请求
+        page_origin = dumpAddr(&req->Dest);
     }
     if(strcmp(req->Dest.protocol, "websocket") == 0) {
         req->del("Origin");

@@ -472,11 +472,14 @@ size_t PackHttpRes(std::shared_ptr<const HttpResHeader> res, void* data, size_t 
         }
         status = status_buff;
     }
-    if(res->has("Content-Length") || res->has("Transfer-Encoding")
+    const bool ws101 = res->isWebsocket && memcmp(res->status, "101", 3) == 0;
+    if(ws101 || res->has("Content-Length") || res->has("Transfer-Encoding")
         || res->no_body() || res->has("Upgrade"))
     {
         APPEND_HEADER("HTTP/1.1 %s" CRLF, status);
-        APPEND_HEADER("Connection: keep-alive" CRLF);
+        if (!ws101) {
+            APPEND_HEADER("Connection: keep-alive" CRLF);
+        }
     }else {
         APPEND_HEADER("HTTP/1.0 %s" CRLF, status);
         APPEND_HEADER("Connection: close" CRLF);
@@ -490,7 +493,7 @@ size_t PackHttpRes(std::shared_ptr<const HttpResHeader> res, void* data, size_t 
         }
         APPEND_HEADER("%s: %s" CRLF, toUpHeader(i.first).c_str(), i.second.c_str());
     }
-    if(res->isWebsocket && memcmp(res->status, "101", 3) == 0) {
+    if(ws101) {
         if(!res->has("Sec-WebSocket-Accept")) {
             assert(res->websocketKey.length());
             std::string key = res->websocketKey + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
